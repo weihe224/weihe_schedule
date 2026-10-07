@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Entrance for a bottom sheet: it rises a quarter of its own height while fading
+  in. A percentage rather than a dp value, so the same animation reads the same on
+  a short panel and a tall one.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/decelerate_quint">
+    <translate
+        android:fromYDelta="25%"
+        android:toYDelta="0"
+        android:duration="220" />
+    <alpha
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0"
+        android:duration="180" />
+</set>

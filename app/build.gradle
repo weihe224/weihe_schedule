@@ -1,0 +1,86 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The debug keystore normally lives in ~/.android, which is not writable in
+// every environment (sandboxed CI, locked-down machines). When a keystore has
+// been placed in the repository instead, use it; otherwise fall back to the
+// standard location so nothing changes on a normal machine.
+def localDebugKeystore = rootProject.file('.android-home/debug.keystore')
+
+android {
+    namespace 'com.weihe.schedule'
+    compileSdk 34
+
+    // Build tools are left to the Android Gradle Plugin on purpose. Pinning
+    // 34.0.0 here used to be ignored with a warning on every build, because this
+    // AGP only supports 35.0.0 and newer; letting AGP choose its own default
+    // keeps the build quiet and works with whatever revision is installed.
+    defaultConfig {
+        applicationId 'com.weihe.schedule'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    testOptions {
+        // Deliberately NOT returnDefaultValues: the framework-free layer must
+        // never touch an Android class, and a stub silently answering null is
+        // exactly the failure this setting would hide.
+        unitTests.returnDefaultValues = false
+    }
+
+    signingConfigs {
+        if (localDebugKeystore.exists()) {
+            localDebug {
+                storeFile localDebugKeystore
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            if (localDebugKeystore.exists()) {
+                signingConfig signingConfigs.localDebug
+            }
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        // The build should fail on a real mistake, not on a documented design
+        // choice. Disabled on purpose:
+        //   HardcodedText / SetTextI18n -- every label is Chinese and inline in
+        //     Java; see ARCHITECTURE.md, resource migration is deferred.
+        //   LockedOrientationActivity -- the timetable is a portrait layout.
+        //   OldTargetApi / GradleDependency -- targetSdk and compileSdk are
+        //     pinned to the platform revision this project is built against.
+        abortOnError true
+        checkReleaseBuilds false
+        disable 'HardcodedText', 'SetTextI18n', 'MissingTranslation',
+                'LockedOrientationActivity', 'DiscouragedApi',
+                'OldTargetApi', 'GradleDependency'
+    }
+}
+
+dependencies {
+    implementation files('libs/jxl-2.6.12.jar')
+
+    // Unit tests for the framework-free logic (ScheduleUtils, CourseQuery,
+    // CourseConflicts, CourseList, CourseFormValidator, WeekGridLayout,
+    // TimetableImportParser, BellSchedule*). They run on the JVM via
+    // ./gradlew testDebugUnitTest and need no emulator or device.
+    testImplementation 'junit:junit:4.13.2'
+}

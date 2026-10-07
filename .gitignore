@@ -1,0 +1,30 @@
+# Build output
+build/
+.gradle/
+# Local Gradle distribution + user home used when the real one is unwritable
+.gradle-local/
+# Local Android user home: holds the debug keystore used when ~/.android is not
+# writable, plus emulator state. Nothing here belongs in version control.
+.android-home/
+
+# Android Studio / IntelliJ local state
+.idea/
+*.iml
+captures/
+
+# Local machine configuration -- never commit this, it holds the SDK path
+local.properties
+
+# Native build output
+.externalNativeBuild/
+.cxx/
+
+# Packaged artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# OS noise
+.DS_Store
+Thumbs.db

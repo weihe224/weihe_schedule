@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Keep every item here duplicated in values-v27/themes.xml.
+
+      A style split across values/ and values-v27/ is not merged: the resource
+      system picks the best match and uses that definition alone. Worse, the
+      parent cannot be omitted to "inherit", because AAPT reads the name
+      Theme.WeiheSchedule as an implicit parent of style/Theme and fails to
+      link. So each file carries the complete definition, and the v27 one adds
+      windowLightNavigationBar on top.
+    -->
+    <style name="Theme.WeiheSchedule" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">@color/primary</item>
+        <item name="android:windowBackground">@color/surface</item>
+
+        <!--
+          The status bar carries the header's own colour, so the two read as one
+          surface. Real edge-to-edge was tried and reverted: with the window
+          still fitting system windows, a transparent status bar simply shows
+          the window background as a light strip above the header. Drawing under
+          it needs WindowCompat.setDecorFitsSystemWindows, which lives in
+          androidx.core and cannot be added here (see ARCHITECTURE.md).
+        -->
+        <item name="android:statusBarColor">@color/inverse_surface</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <!-- Dark system icons: the bar behind them is a deep teal. -->
+        <item name="android:windowLightStatusBar">false</item>
+
+        <item name="android:navigationBarColor">@color/surface</item>
+    </style>
+</resources>

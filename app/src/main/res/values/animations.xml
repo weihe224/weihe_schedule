@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android takes window animations as a *style* holding the two animations, not
+      as an @anim resource: passing an anim id silently animates nothing.
+
+      The name has no dots and the parent is explicit. A dotted name like
+      Animation.WeiheSchedule.Sheet makes AAPT resolve an implicit parent of
+      style/Animation.WeiheSchedule and fail to link. That is the same trap as
+      Theme.WeiheSchedule in themes.xml.
+    -->
+    <style name="SheetAnimation" parent="@android:style/Animation">
+        <item name="android:windowEnterAnimation">@anim/sheet_slide_up</item>
+        <item name="android:windowExitAnimation">@anim/sheet_slide_down</item>
+    </style>
+
+    <!--
+      A dialog fades and scales in rather than sliding, so it reads as arriving
+      over the page instead of from an edge. Same naming rule as above: no dots.
+    -->
+    <style name="DialogAnimation" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/dialog_in</item>
+        <item name="android:windowExitAnimation">@anim/dialog_out</item>
+    </style>
+</resources>

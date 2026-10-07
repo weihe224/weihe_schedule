@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Only the colours the platform theme itself needs live here. Everything the
+      app draws comes from Palette.java, which keeps the two in step by hand;
+      see ARCHITECTURE.md for why the resource migration is still deferred.
+    -->
+    <color name="primary">#0F766E</color>
+    <!--
+      Must equal Palette.INVERSE_SURFACE: the header is painted with the Java
+      constant while the status bar takes its colour from here, so if the two
+      drift a seam appears above the header.
+    -->
+    <color name="inverse_surface">#123F3A</color>
+    <color name="surface">#F3F6F4</color>
+</resources>

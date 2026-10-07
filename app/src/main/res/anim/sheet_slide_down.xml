@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exit for a bottom sheet: quicker than the entrance, the way dismissal should be. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/accelerate_quint">
+    <translate
+        android:fromYDelta="0"
+        android:toYDelta="25%"
+        android:duration="160" />
+    <alpha
+        android:fromAlpha="1.0"
+        android:toAlpha="0.0"
+        android:duration="160" />
+</set>

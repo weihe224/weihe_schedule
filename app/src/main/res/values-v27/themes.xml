@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The complete theme again, plus the items that need API 27. See
+      values/themes.xml for why this is duplicated rather than inherited: a
+      style is not merged across configuration folders, and omitting the parent
+      makes AAPT look for style/Theme.
+    -->
+    <style name="Theme.WeiheSchedule" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">@color/primary</item>
+        <item name="android:windowBackground">@color/surface</item>
+
+        <item name="android:statusBarColor">@color/inverse_surface</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <item name="android:navigationBarColor">@color/surface</item>
+        <!-- Additive, API 27+: dark icons on the light navigation bar. -->
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

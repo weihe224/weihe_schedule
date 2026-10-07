@@ -1,0 +1,276 @@
+package com.weihe.schedule;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.graphics.Color;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import java.util.List;
+
+/**
+ * The list of bell schedules.
+ *
+ * <p>This is where "different buildings ring at different times" becomes
+ * visible: each row shows the schedule, its first and last period, and how many
+ * courses point at it by name. Rows open the editor for that single schedule;
+ * the floating button adds a new one.</p>
+ */
+public class ScheduleListActivity extends Activity {
+    private static final int REQUEST_EDIT = 2001;
+
+    private CourseRepository repository;
+    private LinearLayout list;
+    private TextView summary;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        repository = new CourseRepository(this);
+        setContentView(buildRoot());
+        render();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (list != null) {
+            // Re-read storage; another screen may have changed it. See
+            // CourseRepository#reload.
+            repository.reload();
+            render();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_EDIT && resultCode == RESULT_OK) {
+            render();
+        }
+    }
+
+    private View buildRoot() {
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.setBackgroundColor(Palette.SURFACE);
+
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        frame.addView(page, new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        page.addView(createHeader());
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setClipToPadding(false);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(14), dp(12), dp(14), dp(96));
+
+        summary = UiKit.text(this, "", UiTokens.Type.LABEL_LARGE, Palette.ON_SURFACE_VARIANT, false);
+        body.addView(summary);
+
+        list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        listParams.topMargin = dp(10);
+        body.addView(list, listParams);
+
+        scroll.addView(body, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        page.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        ImageButton add = UiKit.fab(this, R.drawable.ic_add,
+                "\u65B0\u5EFA\u4F5C\u606F\u8868", view -> openEditor(-1));
+        android.widget.FrameLayout.LayoutParams fabParams =
+                new android.widget.FrameLayout.LayoutParams(
+                        dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE),
+                        Gravity.END | Gravity.BOTTOM);
+        fabParams.setMargins(0, 0, dp(UiTokens.SPACE_L + 2),
+                dp(UiTokens.SPACE_XL - 2));
+        frame.addView(add, fabParams);
+        return frame;
+    }
+
+    private View createHeader() {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(10), dp(8), dp(16), dp(8));
+        header.setBackgroundColor(Palette.INVERSE_SURFACE);
+
+        ImageButton back = new ImageButton(this);
+        back.setImageResource(R.drawable.ic_back);
+        back.setColorFilter(Color.WHITE);
+        back.setBackgroundColor(Color.TRANSPARENT);
+        back.setPadding(dp(10), dp(10), dp(10), dp(10));
+        back.setContentDescription("\u8FD4\u56DE");
+        back.setOnClickListener(view -> finish());
+        header.addView(back, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        titleBlock.addView(UiKit.text(this, "\u4F5C\u606F\u65F6\u95F4",
+                18, Color.WHITE, true));
+        titleBlock.addView(UiKit.text(this,
+                "\u4E0D\u540C\u6559\u5B66\u697C\u53EF\u4EE5\u4E0A\u4E0B\u8BFE\u65F6\u95F4\u4E0D\u540C",
+                11, Palette.ON_INVERSE_VARIANT, false));
+        LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        blockParams.leftMargin = dp(8);
+        header.addView(titleBlock, blockParams);
+        return header;
+    }
+
+    private void render() {
+        List<BellSchedule> schedules = repository.getBellSchedules();
+        List<Course> courses = repository.getCourses();
+        list.removeAllViews();
+        summary.setText("\u5171 " + schedules.size()
+                + " \u4E2A\u4F5C\u606F\u8868 \u00B7 \u70B9\u51FB\u4FEE\u6539\uFF0C\u957F\u6309\u5220\u9664");
+
+        for (int i = 0; i < schedules.size(); i++) {
+            BellSchedule schedule = schedules.get(i);
+            list.addView(scheduleCard(schedule, i, usersOf(schedule, courses)));
+        }
+    }
+
+    private int usersOf(BellSchedule schedule, List<Course> courses) {
+        int users = 0;
+        for (Course course : courses) {
+            if (schedule.name().equals(course.scheduleName)) {
+                users++;
+            }
+        }
+        return users;
+    }
+
+    private View scheduleCard(final BellSchedule schedule, final int index,
+            int users) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(15), dp(13), dp(15), dp(14));
+        card.setBackground(UiKit.outline(this, Palette.SURFACE_CONTAINER, UiTokens.RADIUS_L,
+                Palette.OUTLINE_VARIANT, 1));
+        card.setElevation(dp(1));
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(UiKit.text(this, schedule.name(), UiTokens.Type.TITLE_MEDIUM, Palette.ON_SURFACE, true),
+                new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (index == 0) {
+            titleRow.addView(badge("\u9ED8\u8BA4", Palette.PRIMARY));
+        }
+        card.addView(titleRow);
+
+        TextView span = UiKit.text(this,
+                "\u7B2C1\u8282 " + spanOf(schedule, 1)
+                        + "   \u00B7   \u5171 " + schedule.periodCount() + " \u8282",
+                12, Palette.ON_SURFACE_VARIANT, false);
+        LinearLayout.LayoutParams spanParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        spanParams.topMargin = dp(6);
+        card.addView(span, spanParams);
+
+        TextView last = UiKit.text(this,
+                "\u672B\u8282 " + spanOf(schedule, schedule.periodCount()),
+                12, Palette.ON_SURFACE_VARIANT, false);
+        LinearLayout.LayoutParams lastParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lastParams.topMargin = dp(3);
+        card.addView(last, lastParams);
+
+        String venue = schedule.locationKeywords().isEmpty()
+                ? "\u4E0D\u6309\u5730\u70B9\u5339\u914D\uFF0C\u9700\u8981\u5728\u8BFE\u7A0B\u91CC\u624B\u52A8\u9009\u62E9"
+                : "\u9002\u7528\u4E8E\uFF1A" + String.join("\u3001",
+                        schedule.locationKeywords());
+        TextView keywords = UiKit.text(this, venue + "   \u00B7   "
+                + users + " \u95E8\u8BFE\u6307\u5B9A", 11,
+                schedule.locationKeywords().isEmpty() ? Palette.OUTLINE : Palette.ON_SURFACE_VARIANT,
+                false);
+        LinearLayout.LayoutParams keywordParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        keywordParams.topMargin = dp(8);
+        card.addView(keywords, keywordParams);
+
+        card.setOnClickListener(view -> openEditor(index));
+        card.setOnLongClickListener(view -> {
+            confirmDelete(schedule, index);
+            return true;
+        });
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.bottomMargin = dp(10);
+        card.setLayoutParams(cardParams);
+        return card;
+    }
+
+    private String spanOf(BellSchedule schedule, int period) {
+        return schedule.timeRange(period, period);
+    }
+
+    private TextView badge(String label, int color) {
+        TextView badge = UiKit.text(this, label, UiTokens.Type.LABEL_SMALL, Color.WHITE, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setPadding(dp(7), dp(3), dp(7), dp(3));
+        badge.setBackground(UiKit.fill(this, color, 6));
+        return badge;
+    }
+
+    private void openEditor(int index) {
+        Intent intent = new Intent(this, EditScheduleActivity.class);
+        intent.putExtra(EditScheduleActivity.EXTRA_INDEX, index);
+        startActivityForResult(intent, REQUEST_EDIT);
+    }
+
+    private void confirmDelete(final BellSchedule schedule, final int index) {
+        final List<BellSchedule> schedules = repository.getBellSchedules();
+        if (schedules.size() <= 1) {
+            Toast.makeText(this, "\u81F3\u5C11\u4FDD\u7559\u4E00\u4E2A\u4F5C\u606F\u8868",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int users = usersOf(schedule, repository.getCourses());
+        String message = "\u786E\u5B9A\u5220\u9664\u201C" + schedule.name() + "\u201D\u5417\uFF1F";
+        if (users > 0) {
+            message += "\n\u6709 " + users
+                    + " \u95E8\u8BFE\u7A0B\u6307\u5B9A\u4E86\u5B83\uFF0C\u5220\u9664\u540E\u8FD9\u4E9B\u8BFE\u7A0B\u5C06\u6539\u4E3A"
+                    + "\u6309\u4E0A\u8BFE\u5730\u70B9\u81EA\u52A8\u5339\u914D\u3002";
+        }
+        UiKit.dialog(this, "\u5220\u9664\u4F5C\u606F\u8868", message, null, null,
+                UiKit.Action.of("\u53D6\u6D88", null),
+                UiKit.Action.destructive("\u5220\u9664", () -> {
+                    List<BellSchedule> remaining = BellSchedules.copyOf(
+                            repository.getBellSchedules());
+                    if (index >= 0 && index < remaining.size()) {
+                        remaining.remove(index);
+                    }
+                    repository.saveBellSchedules(remaining);
+                    repository.clearScheduleReferences(schedule.name());
+                    render();
+                    Toast.makeText(this, "\u5DF2\u5220\u9664", Toast.LENGTH_SHORT).show();
+                }));
+    }
+
+    private int dp(float value) {
+        return UiKit.dp(this, value);
+    }
+}
