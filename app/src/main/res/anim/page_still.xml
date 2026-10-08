@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The screen underneath while another one animates over it.
+
+  A no-op rather than no animation at all: leaving the pair half-specified makes
+  the platform fall back to its own default for the missing side, which is a
+  full-width slide and reads as a different app.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <alpha
+        android:fromAlpha="1.0"
+        android:toAlpha="1.0"
+        android:duration="200" />
+</set>

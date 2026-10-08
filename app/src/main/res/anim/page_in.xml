@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A screen arriving: it fades in while sliding a short way in from the right.
+
+  The travel is 4% of the screen width, not a full page slide. A page slide makes
+  every navigation feel like a carousel; this only has to say "a new screen is on
+  top", and anything longer than about 200ms stops feeling instant.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/decelerate_quint">
+    <alpha
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0"
+        android:duration="200" />
+    <translate
+        android:fromXDelta="4%"
+        android:toXDelta="0"
+        android:duration="220" />
+</set>

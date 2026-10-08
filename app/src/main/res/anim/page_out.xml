@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A screen leaving: it fades out and drifts a little further right, so the
+  outgoing screen reads as having been pushed back rather than cut off.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/accelerate_quint">
+    <alpha
+        android:fromAlpha="1.0"
+        android:toAlpha="0.0"
+        android:duration="160" />
+    <translate
+        android:fromXDelta="0"
+        android:toXDelta="4%"
+        android:duration="180" />
+</set>
