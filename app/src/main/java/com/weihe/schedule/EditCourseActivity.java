@@ -76,6 +76,9 @@ public class EditCourseActivity extends Activity {
             course.endWeek = ScheduleUtils.SEMESTER_WEEKS;
         }
         selectedColor = course.color;
+        // The app bar is the page surface, so both system bars take that colour and
+        // keep dark icons on it; see Insets for why this cannot live in the theme.
+        Insets.applyBrandedSystemBars(this);
         setContentView(buildRoot());
     }
 
@@ -137,29 +140,9 @@ public class EditCourseActivity extends Activity {
     }
 
     private View createHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(10), dp(7), dp(16), dp(7));
-        header.setBackgroundColor(Palette.INVERSE_SURFACE);
-
-        ImageButton back = new ImageButton(this);
-        back.setImageResource(R.drawable.ic_back);
-        back.setColorFilter(Color.WHITE);
-        back.setBackgroundColor(Color.TRANSPARENT);
-        back.setPadding(dp(10), dp(10), dp(10), dp(10));
-        back.setContentDescription("\u8FD4\u56DE");
-        back.setOnClickListener(view -> finish());
-        header.addView(back, new LinearLayout.LayoutParams(dp(40), dp(40)));
-
-        TextView title = UiKit.text(this,
+        return UiKit.detailAppBar(this,
                 existingCourse ? "\u7F16\u8F91\u8BFE\u7A0B" : "\u6DFB\u52A0\u8BFE\u7A0B",
-                18, Color.WHITE, true);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        titleParams.leftMargin = dp(8);
-        header.addView(title, titleParams);
-        return header;
+                null, view -> finish());
     }
 
     private View formField(String label, View field, int topMargin) {
@@ -414,7 +397,7 @@ public class EditCourseActivity extends Activity {
         if (chip == null) {
             return;
         }
-        chip.setTextColor(selected ? Color.WHITE : Palette.ON_SURFACE);
+        chip.setTextColor(selected ? Palette.ON_PRIMARY : Palette.ON_SURFACE);
         chip.setBackground(UiKit.fill(this,
                 selected ? Palette.PRIMARY : Palette.SURFACE_CONTAINER_HIGH, UiTokens.RADIUS_S));
     }
@@ -628,26 +611,13 @@ public class EditCourseActivity extends Activity {
     }
 
     private View createSaveBar() {
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.VERTICAL);
-        bar.setPadding(dp(14), dp(10), dp(14), dp(11));
-        bar.setBackgroundColor(Palette.CARD);
-        bar.setElevation(dp(7));
-
-        TextView save = UiKit.text(this, "\u4FDD\u5B58\u8BFE\u7A0B",
-                15, Color.WHITE, true);
-        save.setGravity(Gravity.CENTER);
-        save.setBackground(UiKit.fill(this, Palette.PRIMARY, UiTokens.RADIUS_M));
-        save.setOnClickListener(view -> validateAndSave());
-        bar.addView(save, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        LinearLayout bar = UiKit.actionBar(this);
+        bar.addView(UiKit.primaryAction(this, "\u4FDD\u5B58\u8BFE\u7A0B",
+                view -> validateAndSave()));
 
         if (existingCourse) {
-            TextView delete = UiKit.text(this,
-                    "\u5220\u9664\u8BFE\u7A0B", UiTokens.Type.BODY_MEDIUM, Palette.ERROR, true);
-            delete.setGravity(Gravity.CENTER);
-            delete.setPadding(dp(8), dp(10), dp(8), dp(4));
-            delete.setOnClickListener(view -> confirmDelete());
+            TextView delete = UiKit.textButton(this,
+                    "\u5220\u9664\u8BFE\u7A0B", Palette.ERROR, view -> confirmDelete());
             bar.addView(delete, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT));

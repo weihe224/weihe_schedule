@@ -37,6 +37,9 @@
            作息表全局共用；内存快照缓存 + 每次返回深拷贝）
    设计系统：Palette（颜色角色）· Colors（对比度运算，纯逻辑）
             · UiTokens（间距/圆角/字阶/控件尺寸）· UiKit（组件层）· Insets（系统栏）
+   图标：tools/IconForge.java 由 icon.png 生成 adaptive（背景/前景/单色三层）
+         与 legacy（方/圆两种）五种密度的 mipmap；tools/IconProbe.java 量取
+         安全区与配色，tools/PaletteCheck.java 离线校验配色对比度
    外部读取：ExcelTimetableReader（jxl，只读 .xls）
 ```
 
@@ -83,10 +86,15 @@
 | 验证项 | 手段 | 结果 |
 |---|---|---|
 | 全量编译 | `./gradlew assembleDebug`（AGP 8.13.0 + Gradle 8.13 + JDK 20） | 通过，产出已签名 `app/build/outputs/apk/debug/app-debug.apk` |
-| 业务规则与存储 | `./gradlew testDebugUnitTest`，17 个文件、**220 项 `@Test`** | 全部 PASS |
+| 业务规则与存储 | `./gradlew testDebugUnitTest`，17 个文件、**221 项 `@Test`** | 全部 PASS |
 | 静态检查 | `./gradlew lintDebug` | 0 error、0 warning |
-| 配色可访问性 | `PaletteContrastTest`，13 项 WCAG AA 断言 | 全部 PASS |
+| 配色可访问性 | `PaletteContrastTest`，**14 项** WCAG AA 断言 | 全部 PASS |
+| 图标资源 | `IconForge` 生成的遮罩对照图（圆/方圆形/圆角方/满幅四种遮罩 + 66dp 安全圈） | 四种遮罩下均无裁切 |
 | 真机渲染 | 模拟器上安装运行，逐屏点击并抓 `uiautomator dump` 核对坐标 | 主要界面渲染正确，无崩溃 |
+| 启动图标 | 启动器应用抽屉内实际渲染 | 圆形遮罩下完整，中文名不变 |
+| 小屏与大字体 | `wm size 720x1280` + `wm density 320`（360×640dp），字体缩放 1.3× 与 2.0× | 无截断、无横向溢出 |
+| 模式反复切换 | 总览页在「总课表 / 单周课表」之间切换 10 次 | 无崩溃 |
+| 进程重启 | `am force-stop` 后冷启动 | 课程与学期仍在 |
 
 测试分布（按文件）：
 
@@ -101,7 +109,7 @@
 | `CourseQueryTest` | 15 | 查询层：按星期过滤、排序、奇偶周、周窗口、不改动入参 |
 | `BellSchedulesTest` | 14 | 作息解析：显式名优先、按地点匹配、兜底顺序、删除后回退 |
 | `CourseConflictsTest` | 13 | 冲突判定：单双周互斥、周次窗口相接/重叠、编辑时不与自己冲突 |
-| `PaletteContrastTest` | 13 | 设计系统：文字/背景满足 WCAG AA、课程色混合后可读、字阶与间距阶有序 |
+| `PaletteContrastTest` | 14 | 设计系统：文字/背景满足 WCAG AA、课程色混合后可读、课程色条可见、字阶与间距阶有序、页头为页面本身色 |
 | `CourseListTest` | 12 | 列表操作：替换/追加语义、存副本、id 碰撞向前找空位 |
 | `BellScheduleJsonTest` | 11 | 存储往返、损坏载荷修复、非对象条目跳过、关键词往返 |
 | `SemesterTest` | 10 | 学期模型：名称由起始日推导、手填名称优先、起始日归一到周一 |
@@ -119,22 +127,32 @@
 > （`failed to open the serial device`，模拟器没有 UWB 硬件），持续刷 tombstone、拖慢系统。
 > 再遇到黑屏，先冷启动模拟器（Cold Boot Now）再判断，并抓 `adb logcat -d | grep "at com.weihe"`。
 
-1. **响应式**：只在一个 420dpi / 1080×2424 的模拟器上验证过。
-   小屏、大字体缩放、刘海屏/挖孔屏都没测。文字承载控件已从固定高度改为 `minHeight`（图标按钮除外），
-   这是能防住大字体截断的关键，但需要真机确认。
+1. **响应式**：已在 420dpi / 1080×2424 与 320dpi / 720×1280（360×640dp）两种尺寸、
+   字体缩放 1.0× / 1.3× / 2.0× 下验证过首页，无截断。刘海屏/挖孔屏仍未测。
+   文字承载控件一律用 `minHeight`/`minWidth` 而非固定尺寸（日期格、课程卡时间块都踩过：
+   固定 56dp 的时间块在 2.0× 下把「1-2节」切一半）。
 2. **六个 Activity 的 Android API 用法**：滑动手势与 `GestureDetector` 的配合、
    `GridLayout` 里跨行 FrameLayout 的排布、`EditText.setError` 弹窗位置、对话框内嵌 `ScrollView` 的高度。
-3. **设计系统的实际观感**：对比度是算出来的，但**圆角阴影是否真的柔和、卡片层次是否够**，
-   只能看真机。
+3. **设计系统的实际观感**：对比度与课程色条可见性是算出来的，
+   圆角、阴影、间距与日期条的三态层级在 420dpi 模拟器上看过；
+   但**在不同厂商启动器、深色模式、以及真实刘海屏上仍未经确认**。
+   深色模式目前完全没有适配：主题是 `Theme.Material.Light.NoActionBar`，
+   系统切到深色时应用仍画浅色（`windowLightStatusBar` 等按浅色设置，不会错乱，只是不会跟随）。
 4. **总览的纵向同步**：节次列跟随网格纵向滚动已实现，但当前课表最多 11 行仍放得下，
    没能实测触发；课表长到需要纵向滚动时才会生效。
 5. **`单双周` 仍是平台 `RadioButton`**，是编辑器里唯一未自绘的控件。
 6. **Excel 导入的端到端流程**：文件选择器、后台线程、弹窗时序，
    以及 `jxl` 对真实教务系统文件的兼容性（只支持 `.xls`，不支持 `.xlsx`）。
+7. **多分支/多学期并存的数据**：示例数据与新建学期都验过，但没有验过学期多到列表需要滚动、
+   或同一门课在两个学期里颜色不同的情况。
 
 本机环境有两个已知限制：宿主 `~/.gradle` 与 `~/.android` 不可写，所以用工作区内的
 `.gradle-local/home` 与 `.android-home/debug.keystore`；模拟器无法在本会话中常驻，
 验证靠 `adb install` + `uiautomator dump` 逐屏核对。
+
+另外，本会话里 `D:\Weihe` 与工作区 `D:\vibe coding\Weihe\Weihe` 同时存在，
+**只有后者是活的项目**（有 `.git`、有 `icon.png`、`app_name` 已是「拾课」）；
+`D:\Weihe` 是早期快照，且不可写。git 里 `M app/src/main/res/values/strings.xml` 就是改中文名那一步。
 
 ---
 
@@ -245,15 +263,32 @@
 
 ### 7. 状态栏：同色，而不是透明
 
-状态栏与 Header 要「融合」，直觉做法是把状态栏设成透明、让 Header 画到它下面。
+状态栏与页头要「融合」，直觉做法是把状态栏设成透明、让页头画到它下面。
 **在本项目里这条路是错的**：窗口仍然 fit system windows，透明的状态栏后面露出的是窗口背景，
-于是在深色 Header 上方多出一条浅色横条，比原来更糟。真正画到状态栏下面需要
+于是在页头上方多出一条横条，比原来更糟。真正画到状态栏下面需要
 `WindowCompat.setDecorFitsSystemWindows(false)`，它在 `androidx.core` 里，本项目不能依赖。
 
-现在做的是给状态栏和 Header **同一个颜色**（`@color/inverse_surface` = `Palette.INVERSE_SURFACE`）。
-这两个颜色必须手动保持一致——Header 由 Java 常量绘制，状态栏由 XML 资源绘制。
+现在做的是给状态栏和页头**同一个颜色**。页头本身也换过一次颜色：原来是全宽深青绿条，
+是应用里唯一的重色块，最轻的页面反而以最重的元素开场。现在页头就是页面背景
+（`Palette.HEADER_SURFACE == Palette.SURFACE`），状态栏取同一个值、配深色图标，
+两个面之间没有任何边界可看。
 
-### 8. 平台对话框与表单控件全部换掉
+**这两个颜色必须手动保持一致**：页头由 Java 常量绘制，状态栏由 XML 资源绘制。
+`PaletteContrastTest.theHeaderIsReadable` 里的 `assertEquals(SURFACE, HEADER_SURFACE)`
+就是钉住这件事的，改一边不改另一边会让测试红。
+
+### 8. 固定尺寸的控件在大字体下一定截断
+
+日期选择器最初每格写「10/5」，在 360dp 宽、字体缩放 1.3× 时正好 84px 文字对 84px 空间，
+最后一位被切掉。`setAutoSizeTextTypeUniformWithConfiguration` 救不了：到 2.0× 时
+字阶里最小的 10sp 也已经放不下五个字符。
+
+结论是**换内容而不是调字号**：格子里的主行改成「日」的数字（1–2 位），星期做它的小标签。
+月份没有丢——正上方周卡片写着「10/5 - 10/11」，下方日标题写着「周四 · 今天 · 10/8」。
+同一个教训还出现在两处：日期格原来写死 56dp 高（2.0× 下数字被切一半，改成 `minHeight`），
+课程卡的时间块原来写死 56dp 宽（改成 `minWidth`，宽了就让位而不是藏起来）。
+
+### 9. 平台对话框与表单控件全部换掉
 
 界面上最后一批「借来的」控件是 `AlertDialog`、`CheckBox`、`RadioButton`。它们能工作，
 但外观由平台主题决定，摆在本应用自己的字体与间距旁边就露出来了。实测差距很具体：
@@ -292,10 +327,14 @@
 
 0. **每个按钮只点一次就必须生效**（日期、课程卡片、返回箭头各单击一次）。
    这是「有概率需要点两次」那类 bug 的唯一检查手段，JVM 测试测不到手势派发。
-1. 启动后能看到示例课程（首次运行写入 9 门样例课），顶部显示「今天 · 年月日 · 周X」
-2. **点标题下方的学期整行 → 进入学期列表**（右侧 chip 只在看旧学期时出现）；
+1. 启动后能看到示例课程（首次运行写入 9 门样例课），顶部是**浅色页头**：
+   左侧品牌标记 + 「我的课表」，下方整行是学期。状态栏与页头**没有任何色差**，
+   状态栏图标是深色的（不是深色底上的白色图标）
+2. **点学期整行 → 进入学期列表**（右侧 chip 只在看旧学期时出现）；
    左右滑动可切换周次；「回到本周」在非本周时出现
-3. **切到下一周后，右下角出现「回到今天」；点它必须同时回到本周与今天，并且按钮自身消失**
+3. **切到下一周后，右下角出现「回到今天」**；点它必须同时回到本周与今天，并且按钮自身消失。
+   **另外：只切到本周的另一天（比如周三），「回到今天」也必须出现**——
+   这个按钮在 `isShowingToday()` 里同时看周和日，而日切换那条路径曾经漏掉刷新它
 4. 右上角 ⚙ → 「开学第一周周一」改日期，周次与日期立刻跟着变
 5. 右上角 ⚙ → 作息列表应当是**三份**：教学楼作息（默认）、D/E 楼作息、B/C 楼作息。
    逐节核对第 3–5 节与本文档第二节的表格一致，且**界面上不再出现「时间待确认」**
@@ -319,20 +358,45 @@
 15. **学期**：主页点标题下方的学期整行 → 右下角 `+`：表单里**日期必须自己填**，名称留空则自动命名；
     日期格式不对或该周已是别的学期，会在输入框上报错且**弹窗不关闭**
 16. 新建学期后课表应当是**空的**（除非勾选「复制当前学期课程」）；切回原学期数据仍在
-17. 运行 `./gradlew testDebugUnitTest`，220 项测试全绿
+17. 运行 `./gradlew testDebugUnitTest`，221 项测试全绿；`./gradlew lintDebug` 零问题
 18. **对话框与表单控件**：每个确认框都应当是圆角、两侧留白的面板（不是贴边直角）；
     删除类操作的按钮必须是**红色文本**，取消在它左边；表单框里校验失败时**对话框不关闭**，
     错误留在出错的字段上；勾选框和单选框是应用自己画的（方框带勾、圆环带点），
     并且**点文字也能切换**，不只是点那个小方框
+19. **小屏 + 大字体**：`adb shell wm size 720x1280` + `wm density 320`，再把
+    `adb shell settings put system font_scale` 依次设成 1.0 / 1.3 / 2.0，
+    每次冷启动看首页：日期条七格都完整、课程卡的时间与周次标签都不被切。
+    改完记得 `wm size reset`、`wm density reset`、`font_scale 1.0`
+20. **启动图标**：卸载重装后进启动器应用抽屉，图标在圆形遮罩下必须完整：
+    日历主体、时钟、橙色高亮块都在，且没有把任何一边切掉
+21. **页面转场**：进入设置 / 学期 / 总览时是淡入 + 轻微右移（约 200ms），
+    返回时是淡出，不是从屏幕边缘整页推拉
 
 ### 本机运行方式
 
 ```powershell
-$env:GRADLE_USER_HOME='D:\Weihe\.gradle-local\home'
-& 'D:\Weihe\.gradle-local\bin\gradle.bat' testDebugUnitTest assembleDebug lintDebug
+$env:GRADLE_USER_HOME='D:\vibe coding\Weihe\Weihe\.gradle-local\home'
+& '.\.gradle-local\bin\gradle.bat' testDebugUnitTest assembleDebug lintDebug
 ```
 
 普通机器上直接 `./gradlew.bat testDebugUnitTest` 即可。
+
+**`--offline` 在本机会失败**：工作区内的 Gradle 缓存是 `~/.gradle` 的部分拷贝，
+`android-test-plugin-host-additional-test-output-proto` 等产物不在里面。联网解析即可。
+另外沙箱会挡住 Gradle 的文件监听线程（`Couldn't open current thread, error = 5`），
+加 `"-Dorg.gradle.vfs.watch=false"` 可以少一堆吓人的堆栈——注意这个参数要加引号，
+否则 PowerShell 会把它当成任务名。
+
+**`IconForge` 与 `PaletteCheck` 用单文件源码方式跑**，不需要 Gradle：
+
+```powershell
+java "-Dfile.encoding=UTF-8" tools\IconForge.java icon.png app\src\main\res tools\preview
+java "-Dfile.encoding=UTF-8" tools\PaletteCheck.java
+```
+
+`IconForge` 会顺带写一张 `tools/preview/icon-masks.png`：四种启动器遮罩下的效果、
+108dp 画布上的 66dp 安全圈（青色）、两枚 legacy 图标、以及单色层。
+**改图标只看这张图就够了**，不必装到设备上再猜。
 
 **`input tap` 的坐标必须来自 `uiautomator dump`。** 本会话里按 dp 估算图标中心点空过六七次；
 dump 出来的 `bounds` 一次就中（图标实际中心是 `(870,256)`，估算值是 `(757,180)`）。
@@ -359,4 +423,12 @@ dump 出来的 `bounds` 一次就中（图标实际中心是 `(870,256)`，估�
   在那一页写时间就是在替别的楼做主张。
 - **资源迁移（`colors.xml` / `strings.xml`）仍然推迟。** 颜色与文案目前主要来自
   `Palette` 与 Java 字符串常量，两边靠手工保持一致——`colors.xml` 里只有平台主题真正需要的
-  那几个颜色，且有注释提醒同步。
+  三个颜色（`primary`、`surface`、`navigation_bar`），且有注释提醒同步。
+  文案同理：界面上的中文都内联在 Java 里，因此 `app_name` 是 `strings.xml` 里唯一的一条。
+- **图标是光栅的，但由脚本生成。** 原始插画有柔和渐变与投影，转成 vector path 会失真，
+  所以三层（前景/背景/单色）都是 PNG。代价是仓库里多了 25 个 mipmap 文件；
+  换来的是每次改图标只改 `icon.png` 再跑一次 `IconForge`，五种密度和两张 legacy 图标
+  不可能彼此漂移，安全区也是量出来的而不是估的。
+- **课程卡的色条比总览的课程块浅一档。** 4dp 的实色条在白卡上成排出现会变成色卡，
+  所以 `UiKit.courseRail` 把它往卡面混了 15%；总览保留原色，因为那里的块要自己承担全部识别。
+  `PaletteContrastTest.everyCourseRailStaysVisibleOnItsCard` 钉住它不会淡到看不见。

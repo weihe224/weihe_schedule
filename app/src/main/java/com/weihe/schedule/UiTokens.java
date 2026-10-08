@@ -117,6 +117,15 @@ public final class UiTokens {
     public static final int FIELD_HEIGHT = 52;
     /** Height of a chip. */
     public static final int CHIP_HEIGHT = 36;
+    /** Size of a round icon button in an app bar or a week stepper. */
+    public static final int ICON_BUTTON_SIZE = 40;
+    /**
+     * Height of one day in the date selector: a weekday over a date, with enough
+     * room that neither line is cramped on a small phone.
+     */
+    public static final int DAY_CELL_HEIGHT = 56;
+    /** Width of the colour rail down the left edge of a course card. */
+    public static final int COURSE_RAIL_WIDTH = 4;
     /** Height of the top app bar. */
     public static final int TOP_BAR_HEIGHT = 64;
     /** Size of a floating action button. */

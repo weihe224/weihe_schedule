@@ -15,20 +15,23 @@
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:colorAccent">@color/primary</item>
         <item name="android:windowBackground">@color/surface</item>
+        <!-- Every screen enters and leaves the same way; see animations.xml. -->
+        <item name="android:windowAnimationStyle">@style/PageAnimation</item>
 
         <!--
-          The status bar carries the header's own colour, so the two read as one
-          surface. Real edge-to-edge was tried and reverted: with the window
-          still fitting system windows, a transparent status bar simply shows
-          the window background as a light strip above the header. Drawing under
-          it needs WindowCompat.setDecorFitsSystemWindows, which lives in
-          androidx.core and cannot be added here (see ARCHITECTURE.md).
+          The header is the page surface now, so the status bar carries the page
+          colour and keeps dark icons. That is the whole of the "seamless" trick
+          here: with the window still fitting system windows, a transparent
+          status bar would simply show the window background as a strip above the
+          header. Real edge-to-edge needs
+          WindowCompat.setDecorFitsSystemWindows, which lives in androidx.core
+          and cannot be added here (see ARCHITECTURE.md).
         -->
-        <item name="android:statusBarColor">@color/inverse_surface</item>
+        <item name="android:statusBarColor">@color/surface</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <!-- Dark system icons: the bar behind them is a deep teal. -->
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- Dark system icons: the bar behind them is the light page surface. -->
+        <item name="android:windowLightStatusBar">true</item>
 
-        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:navigationBarColor">@color/navigation_bar</item>
     </style>
 </resources>

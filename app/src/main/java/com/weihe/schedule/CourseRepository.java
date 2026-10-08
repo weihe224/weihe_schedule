@@ -927,36 +927,42 @@ public class CourseRepository {
      * buildings the timetable actually distinguishes, so the sample week shows
      * the per-venue hours working (a course in 教学楼 C runs to a different clock
      * than one in 教学楼 A) instead of all of them looking alike.</p>
+     *
+     * <p>The colours come from {@link Palette#COURSE_COLORS} rather than from
+     * literals here. They used to be nine hard-coded hex values, which meant the
+     * first thing a new user saw was the one screen in the app that did not use
+     * the design system's palette.</p>
      */
     private List<Course> createSampleCourses() {
+        int[] colors = Palette.COURSE_COLORS;
         List<Course> courses = new ArrayList<>();
         courses.add(sample(1, "\u9AD8\u7B49\u6570\u5B66",
                 "\u5F20\u8001\u5E08", "\u6559\u5B66\u697C A203",
-                1, 1, 2, 1, 16, Course.PARITY_ALL, 0xFF2563EB));
+                1, 1, 2, 1, 16, Course.PARITY_ALL, colors[0]));
         courses.add(sample(2, "\u5927\u5B66\u82F1\u8BED",
                 "\u674E\u8001\u5E08", "\u6559\u5B66\u697C F305",
-                1, 3, 4, 1, 16, Course.PARITY_ALL, 0xFF059669));
+                1, 3, 4, 1, 16, Course.PARITY_ALL, colors[1]));
         courses.add(sample(3, "\u6570\u636E\u7ED3\u6784",
                 "\u738B\u8001\u5E08", "\u6559\u5B66\u697C C203",
-                2, 3, 4, 1, 8, Course.PARITY_ALL, 0xFF7C3AED));
+                2, 3, 4, 1, 8, Course.PARITY_ALL, colors[2]));
         courses.add(sample(4, "\u7EBF\u6027\u4EE3\u6570",
                 "\u5218\u8001\u5E08", "\u6559\u5B66\u697C D102",
-                3, 1, 2, 9, 16, Course.PARITY_ALL, 0xFFEA580C));
+                3, 1, 2, 9, 16, Course.PARITY_ALL, colors[3]));
         courses.add(sample(5, "\u7A0B\u5E8F\u8BBE\u8BA1\u5B9E\u9A8C",
                 "\u9648\u8001\u5E08", "\u6559\u5B66\u697C E302",
-                3, 5, 6, 1, 16, Course.PARITY_ODD, 0xFF0D9488));
+                3, 5, 6, 1, 16, Course.PARITY_ODD, colors[4]));
         courses.add(sample(6, "\u5927\u5B66\u7269\u7406",
                 "\u8D75\u8001\u5E08", "\u6559\u5B66\u697C A201",
-                4, 1, 2, 1, 16, Course.PARITY_EVEN, 0xFFDC2626));
+                4, 1, 2, 1, 16, Course.PARITY_EVEN, colors[5]));
         courses.add(sample(7, "\u4F53\u80B2",
                 "\u5B59\u8001\u5E08", "\u4E1C\u64CD\u573A",
-                5, 3, 4, 1, 16, Course.PARITY_ALL, 0xFFCA8A04));
+                5, 3, 4, 1, 16, Course.PARITY_ALL, colors[6]));
         courses.add(sample(8, "\u5F62\u52BF\u4E0E\u653F\u7B56",
                 "\u5468\u8001\u5E08", "J301 \u5BA4",
-                5, 7, 8, 1, 8, Course.PARITY_EVEN, 0xFFDB2777));
+                5, 7, 8, 1, 8, Course.PARITY_EVEN, colors[7]));
         courses.add(sample(9, "\u64CD\u4F5C\u7CFB\u7EDF",
                 "\u4F55\u8001\u5E08", "\u6559\u5B66\u697C E402",
-                6, 10, 11, 9, 16, Course.PARITY_ALL, 0xFF4F46E5));
+                6, 10, 11, 9, 16, Course.PARITY_ALL, colors[8]));
         return courses;
     }
 

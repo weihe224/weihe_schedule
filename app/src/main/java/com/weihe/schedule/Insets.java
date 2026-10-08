@@ -9,8 +9,8 @@ import android.view.Window;
 /**
  * Window-level setup that the theme cannot express on its own.
  *
- * <p>Two things live here: painting behind the system bars, and keeping the
- * system bar icons legible against whatever the app draws under them. Both have
+ * <p>Two things live here: matching the system bars to the surface drawn next to
+ * them, and keeping the system bar icons legible against that colour. Both have
  * to be done in code because the light/dark icon flags became available at
  * different API levels ({@code windowLightStatusBar} at 23, its navigation bar
  * sibling only at 27) while minSdk is 26.</p>
@@ -21,25 +21,25 @@ public final class Insets {
     }
 
     /**
-     * Keeps the system bars the same colour as the surface drawn next to them.
+     * Paints the system bars to match the app bar and the page.
      *
-     * <p>The colours themselves come from the theme; this only re-applies them
-     * and sets the icon light/dark flags, which need code because
-     * {@code windowLightStatusBar} is API 23 and its navigation bar sibling is
-     * API 27 while minSdk is 26.</p>
+     * <p>Both bars take a light colour, so both need dark icons. That is the
+     * whole of the "seamless header" trick here: the header is
+     * {@link Palette#HEADER_SURFACE} and the status bar is painted the same
+     * value, so there is no boundary to see and nothing that can drift.</p>
      *
      * <p>What is deliberately <em>not</em> done here: drawing behind the bars. A
      * transparent status bar without
      * {@code WindowCompat.setDecorFitsSystemWindows(false)} shows the window
-     * background as a light strip instead of the header, and that helper lives in
+     * background as a strip instead of the header, and that helper lives in
      * androidx.core, which this project cannot depend on. Matching the colour
      * gets the same seamless look with none of the risk.</p>
      */
-    public static void edgeToEdge(Activity activity, boolean darkIconsBehindStatusBar) {
+    public static void applyBrandedSystemBars(Activity activity) {
         Window window = activity.getWindow();
-        window.setStatusBarColor(Palette.INVERSE_SURFACE);
+        window.setStatusBarColor(Palette.HEADER_SURFACE);
         window.setNavigationBarColor(Palette.SURFACE);
-        applySystemBarIconFlags(window, darkIconsBehindStatusBar, true);
+        applySystemBarIconFlags(window, true, true);
     }
 
     /** The status bar height in pixels, for spacing that must clear it. */

@@ -5,12 +5,17 @@
       app draws comes from Palette.java, which keeps the two in step by hand;
       see ARCHITECTURE.md for why the resource migration is still deferred.
     -->
-    <color name="primary">#0F766E</color>
+    <color name="primary">#FF11584E</color>
     <!--
-      Must equal Palette.INVERSE_SURFACE: the header is painted with the Java
-      constant while the status bar takes its colour from here, so if the two
-      drift a seam appears above the header.
+      Must equal Palette.SURFACE: the status bar and the navigation bar are
+      painted with this while the header is painted with the Java constant, so if
+      the two drift a seam appears above the header.
     -->
-    <color name="inverse_surface">#123F3A</color>
-    <color name="surface">#F3F6F4</color>
+    <color name="surface">#FFF3F7F3</color>
+    <!--
+      The navigation bar sits under a light page, so it takes the page colour
+      rather than the surface step; the two are within a contrast point of each
+      other and the system bar should not read as a separate strip.
+    -->
+    <color name="navigation_bar">#FFF3F7F3</color>
 </resources>

@@ -51,6 +51,19 @@ public final class UiKit {
         return Colors.blend(courseColor, Palette.ON_SURFACE, Palette.COURSE_TEXT_MIX);
     }
 
+    /**
+     * The colour of a course card's left rail.
+     *
+     * <p>Softer than the block colour the grid uses. The rail is 4dp of solid
+     * colour on a white card, and at full strength a column of them turns the day
+     * list into a colour chart; the grid keeps the unmixed colour because there it
+     * has to carry the whole block. Both stay recognisably the same course.</p>
+     */
+    public static int courseRail(int courseColor) {
+        return Colors.blend(courseColor, Palette.SURFACE_CONTAINER,
+                Palette.COURSE_RAIL_SOFTEN);
+    }
+
     // -------------------------------------------------------------------- shape
 
     /**
@@ -113,6 +126,24 @@ public final class UiKit {
         card.setOrientation(LinearLayout.VERTICAL);
         styleAsCard(context, card, UiTokens.RADIUS_L, UiTokens.ELEVATION_LOW);
         return card;
+    }
+
+    /**
+     * A card with no border, held up by its shadow alone.
+     *
+     * <p>For a white sheet on the tinted page. The hairline {@link #card} draws is
+     * what makes a card legible when it sits on a surface of almost the same tone;
+     * where the two already differ by more than that, the line is one edge too
+     * many.</p>
+     */
+    public static LinearLayout sheet(Context context) {
+        LinearLayout sheet = new LinearLayout(context);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setPadding(dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_L),
+                dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_L));
+        sheet.setBackground(fill(context, Palette.SURFACE_CONTAINER, UiTokens.RADIUS_L));
+        elevate(sheet, UiTokens.RADIUS_L, UiTokens.ELEVATION_LOW);
+        return sheet;
     }
 
     /** Applies the card surface to any already-built view. */
@@ -226,6 +257,37 @@ public final class UiKit {
         return view;
     }
 
+    /**
+     * The bar pinned to the bottom of an editor, holding its save action.
+     *
+     * <p>One surface with a raised shadow, so the form scrolls underneath it and
+     * the way out is always on screen.</p>
+     */
+    public static LinearLayout actionBar(Context context) {
+        LinearLayout bar = new LinearLayout(context);
+        bar.setOrientation(LinearLayout.VERTICAL);
+        bar.setPadding(dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_M),
+                dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_M));
+        bar.setBackgroundColor(Palette.SURFACE_CONTAINER);
+        bar.setElevation(dp(context, UiTokens.ELEVATION_HIGH));
+        return bar;
+    }
+
+    /** A full-width filled button, for the single action an editor exists to do. */
+    public static TextView primaryAction(Context context, CharSequence label,
+            View.OnClickListener listener) {
+        TextView button = text(context, label, UiTokens.Type.TITLE_SMALL,
+                Palette.ON_PRIMARY, Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        setRoundedBackground(button, Palette.PRIMARY, UiTokens.RADIUS_M,
+                Color.TRANSPARENT, 0f);
+        button.setOnClickListener(listener);
+        ripple(button, UiTokens.RADIUS_M, false);
+        button.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(context, UiTokens.BUTTON_HEIGHT)));
+        return button;
+    }
+
     private static TextView button(Context context, CharSequence label, int background,
             int foreground, float radiusDp, int heightDp, boolean bold,
             View.OnClickListener listener) {
@@ -291,13 +353,26 @@ public final class UiKit {
     /** A small status badge, for example the red "conflict" pill. */
     public static TextView badge(Context context, CharSequence label, int container,
             int onContainer) {
-        TextView badge = text(context, label, UiTokens.Type.LABEL_SMALL, onContainer,
-                Typeface.BOLD);
-        badge.setGravity(Gravity.CENTER);
-        badge.setPadding(dp(context, UiTokens.SPACE_S), dp(context, UiTokens.SPACE_XS),
-                dp(context, UiTokens.SPACE_S), dp(context, UiTokens.SPACE_XS));
-        setRoundedBackground(badge, container, UiTokens.RADIUS_S, Color.TRANSPARENT, 0f);
-        return badge;
+        return pill(context, label, UiTokens.Type.LABEL_SMALL, container, onContainer,
+                true, UiTokens.RADIUS_S);
+    }
+
+    /**
+     * A rounded, filled label.
+     *
+     * <p>The one place a pill is drawn, so a week-parity chip, a course count and a
+     * conflict badge are the same object at three sizes rather than three
+     * hand-rolled backgrounds.</p>
+     */
+    public static TextView pill(Context context, CharSequence label, float sizeSp,
+            int container, int onContainer, boolean bold, float radiusDp) {
+        TextView pill = text(context, label, sizeSp, onContainer,
+                bold ? Typeface.BOLD : Typeface.NORMAL);
+        pill.setGravity(Gravity.CENTER);
+        pill.setPadding(dp(context, UiTokens.SPACE_S + 1), dp(context, UiTokens.SPACE_XS + 1),
+                dp(context, UiTokens.SPACE_S + 1), dp(context, UiTokens.SPACE_XS + 1));
+        setRoundedBackground(pill, container, radiusDp, Color.TRANSPARENT, 0f);
+        return pill;
     }
 
     // ------------------------------------------------------------------- controls
@@ -362,6 +437,20 @@ public final class UiKit {
     /** An empty state: a title, a hint, and nothing else competing for attention. */
     public static View emptyState(Context context, CharSequence title,
             CharSequence hint) {
+        return emptyState(context, 0, title, hint);
+    }
+
+    /**
+     * An empty state with a quiet glyph above it.
+     *
+     * <p>An icon rather than an illustration: the job is to stop a blank area
+     * reading as a loading failure and to say which screen you are on, and one
+     * muted 40dp glyph does both. Anything more competes with the hint.</p>
+     *
+     * @param iconRes a drawable to draw above the title, or 0 for none
+     */
+    public static View emptyState(Context context, int iconRes, CharSequence title,
+            CharSequence hint) {
         LinearLayout box = new LinearLayout(context);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
@@ -370,6 +459,16 @@ public final class UiKit {
         box.setBackground(outline(context, Palette.SURFACE_CONTAINER,
                 UiTokens.RADIUS_L, Palette.OUTLINE_VARIANT,
                 UiTokens.STROKE_HAIRLINE));
+
+        if (iconRes != 0) {
+            android.widget.ImageView glyph = new android.widget.ImageView(context);
+            glyph.setImageResource(iconRes);
+            glyph.setColorFilter(Palette.OUTLINE_VARIANT);
+            int size = dp(context, 40);
+            LinearLayout.LayoutParams glyphParams = new LinearLayout.LayoutParams(size, size);
+            glyphParams.bottomMargin = dp(context, UiTokens.SPACE_M);
+            box.addView(glyph, glyphParams);
+        }
 
         TextView heading = text(context, title, UiTokens.Type.TITLE_SMALL,
                 Palette.ON_SURFACE, Typeface.BOLD);
@@ -399,6 +498,129 @@ public final class UiKit {
         return divider;
     }
 
+    // ------------------------------------------------------------------ app bar
+
+    /**
+     * The standard app bar.
+     *
+     * <p>Every screen used to assemble its own: a dark band, a title, sometimes a
+     * subtitle, sometimes an action. They agreed only by convention, which is how
+     * the settings screen ended up with a different title size from the semester
+     * screen. Here the bar is one object, on the page surface, with the padding
+     * and the title row already decided.</p>
+     *
+     * @param title    the screen's name
+     * @param subtitle a quiet second line, or {@code null}
+     */
+    public static LinearLayout appBar(Context context, CharSequence title,
+            CharSequence subtitle) {
+        LinearLayout bar = new LinearLayout(context);
+        bar.setOrientation(LinearLayout.VERTICAL);
+        bar.setBackgroundColor(Palette.HEADER_SURFACE);
+        bar.setPadding(dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_M),
+                dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_S));
+        bar.addView(appBarTitle(context, title));
+        if (subtitle != null) {
+            TextView line = appBarSubtitle(context, subtitle);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.topMargin = dp(context, 2);
+            bar.addView(line, params);
+        }
+        return bar;
+    }
+
+    /** A screen's name, at the size the app bar uses for it. */
+    public static TextView appBarTitle(Context context, CharSequence value) {
+        return text(context, value, UiTokens.Type.TITLE_LARGE, Palette.ON_HEADER,
+                Typeface.BOLD);
+    }
+
+    /** The quiet line under an app bar title. */
+    public static TextView appBarSubtitle(Context context, CharSequence value) {
+        return text(context, value, UiTokens.Type.LABEL_LARGE, Palette.ON_HEADER_VARIANT,
+                Typeface.NORMAL);
+    }
+
+    /**
+     * Wraps a bar's title row so a back arrow, the title and an action line up.
+     *
+     * <p>The arrow is inset by its own padding, so the row is pulled back by the
+     * same amount: otherwise the title starts 8dp further right on a screen with a
+     * back arrow than on one without, and the two screens' titles do not align
+     * when you move between them.</p>
+     */
+    public static LinearLayout appBarRow(Context context) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        return row;
+    }
+
+    /**
+     * The app bar for a screen pushed on top of another one: back, title, subtitle.
+     *
+     * <p>Six screens drew this themselves and no two agreed: four title sizes
+     * between them, three amounts of side padding, and back arrows tinted three
+     * different ways. One bar means a fix here reaches all of them.</p>
+     *
+     * <p>The title is {@link UiTokens.Type#TITLE_MEDIUM} here rather than the
+     * {@code TITLE_LARGE} the home screen uses. That is the hierarchy working, not
+     * an inconsistency: the home screen is a destination and gets the larger
+     * title, while a detail bar is a label on a way back and should stay short.</p>
+     *
+     * @param onBack what the arrow does, usually {@code view -> finish()}
+     */
+    public static LinearLayout detailAppBar(Context context, CharSequence title,
+            CharSequence subtitle, View.OnClickListener onBack) {
+        LinearLayout bar = new LinearLayout(context);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(context, UiTokens.SPACE_XS), dp(context, UiTokens.SPACE_S),
+                dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_S));
+        bar.setBackgroundColor(Palette.HEADER_SURFACE);
+
+        android.widget.ImageButton back = backButton(context, onBack);
+        bar.addView(back, new LinearLayout.LayoutParams(
+                dp(context, UiTokens.ICON_BUTTON_SIZE),
+                dp(context, UiTokens.ICON_BUTTON_SIZE)));
+
+        LinearLayout block = new LinearLayout(context);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.addView(text(context, title, UiTokens.Type.TITLE_MEDIUM,
+                Palette.ON_HEADER, Typeface.BOLD));
+        // Always present, even when empty: a screen that has to update the line in
+        // place can then ask for it instead of reaching into the bar's children.
+        TextView line = text(context, subtitle == null ? "" : subtitle,
+                UiTokens.Type.LABEL_MEDIUM, Palette.ON_HEADER_VARIANT,
+                Typeface.NORMAL);
+        line.setMaxLines(1);
+        line.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lineParams.topMargin = dp(context, 2);
+        block.addView(line, lineParams);
+        LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        blockParams.leftMargin = dp(context, UiTokens.SPACE_XS);
+        bar.addView(block, blockParams);
+        return bar;
+    }
+
+    /**
+     * The subtitle line of a bar built by {@link #detailAppBar}.
+     *
+     * <p>For the one screen whose subtitle changes while it is open. The contract
+     * is the builder's: the title block is the bar's last child and the subtitle
+     * is the last child of that, which is why the two live next to each other.</p>
+     */
+    public static TextView appBarSubtitleOf(LinearLayout bar) {
+        LinearLayout block = (LinearLayout) bar.getChildAt(bar.getChildCount() - 1);
+        return (TextView) block.getChildAt(block.getChildCount() - 1);
+    }
+
     /** The floating action button: a round, raised, brand-filled icon button. */
     public static android.widget.ImageButton fab(Context context, int iconRes,
             CharSequence description, View.OnClickListener listener) {
@@ -410,39 +632,109 @@ public final class UiKit {
                 dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_L));
         fab.setContentDescription(description);
         fab.setOnClickListener(listener);
+        ripple(fab, UiTokens.FAB_SIZE / 2f, true);
         elevate(fab, UiTokens.FAB_SIZE / 2f, UiTokens.ELEVATION_HIGH);
         return fab;
     }
 
-    /** An icon button sized for a dark header. */
+    /**
+     * A floating action button that is not the main one.
+     *
+     * <p>Two filled buttons stacked in a corner both claim to be the primary
+     * action, and together they put more brand colour on the screen than anything
+     * they act on. The secondary one gets a white surface and a brand icon, which
+     * keeps it obviously a button while leaving the filled one to be the answer to
+     * "what do I do here".</p>
+     */
+    public static android.widget.ImageButton fabTonal(Context context, int iconRes,
+            CharSequence description, View.OnClickListener listener) {
+        android.widget.ImageButton fab = new android.widget.ImageButton(context);
+        fab.setImageResource(iconRes);
+        fab.setColorFilter(Palette.PRIMARY);
+        fab.setBackground(outline(context, Palette.SURFACE_CONTAINER,
+                UiTokens.FAB_SIZE / 2f, Palette.OUTLINE_VARIANT,
+                UiTokens.STROKE_HAIRLINE));
+        fab.setPadding(dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_L),
+                dp(context, UiTokens.SPACE_L), dp(context, UiTokens.SPACE_L));
+        fab.setContentDescription(description);
+        fab.setOnClickListener(listener);
+        ripple(fab, UiTokens.FAB_SIZE / 2f, false);
+        elevate(fab, UiTokens.FAB_SIZE / 2f, UiTokens.ELEVATION_MEDIUM);
+        return fab;
+    }
+
+    /**
+     * An icon button sized for the app bar.
+     *
+     * <p>A quiet white tile on the light bar, with a hairline so it still reads as
+     * a button. It used to be drawn on a dark header, where a translucent white
+     * panel was enough to lift it off the background; on a light bar that has to
+     * become a raised surface instead.</p>
+     */
     public static android.widget.ImageButton headerIcon(Context context, int iconRes,
             CharSequence description, View.OnClickListener listener) {
+        return iconButton(context, iconRes, description, UiTokens.ICON_BUTTON_SIZE,
+                Palette.HEADER_ACTION_BG, Palette.ON_HEADER,
+                Palette.HEADER_ACTION_BORDER, UiTokens.RADIUS_FULL, listener);
+    }
+
+    /**
+     * A round icon button: an icon on a tinted surface with a hairline border.
+     *
+     * <p>The one place a button's size, radius, tint, border and feedback are
+     * decided, so a week stepper, a header action and a dialog's icon action
+     * cannot drift apart.</p>
+     *
+     * <p>{@code sizeDp} is how big the button <em>looks</em>; the view it lives in
+     * is never smaller than {@link UiTokens#TOUCH_TARGET}. A 36dp circle is the
+     * right weight for a week stepper and a 48dp one is not, but a control you can
+     * see and cannot reliably hit is worse than either. The drawn surface is inset
+     * inside the touchable one, which is the whole reason the background goes
+     * through an {@link android.graphics.drawable.InsetDrawable} here rather than
+     * being set directly.</p>
+     */
+    public static android.widget.ImageButton iconButton(Context context, int iconRes,
+            CharSequence description, int sizeDp, int background, int tint, int border,
+            float radiusDp, View.OnClickListener listener) {
+        int visual = Math.max(1, sizeDp);
+        int touch = Math.max(visual, UiTokens.TOUCH_TARGET);
+        int inset = dp(context, (touch - visual) / 2f);
+
         android.widget.ImageButton button = new android.widget.ImageButton(context);
         button.setImageResource(iconRes);
-        button.setColorFilter(Palette.ON_INVERSE);
-        button.setBackground(outline(context, Palette.INVERSE_PANEL,
-                UiTokens.RADIUS_M, Palette.INVERSE_BORDER,
-                UiTokens.STROKE_HAIRLINE));
-        int padding = dp(context, UiTokens.SPACE_S);
+        button.setColorFilter(tint);
+        GradientDrawable surface = outline(context, background, radiusDp, border,
+                border == Color.TRANSPARENT ? 0f : UiTokens.STROKE_HAIRLINE);
+        button.setBackground(inset > 0
+                ? new android.graphics.drawable.InsetDrawable(surface, inset)
+                : surface);
+        int padding = dp(context, (touch - UiTokens.ICON_SIZE) / 2f);
         button.setPadding(padding, padding, padding, padding);
         button.setContentDescription(description);
         button.setOnClickListener(listener);
-        // Both feedback channels, because a header icon has no text to change on
-        // press: a light ripple plus the same small scale as the cards.
-        ripple(button, UiTokens.RADIUS_M, true);
+        // Both feedback channels, because an icon button has no text to change on
+        // press: a ripple plus the same small scale the cards use.
+        ripple(button, radiusDp, false);
         pressScale(button);
+        if (sizeDp > 0) {
+            button.setLayoutParams(new LinearLayout.LayoutParams(
+                    dp(context, touch), dp(context, touch)));
+        }
         return button;
     }
 
-    /** A back arrow in a dark header. */
+    /** A back arrow in the app bar. */
     public static android.widget.ImageButton backButton(Context context,
             View.OnClickListener listener) {
         android.widget.ImageButton back = new android.widget.ImageButton(context);
         back.setImageResource(R.drawable.ic_back);
-        back.setColorFilter(Palette.ON_INVERSE);
+        back.setColorFilter(Palette.ON_HEADER);
         back.setBackgroundColor(Color.TRANSPARENT);
         int padding = dp(context, UiTokens.SPACE_S);
         back.setPadding(padding, padding, padding, padding);
+        // A transparent background still needs a ripple, or the arrow is the one
+        // control in the app that does not answer a finger.
+        ripple(back, UiTokens.RADIUS_FULL, false);
         back.setContentDescription("\u8FD4\u56DE");
         back.setOnClickListener(listener);
         return back;
@@ -604,6 +896,30 @@ public final class UiKit {
     public static void fadeIn(View view) {
         view.setAlpha(0f);
         view.animate().alpha(1f).setDuration(160).start();
+    }
+
+    /**
+     * Brings swapped content in from the side it logically came from.
+     *
+     * <p>A plain fade says "something changed"; a short slide says <em>which way</em>.
+     * Stepping to the next week and stepping back are the two things this screen
+     * does most, and they were indistinguishable. The travel is deliberately tiny
+     * -- a sixth of the content's own height, capped -- because the point is the
+     * direction, not the distance.</p>
+     *
+     * @param direction -1 for back, +1 for forward, 0 for "no direction"
+     */
+    public static void swapIn(View view, int direction) {
+        float travel = Math.min(dp(view.getContext(), 12),
+                Math.max(1, view.getHeight()) / 6f) * Math.signum(direction);
+        view.setAlpha(0f);
+        view.setTranslationX(travel);
+        view.animate()
+                .alpha(1f)
+                .translationX(0f)
+                .setDuration(180)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .start();
     }
 
     /** A small leading icon for a metadata line. */

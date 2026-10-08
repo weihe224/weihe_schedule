@@ -121,6 +121,9 @@ public class WeekGridActivity extends Activity {
         currentWeek = ScheduleUtils.currentWeek(semesterStart, LocalDate.now());
         selectedWeek = Math.max(1, Math.min(ScheduleUtils.SEMESTER_WEEKS,
                 getIntent().getIntExtra(EXTRA_WEEK, currentWeek)));
+        // The app bar is the page surface, so both system bars take that colour and
+        // keep dark icons on it; see Insets for why this cannot live in the theme.
+        Insets.applyBrandedSystemBars(this);
         setContentView(buildRoot());
         render();
     }
@@ -316,56 +319,38 @@ public class WeekGridActivity extends Activity {
     }
 
     private View createHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(10), dp(8), dp(12), dp(8));
-        header.setBackgroundColor(Palette.INVERSE_SURFACE);
-
-        ImageButton back = new ImageButton(this);
-        back.setImageResource(R.drawable.ic_back);
-        back.setColorFilter(Color.WHITE);
-        back.setBackgroundColor(Color.TRANSPARENT);
-        back.setPadding(dp(10), dp(10), dp(10), dp(10));
-        back.setContentDescription("\u8FD4\u56DE");
-        back.setOnClickListener(view -> finish());
-        header.addView(back, new LinearLayout.LayoutParams(dp(40), dp(40)));
-
-        LinearLayout titleBlock = new LinearLayout(this);
-        titleBlock.setOrientation(LinearLayout.VERTICAL);
-        titleBlock.addView(UiKit.text(this, "\u8BFE\u8868\u603B\u89C8",
-                18, Color.WHITE, true));
-        subtitle = UiKit.text(this, "", UiTokens.Type.LABEL_MEDIUM, Palette.ON_INVERSE_VARIANT, false);
-        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        subtitleParams.topMargin = dp(2);
-        titleBlock.addView(subtitle, subtitleParams);
-        LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        blockParams.leftMargin = dp(8);
-        header.addView(titleBlock, blockParams);
+        LinearLayout header = UiKit.detailAppBar(this, "\u8BFE\u8868\u603B\u89C8", "",
+                view -> finish());
+        // The bar's own subtitle view, so the week readout can be updated in place
+        // without rebuilding the header on every swipe.
+        subtitle = UiKit.appBarSubtitleOf(header);
 
         weekNav = new LinearLayout(this);
         weekNav.setOrientation(LinearLayout.HORIZONTAL);
-        weekNav.addView(stepButton("\u25C0", -1));
-        weekNav.addView(stepButton("\u25B6", 1));
+        weekNav.setGravity(Gravity.CENTER_VERTICAL);
+        weekNav.addView(stepButton(R.drawable.ic_chevron_left, -1));
+        weekNav.addView(stepButton(R.drawable.ic_chevron_right, 1));
         header.addView(weekNav);
         return header;
     }
 
-    private View stepButton(String glyph, final int delta) {
-        TextView button = UiKit.text(this, glyph, UiTokens.Type.BODY_LARGE, Color.WHITE, true);
-        button.setGravity(Gravity.CENTER);
-        button.setBackground(UiKit.outline(this,
-                Palette.INVERSE_PANEL, 8, Palette.INVERSE_BORDER, 1));
-        button.setContentDescription(delta < 0
-                ? "\u4E0A\u4E00\u5468" : "\u4E0B\u4E00\u5468");
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                dp(38), dp(34));
-        params.leftMargin = dp(8);
-        button.setLayoutParams(params);
-        button.setOnClickListener(view -> stepWeek(delta));
+    /**
+     * The week stepper.
+     *
+     * <p>Material chevrons rather than the {@code U+25C0} and {@code U+25B6}
+     * glyphs this used to draw: those come from whatever font the device has, at
+     * whatever weight, and next to the app's own vector icons they read as
+     * characters that happen to be arrow-shaped.</p>
+     */
+    private View stepButton(int icon, final int delta) {
+        android.widget.ImageButton button = UiKit.iconButton(this, icon,
+                delta < 0 ? "\u4E0A\u4E00\u5468" : "\u4E0B\u4E00\u5468",
+                UiTokens.CHIP_HEIGHT, Palette.SURFACE_CONTAINER,
+                Palette.ON_HEADER, Palette.HEADER_ACTION_BORDER,
+                UiTokens.RADIUS_FULL, view -> stepWeek(delta));
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams)
+                button.getLayoutParams();
+        params.leftMargin = dp(UiTokens.SPACE_S);
         return button;
     }
 
@@ -738,12 +723,14 @@ public class WeekGridActivity extends Activity {
         LinearLayout blockView = new LinearLayout(this);
         blockView.setOrientation(LinearLayout.VERTICAL);
         blockView.setPadding(dp(6), dp(5), dp(5), dp(5));
-        blockView.setBackground(UiKit.outline(this,
-                Colors.blend(course.color, Color.WHITE, 0.90f), 4,
-                Colors.blend(course.color, Color.WHITE, 0.42f), 1));
+        // The same derived colours the home screen's cards use. They used to be
+        // blended here with three literals of their own, which made one course
+        // draw at two slightly different tints on two screens.
+        blockView.setBackground(UiKit.outline(this, UiKit.courseTint(course.color), 4,
+                UiKit.courseBorder(course.color), 1));
 
         TextView name = UiKit.text(this, course.name, 11,
-                Colors.blend(course.color, Palette.ON_SURFACE, 0.18f), true);
+                UiKit.courseInk(course.color), true);
         name.setMaxLines(sharedCell || span == 1 ? 1 : 2);
         blockView.addView(name);
 

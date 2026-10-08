@@ -91,22 +91,30 @@ public class PaletteContrastTest {
 
     @Test
     public void theHeaderIsReadable() {
-        assertReadable("title on the header", Palette.ON_INVERSE, Palette.INVERSE_SURFACE);
-        assertReadable("subtitle on the header",
-                Palette.ON_INVERSE_VARIANT, Palette.INVERSE_SURFACE);
-        // The translucent panel is composited over the header before checking,
-        // which is what the eye sees: white at INVERSE_PANEL_ALPHA over the dark
-        // header, from the header's side.
-        int panel = Colors.blend(Palette.INVERSE_SURFACE, Palette.INVERSE_PANEL_COLOR,
-                Palette.INVERSE_PANEL_ALPHA / 255f);
-        assertReadable("label on a header panel", Palette.ON_INVERSE, panel);
-        assertReadable("muted label on a header panel",
-                Palette.ON_INVERSE_VARIANT, panel);
-        // And the panel has to be visible against the header it sits on, or the
-        // button it draws disappears.
-        double onHeader = Colors.contrastRatio(panel, Palette.INVERSE_SURFACE);
-        assertTrue("a header panel is invisible on the header: " + round(onHeader),
-                onHeader >= 1.1);
+        assertReadable("title in the app bar", Palette.ON_HEADER,
+                Palette.HEADER_SURFACE);
+        assertReadable("subtitle in the app bar", Palette.ON_HEADER_VARIANT,
+                Palette.HEADER_SURFACE);
+        // The bar is the page surface, so the status bar is painted the same
+        // colour: there is no seam to check, but there is a claim worth pinning,
+        // because the theme's @color/surface and this constant are kept in step by
+        // hand and a drift would show up as a band above the header.
+        assertEquals("the app bar must be the page surface",
+                Palette.SURFACE, Palette.HEADER_SURFACE);
+        // An icon button in the bar has to be visible against it.
+        double action = Colors.contrastRatio(Palette.HEADER_ACTION_BG,
+                Palette.HEADER_SURFACE);
+        assertTrue("a header button is invisible on the bar: " + round(action),
+                action >= 1.02);
+        assertReadable("icon on a header button", Palette.ON_HEADER,
+                Palette.HEADER_ACTION_BG);
+        // The semester panel is a brand tint, so its own text pair has to hold up.
+        assertReadable("label on the header panel", Palette.ON_HEADER_PANEL,
+                Palette.HEADER_PANEL);
+        double panel = Colors.contrastRatio(Palette.HEADER_PANEL,
+                Palette.HEADER_SURFACE);
+        assertTrue("the header panel is invisible on the bar: " + round(panel),
+                panel >= 1.05);
     }
 
     @Test
@@ -142,6 +150,22 @@ public class PaletteContrastTest {
     }
 
     @Test
+    public void everyCourseRailStaysVisibleOnItsCard() {
+        // The rail is the course's colour softened towards the card, and the
+        // softening is the risk: push it far enough and the rail that identifies
+        // the course disappears into the white it is drawn on.
+        for (int color : Palette.COURSE_COLORS) {
+            int rail = Colors.blend(color, Palette.SURFACE_CONTAINER,
+                    Palette.COURSE_RAIL_SOFTEN);
+            double ratio = Colors.contrastRatio(rail, Palette.SURFACE_CONTAINER);
+            assertTrue(String.format(
+                            "course colour %08X has an invisible rail: %s",
+                            Integer.valueOf(color), round(ratio)),
+                    ratio >= 1.8);
+        }
+    }
+
+    @Test
     public void dividersAreVisibleWithoutBeingHeavy() {
         // A divider is not text: it needs to be distinguishable, not readable, and
         // it should stay subtle. Both ends are asserted so it cannot disappear or
@@ -170,7 +194,9 @@ public class PaletteContrastTest {
     @Test
     public void theDeprecatedAliasesStillPointAtTheirReplacement() {
         assertEquals(Palette.SURFACE_CONTAINER, Palette.CARD);
-        assertEquals(Palette.INVERSE_SURFACE, Palette.HEADER);
+        assertEquals(Palette.HEADER_SURFACE, Palette.HEADER);
+        assertEquals(Palette.ON_HEADER_VARIANT, Palette.ON_HEADER_SUBTLE);
+        assertEquals(Palette.HEADER_ACTION_BORDER, Palette.HEADER_BORDER);
         assertEquals(Palette.ON_SURFACE, Palette.INK);
         assertEquals(Palette.ON_SURFACE_VARIANT, Palette.MUTED);
         assertEquals(Palette.OUTLINE_VARIANT, Palette.LINE);
@@ -178,6 +204,7 @@ public class PaletteContrastTest {
         assertEquals(Palette.ACCENT_CONTAINER, Palette.ACCENT_SOFT);
         assertEquals(Palette.ON_ACCENT_CONTAINER, Palette.ACCENT_DARK);
         assertEquals(Palette.PRIMARY_CONTAINER, Palette.SELECTED_DAY_BG);
+        assertEquals(Palette.HEADER_PANEL, Palette.PARITY_PILL);
     }
 
     @Test
@@ -221,10 +248,5 @@ public class PaletteContrastTest {
             assertEquals(value + " is not a multiple of the base unit",
                     0, value % UiTokens.SPACE_UNIT);
         }
-    }
-
-    /** Extracts the alpha channel as a 0..1 fraction. */
-    private static float alphaOf(int color) {
-        return ((color >>> 24) & 0xFF) / 255f;
     }
 }

@@ -22,4 +22,21 @@
         <item name="android:windowEnterAnimation">@anim/dialog_in</item>
         <item name="android:windowExitAnimation">@anim/dialog_out</item>
     </style>
+
+    <!--
+      How one activity gives way to the next.
+
+      Set on the theme rather than passed to overridePendingTransition at each of
+      the nine startActivity call sites: one definition cannot be forgotten in a
+      tenth place, and every screen then moves the same way. All four slots are
+      filled on purpose, because a half-specified pair makes the platform
+      substitute its own default for the missing side, which is a full-width
+      slide.
+    -->
+    <style name="PageAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/page_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/page_still</item>
+        <item name="android:activityCloseEnterAnimation">@anim/page_still</item>
+        <item name="android:activityCloseExitAnimation">@anim/page_out</item>
+    </style>
 </resources>

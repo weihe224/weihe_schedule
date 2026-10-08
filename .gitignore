@@ -19,6 +19,13 @@ local.properties
 .externalNativeBuild/
 .cxx/
 
+# Output of the tools/ generators: the mask contact sheet IconForge writes for
+# eyeballing the launcher icon, and the screenshots/UI dumps taken while
+# checking a build on a device. Both are reproducible from icon.png.
+tools/preview/
+tools/shots/
+tools/out/
+
 # Packaged artifacts
 *.apk
 *.aab

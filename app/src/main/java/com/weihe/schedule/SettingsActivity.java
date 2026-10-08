@@ -48,6 +48,9 @@ public class SettingsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         repository = new CourseRepository(this);
+        // The app bar is the page surface, so both system bars take that colour and
+        // keep dark icons on it; see Insets for why this cannot live in the theme.
+        Insets.applyBrandedSystemBars(this);
         setContentView(buildRoot());
     }
 
@@ -117,31 +120,9 @@ public class SettingsActivity extends Activity {
     }
 
     private View createHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_S),
-                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_S));
-        header.setBackgroundColor(Palette.INVERSE_SURFACE);
-
-        ImageButton back = UiKit.backButton(this, view -> finish());
-        header.addView(back, new LinearLayout.LayoutParams(
-                dp(UiTokens.TOUCH_TARGET - UiTokens.SPACE_S),
-                dp(UiTokens.TOUCH_TARGET - UiTokens.SPACE_S)));
-
-        LinearLayout titleBlock = new LinearLayout(this);
-        titleBlock.setOrientation(LinearLayout.VERTICAL);
-        titleBlock.addView(UiKit.text(this, "\u8BBE\u7F6E",
-                UiTokens.Type.TITLE_MEDIUM, Palette.ON_INVERSE, Typeface.BOLD));
-        titleBlock.addView(UiKit.text(this,
+        return UiKit.detailAppBar(this, "\u8BBE\u7F6E",
                 "\u8BFE\u8868\u6570\u636E\u3001\u5B66\u671F\u4E0E\u4F5C\u606F\u65F6\u95F4",
-                UiTokens.Type.LABEL_MEDIUM, Palette.ON_INVERSE_VARIANT,
-                Typeface.NORMAL));
-        LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        blockParams.leftMargin = dp(UiTokens.SPACE_S);
-        header.addView(titleBlock, blockParams);
-        return header;
+                view -> finish());
     }
 
     private TextView sectionLabel(String text) {

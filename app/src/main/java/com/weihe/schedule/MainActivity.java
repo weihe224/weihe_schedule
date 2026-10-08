@@ -47,6 +47,12 @@ public class MainActivity extends Activity {
     private int selectedWeek;
     private int selectedDay;
 
+    /**
+     * Which way the last day or week change moved, so the new list can slide in
+     * from that side. Zero means "no direction", for the first render.
+     */
+    private int motionDirection;
+
     private LinearLayout dayStrip;
     private LinearLayout courseContainer;
     private TextView weekDates;
@@ -70,9 +76,9 @@ public class MainActivity extends Activity {
         currentWeek = ScheduleUtils.currentWeek(semesterStart, today);
         selectedWeek = currentWeek;
         selectedDay = today.getDayOfWeek().getValue();
-        // The header is a dark teal, so the status bar is drawn transparent and
-        // the header paints behind it; the system icons stay light.
-        Insets.edgeToEdge(this, false);
+        // The app bar is the page surface, so the status bar takes the same colour
+        // and keeps dark icons: the two read as one surface with no seam.
+        Insets.applyBrandedSystemBars(this);
         setContentView(buildRoot());
         refreshAll();
     }
@@ -158,17 +164,21 @@ public class MainActivity extends Activity {
      * page rather than on the app -- and because the header is now the title, the
      * semester and settings, with nothing else competing.</p>
      *
+     * <p>The overview keeps the filled brand button and the today button is drawn
+     * on a plain surface. Stacking two filled buttons in one corner makes both of
+     * them claim to be the main action, and two teal discs are more brand colour
+     * than the timetable underneath them.</p>
+     *
      * <p>The today button is hidden while the screen is already showing today:
      * a control that would do nothing is noise, and hiding it also makes the
-     * corner quieter on the common case. It sits above the overview button, close
-     * enough to read as one cluster but far enough that neither is mis-tapped.</p>
+     * corner quieter on the common case.</p>
      */
     private View createFloatingActions() {
         LinearLayout stack = new LinearLayout(this);
         stack.setOrientation(LinearLayout.VERTICAL);
         stack.setGravity(Gravity.END);
 
-        todayButton = UiKit.fab(this, R.drawable.ic_today,
+        todayButton = UiKit.fabTonal(this, R.drawable.ic_today,
                 "\u56DE\u5230\u4ECA\u5929", view -> goToToday());
         todayButton.setContentDescription("\u56DE\u5230\u4ECA\u5929");
         stack.addView(todayButton, new LinearLayout.LayoutParams(
@@ -197,47 +207,103 @@ public class MainActivity extends Activity {
      * am now", which is the week as well as the date.</p>
      */
     private void goToToday() {
+        LocalDate today = LocalDate.now();
+        motionDirection = selectedWeek != currentWeek ? Integer.signum(currentWeek - selectedWeek)
+                : Integer.signum(today.getDayOfWeek().getValue() - selectedDay);
         selectedWeek = currentWeek;
-        selectedDay = LocalDate.now().getDayOfWeek().getValue();
+        selectedDay = today.getDayOfWeek().getValue();
         refreshAll();
-        UiKit.fadeIn(courseContainer);
+        UiKit.swapIn(courseContainer, motionDirection);
     }
 
-    /** Whether the screen is already showing this week and today. */
+    /**
+     * Whether the screen is already showing this week and today.
+     *
+     * <p>Note the two halves: the week <em>and</em> the weekday. A screen showing
+     * the current week but a different day is not "today", and it is exactly the
+     * state the return button is for.</p>
+     */
     private boolean isShowingToday() {
         return selectedWeek == currentWeek
                 && selectedDay == LocalDate.now().getDayOfWeek().getValue();
     }
 
     /**
-     * The top app bar: the title, the semester it is showing, and settings.
+     * Keeps the two "get back" controls in step with what is on screen.
      *
-     * <p>One dark surface. The week selector used to be a second dark block here,
-     * which read as two competing headers, so it moved to a surface card on the
-     * page. The overview button moved out of the header too -- see
-     * {@link #createFloatingActions}.</p>
+     * <p>Called from every path that can change the selected day or week, which is
+     * the point of having it in one place: when it lived inline in
+     * {@link #refreshAll()} the day-change path silently skipped it.</p>
+     */
+    private void syncReturnControls() {
+        if (todayButton != null) {
+            // Hidden while the screen already shows today: a button that would do
+            // nothing is noise.
+            todayButton.setVisibility(isShowingToday() ? View.GONE : View.VISIBLE);
+        }
+        if (backToThisWeek != null) {
+            backToThisWeek.setVisibility(
+                    selectedWeek == currentWeek ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    /**
+     * The top app bar: the app's mark, the page title, the semester it is
+     * showing, and settings.
+     *
+     * <p>This used to be the one dark band in the app, with the week selector as a
+     * second dark block under it. Three things came out of that: the lightest
+     * screen in the app opened with its heaviest element, the two dark blocks read
+     * as two competing headers, and the status bar had to be tinted to match or a
+     * seam showed above it.</p>
+     *
+     * <p>Now the bar is the page surface. The title carries the hierarchy, the
+     * semester row is a tinted panel, and the status bar is simply painted the
+     * same colour as the bar with dark icons on it.</p>
      */
     private View createHeader() {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setBackgroundColor(Palette.INVERSE_SURFACE);
+        header.setBackgroundColor(Palette.HEADER_SURFACE);
         header.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M),
-                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M));
+                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_S));
 
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.addView(UiKit.text(this, "\u6211\u7684\u8BFE\u8868",
-                        UiTokens.Type.TITLE_LARGE, Palette.ON_INVERSE, Typeface.BOLD),
-                new LinearLayout.LayoutParams(
-                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout titleRow = UiKit.appBarRow(this);
+        titleRow.addView(createBrandMark());
+
+        TextView title = UiKit.appBarTitle(this, "\u6211\u7684\u8BFE\u8868");
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        titleParams.leftMargin = dp(UiTokens.SPACE_M);
+        titleRow.addView(title, titleParams);
+
         titleRow.addView(headerAction(R.drawable.ic_settings, "\u8BBE\u7F6E",
                 view -> startActivity(new Intent(this, SettingsActivity.class))));
         header.addView(titleRow);
 
         header.addView(createSemesterControl(),
-                UiKit.stack(this, UiTokens.SPACE_S + 2));
+                UiKit.stack(this, UiTokens.SPACE_M));
         return header;
+    }
+
+    /**
+     * The app's own mark: the launcher icon's calendar reduced to a 34dp tile.
+     *
+     * <p>One element, and the only decoration in the app bar. Without it the bar
+     * is a title floating in white with no sign of which app this is, and with
+     * anything more it competes with the title.</p>
+     */
+    private View createBrandMark() {
+        android.widget.ImageView mark = new android.widget.ImageView(this);
+        mark.setImageResource(R.drawable.ic_today);
+        mark.setColorFilter(Palette.ON_PRIMARY);
+        mark.setBackground(UiKit.fill(this, Palette.PRIMARY, UiTokens.RADIUS_M));
+        int size = dp(34);
+        mark.setLayoutParams(new LinearLayout.LayoutParams(size, size));
+        int padding = dp(UiTokens.SPACE_S);
+        mark.setPadding(padding, padding, padding, padding);
+        mark.setContentDescription("\u62FE\u8BFE");
+        return mark;
     }
 
     /**
@@ -247,23 +313,30 @@ public class MainActivity extends Activity {
      * a full-width row with its own icon and a chevron, rather than a small chip
      * tucked beside the subtitle. A chevron is the platform's way of saying "this
      * leads somewhere", which the old chip did not say at all.</p>
+     *
+     * <p>The row is a brand tint rather than a translucent white: on a dark bar
+     * "lighter than the background" was the way to lift a control off it, and on a
+     * light bar the same trick draws nothing at all.</p>
      */
     private View createSemesterControl() {
         LinearLayout row = new UiKit.PressFeedback(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(UiTokens.SPACE_S + 2), dp(UiTokens.SPACE_S),
-                dp(UiTokens.SPACE_S + 2), dp(UiTokens.SPACE_S));
-        UiKit.setRoundedBackground(row, Palette.INVERSE_PANEL, UiTokens.RADIUS_M,
-                Palette.INVERSE_BORDER, UiTokens.STROKE_HAIRLINE);
+        row.setPadding(dp(UiTokens.SPACE_M), dp(UiTokens.SPACE_S),
+                dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_S));
+        row.setMinimumHeight(dp(UiTokens.TOUCH_TARGET));
+        UiKit.setRoundedBackground(row, Palette.HEADER_PANEL, UiTokens.RADIUS_M,
+                Color.TRANSPARENT, 0f);
         row.setContentDescription("\u5207\u6362\u5B66\u671F");
 
-        android.widget.ImageView icon = UiKit.inlineIcon(this,
-                R.drawable.ic_today, Palette.ON_INVERSE_VARIANT);
-        row.addView(icon);
+        // A graduation cap rather than a calendar: the calendar glyph is on the
+        // brand mark beside the title and on the button that jumps back to today,
+        // and a third one would make three different actions look alike.
+        row.addView(UiKit.inlineIcon(this, R.drawable.ic_school,
+                Palette.ON_HEADER_PANEL));
 
-        semesterSubtitle = UiKit.text(this, "", UiTokens.Type.LABEL_LARGE,
-                Palette.ON_INVERSE, Typeface.NORMAL);
+        semesterSubtitle = UiKit.text(this, "", UiTokens.Type.BODY_MEDIUM,
+                Palette.ON_HEADER_PANEL, Typeface.NORMAL);
         semesterSubtitle.setMaxLines(1);
         semesterSubtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
@@ -274,24 +347,18 @@ public class MainActivity extends Activity {
         // The word says what tapping does; the chip beside it stays for the one
         // case where the app is showing a term the calendar is not in, because
         // then "switch" is not what the user needs to read -- "get back" is.
-        semesterChip = UiKit.text(this, "", UiTokens.Type.LABEL_MEDIUM,
-                Palette.ON_INVERSE, Typeface.BOLD);
-        semesterChip.setGravity(Gravity.CENTER);
-        semesterChip.setPadding(dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_XS),
-                dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_XS));
-        UiKit.setRoundedBackground(semesterChip, Palette.PRIMARY,
-                UiTokens.RADIUS_S, Color.TRANSPARENT, 0f);
+        semesterChip = UiKit.pill(this, "", UiTokens.Type.LABEL_MEDIUM,
+                Palette.PRIMARY, Palette.ON_PRIMARY, true, UiTokens.RADIUS_FULL);
         LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         chipParams.rightMargin = dp(UiTokens.SPACE_S);
         row.addView(semesterChip, chipParams);
 
-        android.widget.ImageView chevron = UiKit.inlineIcon(this,
-                R.drawable.ic_chevron_right, Palette.ON_INVERSE_VARIANT);
-        row.addView(chevron);
+        row.addView(UiKit.inlineIcon(this, R.drawable.ic_chevron_right,
+                Palette.ON_HEADER_PANEL));
 
-        UiKit.ripple(row, UiTokens.RADIUS_M, true);
+        UiKit.ripple(row, UiTokens.RADIUS_M, false);
         UiKit.pressable(row, view -> openSemesters());
         return row;
     }
@@ -299,11 +366,9 @@ public class MainActivity extends Activity {
     private View headerAction(int icon, String description,
             View.OnClickListener listener) {
         ImageButton button = UiKit.headerIcon(this, icon, description, listener);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                dp(UiTokens.TOUCH_TARGET - UiTokens.SPACE_S),
-                dp(UiTokens.TOUCH_TARGET - UiTokens.SPACE_S));
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams)
+                button.getLayoutParams();
         params.leftMargin = dp(UiTokens.SPACE_S);
-        button.setLayoutParams(params);
         return button;
     }
 
@@ -458,12 +523,13 @@ public class MainActivity extends Activity {
         if (week == selectedWeek) {
             return;
         }
+        motionDirection = week > selectedWeek ? 1 : -1;
         selectedWeek = week;
         if (week == currentWeek) {
             selectedDay = LocalDate.now().getDayOfWeek().getValue();
         }
         refreshAll();
-        UiKit.fadeIn(courseContainer);
+        UiKit.swapIn(courseContainer, motionDirection);
     }
 
     /**
@@ -475,7 +541,7 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M),
-                dp(UiTokens.SPACE_M), dp(UiTokens.SPACE_XS));
+                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M));
         UiKit.styleAsCard(this, card, UiTokens.RADIUS_L, UiTokens.ELEVATION_LOW);
 
         LinearLayout topRow = new LinearLayout(this);
@@ -498,11 +564,9 @@ public class MainActivity extends Activity {
         topRow.addView(weekBlock, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        parityPill = UiKit.text(this, "", UiTokens.Type.LABEL_MEDIUM,
-                Palette.ON_SURFACE_VARIANT, Typeface.BOLD);
-        parityPill.setGravity(Gravity.CENTER);
-        parityPill.setPadding(dp(UiTokens.SPACE_S + 2), dp(UiTokens.SPACE_XS + 1),
-                dp(UiTokens.SPACE_S + 2), dp(UiTokens.SPACE_XS + 1));
+        parityPill = UiKit.pill(this, "", UiTokens.Type.LABEL_MEDIUM,
+                Palette.SURFACE_CONTAINER_LOW, Palette.ON_SURFACE_VARIANT, true,
+                UiTokens.RADIUS_FULL);
         topRow.addView(parityPill);
         card.addView(topRow);
 
@@ -519,17 +583,21 @@ public class MainActivity extends Activity {
 
         todayLabel = UiKit.text(this, "", UiTokens.Type.LABEL_LARGE,
                 Palette.ON_SURFACE_VARIANT, Typeface.BOLD);
+        todayLabel.setMaxLines(1);
+        todayLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
         row.addView(todayLabel, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         backToThisWeek = navChip("\u56DE\u5230\u672C\u5468", view -> {
+            motionDirection = Integer.signum(currentWeek - selectedWeek);
             selectedWeek = currentWeek;
             selectedDay = LocalDate.now().getDayOfWeek().getValue();
             refreshAll();
+            UiKit.swapIn(courseContainer, motionDirection);
         });
         LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT - 4));
-        backParams.rightMargin = dp(UiTokens.SPACE_XS + 2);
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT));
+        backParams.rightMargin = dp(UiTokens.SPACE_S);
         row.addView(backToThisWeek, backParams);
 
         row.addView(stepButton(R.drawable.ic_chevron_left, "\u4E0A\u4E00\u5468",
@@ -542,36 +610,27 @@ public class MainActivity extends Activity {
     /** A round icon button for stepping one week, matching the chip height. */
     private View stepButton(int icon, String description,
             View.OnClickListener listener) {
-        ImageButton button = new ImageButton(this);
-        button.setImageResource(icon);
-        button.setColorFilter(Palette.ON_SURFACE);
-        UiKit.setRoundedBackground(button, Palette.SURFACE_CONTAINER_LOW,
-                UiTokens.RADIUS_S + 2, Palette.OUTLINE_VARIANT,
-                UiTokens.STROKE_HAIRLINE);
-        int padding = dp(UiTokens.SPACE_S);
-        button.setPadding(padding, padding, padding, padding);
-        button.setContentDescription(description);
-        button.setOnClickListener(listener);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                dp(UiTokens.CHIP_HEIGHT - 4), dp(UiTokens.CHIP_HEIGHT - 4));
+        ImageButton button = UiKit.iconButton(this, icon, description,
+                UiTokens.CHIP_HEIGHT, Palette.SURFACE_CONTAINER_LOW,
+                Palette.ON_SURFACE, Palette.OUTLINE_VARIANT,
+                UiTokens.RADIUS_S + 2, listener);
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams)
+                button.getLayoutParams();
         params.leftMargin = dp(UiTokens.SPACE_S);
-        button.setLayoutParams(params);
         return button;
     }
 
     private TextView navChip(String label, View.OnClickListener listener) {
         TextView chip = UiKit.text(this, label, UiTokens.Type.LABEL_LARGE,
-                Palette.ON_SURFACE, Typeface.BOLD);
+                Palette.PRIMARY, Typeface.BOLD);
         chip.setGravity(Gravity.CENTER);
         chip.setPadding(dp(UiTokens.SPACE_M), 0, dp(UiTokens.SPACE_M), 0);
-        UiKit.setRoundedBackground(chip, Palette.SURFACE_CONTAINER,
-                UiTokens.RADIUS_S + 2, Palette.OUTLINE_VARIANT,
-                UiTokens.STROKE_HAIRLINE);
+        UiKit.setRoundedBackground(chip, Palette.PRIMARY_CONTAINER,
+                UiTokens.RADIUS_FULL, Color.TRANSPARENT, 0f);
         chip.setOnClickListener(listener);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT - 4));
-        params.leftMargin = dp(UiTokens.SPACE_XS + 2);
-        chip.setLayoutParams(params);
+        // The chip's own feedback, so a text control does not feel inert next to
+        // the icon buttons either side of it.
+        UiKit.ripple(chip, UiTokens.RADIUS_FULL, false);
         return chip;
     }
 
@@ -600,16 +659,18 @@ public class MainActivity extends Activity {
         dayHeader.setGravity(Gravity.CENTER_VERTICAL);
         dayTitle = UiKit.text(this, "", UiTokens.Type.TITLE_MEDIUM,
                 Palette.ON_SURFACE, Typeface.BOLD);
+        dayTitle.setMaxLines(1);
+        dayTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
         dayHeader.addView(dayTitle, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        dayCountPill = UiKit.text(this, "", UiTokens.Type.LABEL_MEDIUM,
-                Palette.ON_SURFACE_VARIANT, Typeface.BOLD);
-        dayCountPill.setGravity(Gravity.CENTER);
-        dayCountPill.setPadding(dp(UiTokens.SPACE_S + 1), dp(UiTokens.SPACE_XS),
-                dp(UiTokens.SPACE_S + 1), dp(UiTokens.SPACE_XS));
-        UiKit.setRoundedBackground(dayCountPill, Palette.SURFACE_CONTAINER_HIGH,
-                UiTokens.RADIUS_S, Color.TRANSPARENT, 0f);
-        dayHeader.addView(dayCountPill);
+        dayCountPill = UiKit.pill(this, "", UiTokens.Type.LABEL_MEDIUM,
+                Palette.SURFACE_CONTAINER_HIGH, Palette.ON_SURFACE_VARIANT, true,
+                UiTokens.RADIUS_FULL);
+        LinearLayout.LayoutParams pillParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        pillParams.leftMargin = dp(UiTokens.SPACE_S);
+        dayHeader.addView(dayCountPill, pillParams);
         LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -662,11 +723,13 @@ public class MainActivity extends Activity {
         if (next == selectedWeek) {
             return;
         }
+        motionDirection = delta;
         selectedWeek = next;
         if (selectedWeek == currentWeek) {
             selectedDay = LocalDate.now().getDayOfWeek().getValue();
         }
         refreshAll();
+        UiKit.swapIn(courseContainer, motionDirection);
     }
 
     private void openOverview() {
@@ -690,22 +753,20 @@ public class MainActivity extends Activity {
         selectedWeek = Math.max(1, Math.min(ScheduleUtils.SEMESTER_WEEKS, selectedWeek));
         selectedDay = Math.max(1, Math.min(7, selectedDay));
 
-        LocalDate monday = ScheduleUtils.weekStart(semesterStart, selectedWeek);
-        weekDates.setText(ScheduleUtils.formatDate(monday) + " - "
-                + ScheduleUtils.formatDate(monday.plusDays(6)));
         boolean showingCurrentWeek = selectedWeek == currentWeek;
         parityPill.setText(showingCurrentWeek
                 ? "\u672C\u5468" : ScheduleUtils.parityName(selectedWeek));
-        // Now that the pill sits on a light card rather than in the dark header,
-        // its two states are the light-surface pair: the accent container when
-        // this is the week the calendar is in, a quiet outline when it is not.
+        // The pill sits on a light card, so its two states are the light-surface
+        // pair: the accent container when this is the week the calendar is in, a
+        // quiet grey when it is not. The accent is the same orange as the icon's
+        // one highlighted tile, which is why "this is the week you are in" is the
+        // only thing in the app allowed to use it.
         parityPill.setTextColor(showingCurrentWeek
                 ? Palette.ON_ACCENT_CONTAINER : Palette.ON_SURFACE_VARIANT);
         parityPill.setBackground(showingCurrentWeek
-                ? UiKit.fill(this, Palette.ACCENT_CONTAINER, UiTokens.RADIUS_S)
-                : UiKit.outline(this, Palette.SURFACE_CONTAINER_LOW,
-                        UiTokens.RADIUS_S, Palette.OUTLINE_VARIANT,
-                        UiTokens.STROKE_HAIRLINE));
+                ? UiKit.fill(this, Palette.ACCENT_CONTAINER, UiTokens.RADIUS_FULL)
+                : UiKit.fill(this, Palette.SURFACE_CONTAINER_LOW,
+                        UiTokens.RADIUS_FULL));
         semesterSubtitle.setText(active.label() + " \u00B7 "
                 + ScheduleUtils.formatDate(semesterStart) + " \u5F00\u5B66");
         if (semesterChip != null) {
@@ -718,14 +779,7 @@ public class MainActivity extends Activity {
             semesterChip.setText("\u67E5\u770B\u5F53\u524D\u5B66\u671F");
             semesterChip.setVisibility(inSession ? View.GONE : View.VISIBLE);
         }
-        if (todayButton != null) {
-            // Hidden while the screen already shows today: a button that would do
-            // nothing is noise.
-            todayButton.setVisibility(isShowingToday() ? View.GONE : View.VISIBLE);
-        }
-        if (backToThisWeek != null) {
-            backToThisWeek.setVisibility(showingCurrentWeek ? View.GONE : View.VISIBLE);
-        }
+        syncReturnControls();
         if (todayLabel != null) {
             boolean inSession = !today.isBefore(active.start())
                     && !today.isAfter(active.lastDay());
@@ -753,6 +807,25 @@ public class MainActivity extends Activity {
                 + selectedWeek + "\u5468");
     }
 
+    /**
+     * The seven days of the week on screen, Monday first.
+     *
+     * <p>Three states, three treatments, and the hierarchy inside a tile is the
+     * same in all of them: the number is what people look for, so it is the larger
+     * line, and the weekday above it is the label that says which column this is.
+     * An earlier version drew both at 10sp, which made a row of seven tiles that
+     * had to be read rather than glanced at.</p>
+     *
+     * <p>The large line is the day of the month, not {@code 10/12}. Seven columns
+     * on a 320dp phone leave about 44dp each, and at a 130% font scale
+     * {@code 10/12} is already 84px against 84px of space: it clipped the last
+     * digit. Auto-sizing cannot rescue it either, because at a 200% scale even the
+     * smallest size on the type scale is too wide, and a control whose whole job is
+     * showing dates must not have a size at which it stops doing that. One or two
+     * digits fit at every scale, and the month is not lost: the week card directly
+     * above reads {@code 10/5 - 10/11}, and the day header reads
+     * {@code 周四 · 今天 · 10/8}.</p>
+     */
     private void renderDayStrip() {
         dayStrip.removeAllViews();
         LocalDate today = LocalDate.now();
@@ -763,7 +836,14 @@ public class MainActivity extends Activity {
             LinearLayout item = new UiKit.PressFeedback(this);
             item.setOrientation(LinearLayout.VERTICAL);
             item.setGravity(Gravity.CENTER);
-            item.setPadding(dp(1), dp(UiTokens.SPACE_S), dp(1), dp(UiTokens.SPACE_S));
+            item.setPadding(0, dp(UiTokens.SPACE_S), 0, dp(UiTokens.SPACE_S));
+            // A minimum, not a fixed height. Every cell carries the same two lines
+            // so they stay the same height as each other, and at a large font scale
+            // the strip grows instead of cutting the numbers in half.
+            item.setMinimumHeight(dp(UiTokens.DAY_CELL_HEIGHT));
+            item.setContentDescription(ScheduleUtils.dayName(day)
+                    + ScheduleUtils.formatFullDate(dateValue)
+                    + (isToday ? "\uFF0C\u4ECA\u5929" : ""));
             // Three states, three treatments. The selected day is the loudest
             // thing in the strip: a filled brand tile with white text. Today is
             // marked but not louder than the selection, and the rest stay quiet.
@@ -779,45 +859,58 @@ public class MainActivity extends Activity {
             }
             TextView name = UiKit.text(this, ScheduleUtils.dayName(day),
                     UiTokens.Type.LABEL_SMALL,
-                    selected ? Palette.ON_PRIMARY
-                            : isToday ? Palette.ON_ACCENT_CONTAINER
-                                    : Palette.ON_SURFACE_VARIANT,
-                    selected || isToday ? Typeface.BOLD : Typeface.NORMAL);
-            name.setGravity(Gravity.CENTER);
-            TextView date = UiKit.text(this, ScheduleUtils.formatDate(dateValue),
-                    UiTokens.Type.LABEL_SMALL,
-                    // On the filled tile the date steps back to the container
-                    // tone rather than competing with the weekday above it.
                     selected ? Palette.PRIMARY_CONTAINER
                             : isToday ? Palette.ON_ACCENT_CONTAINER
+                                    : Palette.ON_SURFACE_VARIANT,
+                    selected || isToday);
+            TextView number = UiKit.text(this, String.valueOf(dateValue.getDayOfMonth()),
+                    UiTokens.Type.BODY_MEDIUM,
+                    selected ? Palette.ON_PRIMARY
+                            : isToday ? Palette.ON_ACCENT_CONTAINER
                                     : Palette.ON_SURFACE,
-                    selected || isToday ? Typeface.BOLD : Typeface.NORMAL);
-            date.setGravity(Gravity.CENTER);
-            LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-            dateParams.topMargin = dp(UiTokens.SPACE_XS + 1);
-            item.addView(name);
-            item.addView(date, dateParams);
+                    true);
+            // On the filled tile the weekday steps back to the container tone
+            // rather than competing with the number below it.
+            addDayLine(item, name, 9f, UiTokens.Type.LABEL_SMALL);
+            addDayLine(item, number, 10f, UiTokens.Type.BODY_MEDIUM);
             final int chosenDay = day;
-            UiKit.ripple(item, UiTokens.RADIUS_M, false);
+            UiKit.ripple(item, UiTokens.RADIUS_M, selected);
             UiKit.pressable(item, view -> selectDay(chosenDay));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    0, dp(UiTokens.TOUCH_TARGET + UiTokens.SPACE_S), 1f);
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             params.rightMargin = day < 7 ? dp(2) : 0;
             dayStrip.addView(item, params);
         }
     }
 
-    /** Selects a day and lets the course list arrive rather than snap. */
+    /** Adds one centred, non-clipping line to a day tile. */
+    private void addDayLine(LinearLayout cell, TextView line, float minSizeSp,
+            float maxSizeSp) {
+        line.setGravity(Gravity.CENTER);
+        line.setSingleLine(true);
+        line.setAutoSizeTextTypeUniformWithConfiguration(Math.round(minSizeSp),
+                Math.round(maxSizeSp), 1, android.util.TypedValue.COMPLEX_UNIT_SP);
+        cell.addView(line, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    /** Selects a day and lets the course list arrive from the side it moved to. */
     private void selectDay(int day) {
         if (day == selectedDay) {
             return;
         }
+        motionDirection = day > selectedDay ? 1 : -1;
         selectedDay = day;
         renderDayStrip();
         renderCourses();
-        UiKit.fadeIn(courseContainer);
+        // The "back to today" button answers "is this screen already showing
+        // today?", and the day is half of that question. Without this the button
+        // stayed hidden after tapping any other day of the current week, so the
+        // one case it exists for -- you moved to Wednesday and want Thursday
+        // back -- had no way back at all.
+        syncReturnControls();
+        UiKit.swapIn(courseContainer, motionDirection);
     }
 
     private void renderCourses() {
@@ -836,7 +929,7 @@ public class MainActivity extends Activity {
         if (visible.isEmpty()) {
             View empty = createEmptyState();
             courseContainer.addView(empty);
-            UiKit.fadeIn(empty);
+            UiKit.swapIn(empty, motionDirection);
             return;
         }
         Set<Long> conflicting = CourseConflicts.conflictingIds(visible);
@@ -854,39 +947,40 @@ public class MainActivity extends Activity {
     /**
      * One course, as a card.
      *
-     * <p>The layout is a colour rail, a period/clock block, a hairline, then the
-     * content. The rail carries the course's identity colour at full strength, and
-     * everything else is drawn from the neutral surfaces, so a list of courses
-     * reads as a list rather than as a bag of colours.</p>
+     * <p>Three columns, in the order the eye wants them: a colour rail that
+     * identifies the course, a tinted tile holding the periods and their clock
+     * times, and the content. The name is the largest thing on the card, the
+     * venue and teacher are one quiet block under it, and the week rule is a small
+     * pill at the bottom, so the card can be read top-down in one pass instead of
+     * being scanned for the part you wanted.</p>
+     *
+     * <p>The vertical hairline that used to separate the time column from the
+     * content is gone. It divided two things that the tint already separates, and
+     * a full-height line down every card is a lot of ink for a boundary nobody
+     * needed drawn.</p>
      */
     private View createCourseCard(Course course, boolean hasConflict) {
         LinearLayout card = new UiKit.PressFeedback(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         UiKit.styleAsCard(this, card, UiTokens.RADIUS_L, UiTokens.ELEVATION_LOW);
-        card.setMinimumHeight(dp(84));
+        card.setMinimumHeight(dp(88));
 
         // The colour rail keeps a course identifiable at a glance, at the card's
-        // own width rather than a stripe bolted on: 4dp of the course colour,
-        // rounded with the card by the clip.
+        // own width rather than a stripe bolted on: 4dp of the course's colour,
+        // softened towards the card so a column of them stays quiet, and rounded
+        // with the card by the clip.
         View rail = new View(this);
-        rail.setBackground(UiKit.fill(this, course.color, 2));
+        rail.setBackground(UiKit.fill(this, UiKit.courseRail(course.color), 2));
         card.addView(rail, new LinearLayout.LayoutParams(
-                dp(4), ViewGroup.LayoutParams.MATCH_PARENT));
+                dp(UiTokens.COURSE_RAIL_WIDTH), ViewGroup.LayoutParams.MATCH_PARENT));
 
         card.addView(createTimeBlock(course));
 
-        View divider = new View(this);
-        divider.setBackgroundColor(Palette.OUTLINE_VARIANT);
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
-                dp(1), ViewGroup.LayoutParams.MATCH_PARENT);
-        dividerParams.setMargins(0, dp(UiTokens.SPACE_M), 0, dp(UiTokens.SPACE_M));
-        card.addView(divider, dividerParams);
-
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(UiTokens.SPACE_M + 2), dp(UiTokens.SPACE_M),
-                dp(UiTokens.SPACE_M + 2), dp(UiTokens.SPACE_M));
+        content.setPadding(dp(UiTokens.SPACE_M), dp(UiTokens.SPACE_M),
+                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M));
         card.addView(content, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -931,7 +1025,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardParams.bottomMargin = dp(UiTokens.SPACE_S + 2);
+        cardParams.bottomMargin = dp(UiTokens.SPACE_M);
         card.setLayoutParams(cardParams);
         return card;
     }
@@ -948,7 +1042,7 @@ public class MainActivity extends Activity {
         text.setEllipsize(android.text.TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        textParams.leftMargin = dp(UiTokens.SPACE_XS + 2);
+        textParams.leftMargin = dp(UiTokens.SPACE_S);
         line.addView(text, textParams);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -976,7 +1070,8 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Periods on top, the clock times from the course's own schedule below.
+     * Periods on top, the clock times from the course's own schedule below, on a
+     * tinted tile rather than in a column behind a divider.
      *
      * <p>When the schedule's time for those periods has never been confirmed,
      * the block says so instead of printing a number nobody can vouch for. The
@@ -988,24 +1083,37 @@ public class MainActivity extends Activity {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(LinearLayout.VERTICAL);
         block.setGravity(Gravity.CENTER);
-        block.setPadding(dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_S + 2),
-                dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_S + 2));
+        block.setPadding(dp(UiTokens.SPACE_XS), dp(UiTokens.SPACE_M),
+                dp(UiTokens.SPACE_XS), dp(UiTokens.SPACE_M));
+        block.setBackground(UiKit.fill(this, Palette.SURFACE_CONTAINER_LOW,
+                UiTokens.RADIUS_M));
 
         TextView periods = UiKit.text(this,
                 course.startPeriod + "-" + course.endPeriod + "\u8282",
-                UiTokens.Type.BODY_MEDIUM, course.color, Typeface.BOLD);
+                UiTokens.Type.LABEL_LARGE, UiKit.courseInk(course.color),
+                Typeface.BOLD);
         periods.setGravity(Gravity.CENTER);
+        periods.setSingleLine(true);
         block.addView(periods);
 
         String[] clock = clockOf(course).split(" - ");
         if (clock.length > 0) {
-            block.addView(timeLine(clock[0], dp(UiTokens.SPACE_XS + 1)));
+            block.addView(timeLine(clock[0], dp(UiTokens.SPACE_XS + 2)));
         }
         if (clock.length > 1) {
             block.addView(timeLine(clock[1], dp(2)));
         }
+        // A minimum width rather than a fixed one. A fixed 56dp column starts the
+        // content at the same x on every card, which is worth having, but it also
+        // clips "1-2节" in half at a large font scale. Asking for 56dp and allowing
+        // more keeps the alignment on every card that fits and lets the rare wide
+        // one push the content instead of hiding the period.
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                dp(66), ViewGroup.LayoutParams.WRAP_CONTENT);
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = dp(UiTokens.SPACE_M);
+        params.topMargin = dp(UiTokens.SPACE_S);
+        params.bottomMargin = dp(UiTokens.SPACE_S);
+        block.setMinimumWidth(dp(56));
         block.setLayoutParams(params);
         return block;
     }
@@ -1020,8 +1128,9 @@ public class MainActivity extends Activity {
         TextView line = UiKit.text(this, value, UiTokens.Type.LABEL_SMALL,
                 Palette.ON_SURFACE_VARIANT, Typeface.NORMAL);
         line.setGravity(Gravity.CENTER);
+        line.setSingleLine(true);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         params.topMargin = topMarginPx;
         line.setLayoutParams(params);
@@ -1035,13 +1144,14 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.rightMargin = dp(UiTokens.SPACE_S);
+        params.leftMargin = dp(UiTokens.SPACE_S);
         badge.setLayoutParams(params);
         return badge;
     }
 
     private View createEmptyState() {
-        return UiKit.emptyState(this, "\u8FD9\u5929\u6CA1\u6709\u5B89\u6392",
+        return UiKit.emptyState(this, R.drawable.ic_today,
+                "\u8FD9\u5929\u6CA1\u6709\u5B89\u6392",
                 "\u5230\u8BFE\u8868\u603B\u89C8\u91CC\u70B9\u53F3\u4E0B\u89D2 + \u6DFB\u52A0"
                         + "\uFF0C\u6216\u5728\u8BBE\u7F6E\u91CC\u6279\u91CF\u5BFC\u5165");
     }

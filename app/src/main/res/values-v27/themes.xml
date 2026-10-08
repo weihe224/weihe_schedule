@@ -11,12 +11,14 @@
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:colorAccent">@color/primary</item>
         <item name="android:windowBackground">@color/surface</item>
+        <!-- Every screen enters and leaves the same way; see animations.xml. -->
+        <item name="android:windowAnimationStyle">@style/PageAnimation</item>
 
-        <item name="android:statusBarColor">@color/inverse_surface</item>
+        <item name="android:statusBarColor">@color/surface</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightStatusBar">true</item>
 
-        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:navigationBarColor">@color/navigation_bar</item>
         <!-- Additive, API 27+: dark icons on the light navigation bar. -->
         <item name="android:windowLightNavigationBar">true</item>
     </style>

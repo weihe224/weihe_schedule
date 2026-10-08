@@ -11,8 +11,12 @@ public class Course implements Serializable {
      * Colour a brand new course starts with. Kept here rather than in the
      * persistence layer so the model stays the single owner of its own default;
      * {@link Palette#COURSE_COLORS} reuses it as the first selectable colour.
+     *
+     * <p>A muted slate blue: the default has to be the quietest option in the
+     * picker, because most courses keep it and most cards are therefore drawn in
+     * it.</p>
      */
-    public static final int DEFAULT_COLOR = 0xFF0F766E;
+    public static final int DEFAULT_COLOR = 0xFF3C6A8E;
 
     public long id;
     public String name = "";

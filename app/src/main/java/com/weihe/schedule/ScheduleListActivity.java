@@ -2,7 +2,6 @@ package com.weihe.schedule;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -34,6 +33,9 @@ public class ScheduleListActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         repository = new CourseRepository(this);
+        // The app bar is the page surface, so both system bars take that colour and
+        // keep dark icons on it; see Insets for why this cannot live in the theme.
+        Insets.applyBrandedSystemBars(this);
         setContentView(buildRoot());
         render();
     }
@@ -105,33 +107,9 @@ public class ScheduleListActivity extends Activity {
     }
 
     private View createHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(10), dp(8), dp(16), dp(8));
-        header.setBackgroundColor(Palette.INVERSE_SURFACE);
-
-        ImageButton back = new ImageButton(this);
-        back.setImageResource(R.drawable.ic_back);
-        back.setColorFilter(Color.WHITE);
-        back.setBackgroundColor(Color.TRANSPARENT);
-        back.setPadding(dp(10), dp(10), dp(10), dp(10));
-        back.setContentDescription("\u8FD4\u56DE");
-        back.setOnClickListener(view -> finish());
-        header.addView(back, new LinearLayout.LayoutParams(dp(40), dp(40)));
-
-        LinearLayout titleBlock = new LinearLayout(this);
-        titleBlock.setOrientation(LinearLayout.VERTICAL);
-        titleBlock.addView(UiKit.text(this, "\u4F5C\u606F\u65F6\u95F4",
-                18, Color.WHITE, true));
-        titleBlock.addView(UiKit.text(this,
+        return UiKit.detailAppBar(this, "\u4F5C\u606F\u65F6\u95F4",
                 "\u4E0D\u540C\u6559\u5B66\u697C\u53EF\u4EE5\u4E0A\u4E0B\u8BFE\u65F6\u95F4\u4E0D\u540C",
-                11, Palette.ON_INVERSE_VARIANT, false));
-        LinearLayout.LayoutParams blockParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        blockParams.leftMargin = dp(8);
-        header.addView(titleBlock, blockParams);
-        return header;
+                view -> finish());
     }
 
     private void render() {
@@ -228,11 +206,8 @@ public class ScheduleListActivity extends Activity {
     }
 
     private TextView badge(String label, int color) {
-        TextView badge = UiKit.text(this, label, UiTokens.Type.LABEL_SMALL, Color.WHITE, true);
-        badge.setGravity(Gravity.CENTER);
-        badge.setPadding(dp(7), dp(3), dp(7), dp(3));
-        badge.setBackground(UiKit.fill(this, color, 6));
-        return badge;
+        return UiKit.pill(this, label, UiTokens.Type.LABEL_SMALL, color,
+                Palette.ON_PRIMARY, true, UiTokens.RADIUS_S);
     }
 
     private void openEditor(int index) {
