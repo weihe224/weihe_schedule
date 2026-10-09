@@ -21,6 +21,8 @@ import java.util.List;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.design.Palette;
+import com.weihe.schedule.rule.CourseQuery;
+import com.weihe.schedule.rule.WeekGridPlan;
 
 /**
  * The timetable as a rectangular spreadsheet-like grid.

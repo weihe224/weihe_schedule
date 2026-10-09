@@ -19,6 +19,7 @@ import java.util.List;
 import com.weihe.schedule.model.BellSchedule;
 import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.design.Palette;
+import com.weihe.schedule.rule.BellScheduleEditor;
 
 /**
  * Edits one bell schedule: its name, the venue keywords that select it, and the
