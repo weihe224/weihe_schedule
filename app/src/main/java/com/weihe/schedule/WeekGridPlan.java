@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import com.weihe.schedule.model.Course;
 
 /**
  * The week grid as data: for every weekday, the vertical runs of courses and

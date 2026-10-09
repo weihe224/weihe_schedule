@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.model;
 
 import java.io.Serializable;
 

@@ -7,6 +7,7 @@ import static org.junit.Assert.fail;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.Course;
 
 public class TimetableImportParserTest {
     @Test

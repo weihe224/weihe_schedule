@@ -21,6 +21,10 @@ import android.widget.Toast;
 import java.io.InputStream;
 import java.time.LocalDate;
 import java.util.List;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.Course;
+import com.weihe.schedule.model.ScheduleUtils;
+import com.weihe.schedule.model.Semester;
 
 /**
  * Everything that is not the timetable itself.

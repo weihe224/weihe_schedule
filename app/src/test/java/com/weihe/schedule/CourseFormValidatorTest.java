@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.ScheduleUtils;
 
 /**
  * Tests for the course form rules.

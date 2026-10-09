@@ -17,6 +17,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
+import com.weihe.schedule.model.Course;
+import com.weihe.schedule.model.Semester;
 
 /**
  * Tests for the storage layer itself.

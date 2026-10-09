@@ -27,6 +27,11 @@ import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
+import com.weihe.schedule.model.Course;
+import com.weihe.schedule.model.ScheduleUtils;
+import com.weihe.schedule.model.Semester;
 
 /**
  * Today's courses, and the way into everything else.

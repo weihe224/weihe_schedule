@@ -3,6 +3,8 @@ package com.weihe.schedule;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
 
 /**
  * Maps bell schedules to and from the JSON stored in {@code SharedPreferences}.

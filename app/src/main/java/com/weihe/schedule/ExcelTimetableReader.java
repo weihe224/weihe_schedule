@@ -8,6 +8,7 @@ import jxl.Range;
 import jxl.Sheet;
 import jxl.Workbook;
 import jxl.read.biff.BiffException;
+import com.weihe.schedule.model.Course;
 
 /** Reads an old-style Excel .xls workbook exported by the school system. */
 public final class ExcelTimetableReader {

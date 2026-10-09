@@ -2,6 +2,8 @@ package com.weihe.schedule;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
 
 /**
  * A bell schedule while it is being edited.

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.Course;
 
 /**
  * Tests for the course list operations.

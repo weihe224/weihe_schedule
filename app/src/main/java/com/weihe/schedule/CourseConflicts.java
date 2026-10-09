@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import com.weihe.schedule.model.Course;
+import com.weihe.schedule.model.ScheduleUtils;
 
 /**
  * Time-conflict rules for courses.

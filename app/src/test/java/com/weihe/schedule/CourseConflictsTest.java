@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.junit.Test;
+import com.weihe.schedule.model.Course;
 
 /**
  * Tests for the clash rules.

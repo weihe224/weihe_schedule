@@ -23,6 +23,10 @@ import android.widget.Toast;
 
 import java.util.Arrays;
 import java.util.List;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
+import com.weihe.schedule.model.Course;
+import com.weihe.schedule.model.ScheduleUtils;
 
 public class EditCourseActivity extends Activity {
     public static final String EXTRA_COURSE_ID = "course_id";

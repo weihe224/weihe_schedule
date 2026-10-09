@@ -8,6 +8,9 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import com.weihe.schedule.model.Course;
+import com.weihe.schedule.model.ScheduleUtils;
+import com.weihe.schedule.model.Semester;
 
 /**
  * The overview grid's row count and column height, and the invariants that broke

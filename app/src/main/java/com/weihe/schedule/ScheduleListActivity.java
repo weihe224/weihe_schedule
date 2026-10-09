@@ -13,6 +13,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.List;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
+import com.weihe.schedule.model.Course;
 
 /**
  * The list of bell schedules.

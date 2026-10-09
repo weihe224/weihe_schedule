@@ -9,6 +9,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
 
 /**
  * Tests for the stored form of bell schedules.

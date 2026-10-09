@@ -8,6 +8,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
 
 /**
  * Tests for the rules behind the bell-schedule editor.

@@ -1,6 +1,7 @@
 package com.weihe.schedule;
 
 import java.util.List;
+import com.weihe.schedule.model.Course;
 
 /**
  * List operations over the stored courses.

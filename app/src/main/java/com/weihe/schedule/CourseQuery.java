@@ -3,6 +3,8 @@ package com.weihe.schedule;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import com.weihe.schedule.model.Course;
+import com.weihe.schedule.model.ScheduleUtils;
 
 /**
  * Read-only queries over the stored courses.

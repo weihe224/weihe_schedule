@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+import com.weihe.schedule.model.Course;
 
 /**
  * Contrast checks for every text/background pair the app actually draws.

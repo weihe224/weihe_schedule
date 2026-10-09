@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import com.weihe.schedule.model.ScheduleUtils;
+import com.weihe.schedule.model.Semester;
 
 /**
  * Maps semesters to and from the JSON stored in {@code SharedPreferences}.

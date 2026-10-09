@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.Course;
 
 /**
  * Tests for the schedule queries the UI is built on.

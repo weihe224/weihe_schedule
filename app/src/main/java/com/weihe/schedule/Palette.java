@@ -1,5 +1,7 @@
 package com.weihe.schedule;
 
+import com.weihe.schedule.model.Course;
+
 /**
  * The colour system: one place that defines every colour the app draws with.
  *

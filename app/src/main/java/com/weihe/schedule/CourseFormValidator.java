@@ -2,6 +2,7 @@ package com.weihe.schedule;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.weihe.schedule.model.ScheduleUtils;
 
 /**
  * Validation rules for the course form.

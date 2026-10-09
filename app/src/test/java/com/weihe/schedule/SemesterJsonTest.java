@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.Semester;
 
 /**
  * Tests for the stored form of semesters.
