@@ -30,6 +30,7 @@ import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseConflicts;
 import com.weihe.schedule.rule.CourseFormValidator;
+import com.weihe.schedule.data.CourseRepository;
 
 public class EditCourseActivity extends Activity {
     public static final String EXTRA_COURSE_ID = "course_id";

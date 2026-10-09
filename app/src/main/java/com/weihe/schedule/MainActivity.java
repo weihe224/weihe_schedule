@@ -35,6 +35,7 @@ import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseConflicts;
 import com.weihe.schedule.rule.CourseQuery;
+import com.weihe.schedule.data.CourseRepository;
 
 /**
  * Today's courses, and the way into everything else.

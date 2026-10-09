@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.data;
 
 import java.util.List;
 import com.weihe.schedule.model.Course;

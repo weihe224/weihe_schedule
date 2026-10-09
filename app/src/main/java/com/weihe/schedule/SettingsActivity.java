@@ -26,6 +26,7 @@ import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
+import com.weihe.schedule.data.CourseRepository;
 
 /**
  * Everything that is not the timetable itself.

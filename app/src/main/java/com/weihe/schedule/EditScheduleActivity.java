@@ -20,6 +20,7 @@ import com.weihe.schedule.model.BellSchedule;
 import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.BellScheduleEditor;
+import com.weihe.schedule.data.CourseRepository;
 
 /**
  * Edits one bell schedule: its name, the venue keywords that select it, and the

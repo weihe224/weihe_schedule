@@ -23,6 +23,7 @@ import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseQuery;
 import com.weihe.schedule.rule.WeekGridPlan;
+import com.weihe.schedule.data.CourseRepository;
 
 /**
  * The timetable as a rectangular spreadsheet-like grid.

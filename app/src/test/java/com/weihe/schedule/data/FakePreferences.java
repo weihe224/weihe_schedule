@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.data;
 
 import android.content.Context;
 import android.content.SharedPreferences;

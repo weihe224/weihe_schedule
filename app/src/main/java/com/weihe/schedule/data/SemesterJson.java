@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.data;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
