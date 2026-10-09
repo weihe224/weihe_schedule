@@ -7,45 +7,62 @@
 
 ## 一、分层与依赖方向
 
-```
-                     界面（Android）—— 只读规则，不实现规则
-   MainActivity · WeekGridActivity · EditCourseActivity
-   SettingsActivity · SemesterListActivity · ScheduleListActivity
-   EditScheduleActivity
-                    │
-                    │ 读规则 / 读数据
-                    ▼
-   规则层（零 Android 依赖，全部有 JVM 测试）
-   ┌───────────────┬────────────────┬──────────────────┬─────────────────┐
-   │ WeekGridPlan  │ CourseQuery    │ CourseConflicts  │CourseFormValidator│
-   │ 网格排布/分道  │ 按周/天查课     │ 时间冲突判定      │  表单校验规则     │
-   └───────┬───────┴───────┬────────┴────────┬─────────┴────────┬────────┘
-           │               │                 │                  │
-   ┌───────┴───────────────┴─────────────────┴──────────────────┴────────┐
-   │ ScheduleUtils（周次/节次/日期）   CourseList（列表语义）              │
-   │ Semester（学期模型）  SemesterJson（学期存储）                        │
-   │ BellSchedules / BellSchedule（作息解析与时间）                       │
-   │ BellScheduleEditor（作息表单规则）   MiniJson（存储用的 JSON）        │
-   └───────────────────────────────┬────────────────────────────────────┘
-                                   ▼
-   ┌────────────────────────────────────────────────────────────────────┐
-   │ 数据模型：Course / Palette / TimetableGrid / TimetableImportParser  │
-   └────────────────────────────────────────────────────────────────────┘
+代码按包分层，**包名就是层名**（31 个类）：
 
-   存储：CourseRepository ──► MiniJson ──► SharedPreferences
-         （每个学期一套 courses:<id> 与 semester_start:<id>；
-           作息表全局共用；内存快照缓存 + 每次返回深拷贝）
-   设计系统：Palette（颜色角色）· Colors（对比度运算，纯逻辑）
-            · UiTokens（间距/圆角/字阶/控件尺寸）· UiKit（组件层）· Insets（系统栏）
-   图标：tools/IconForge.java 由 icon.png 生成 adaptive（背景/前景/单色三层）
-         与 legacy（方/圆两种）五种密度的 mipmap；tools/IconProbe.java 量取
-         安全区与配色，tools/PaletteCheck.java 离线校验配色对比度
-   外部读取：ExcelTimetableReader（jxl，只读 .xls）
+| 包 | 类数 | 行数 | 职责 | 依赖 Android |
+|---|---|---|---|---|
+| `com.weihe.schedule` | 7 | 4,691 | 界面：7 个 Activity，只读规则不实现规则 | 是 |
+| `com.weihe.schedule.ui` | 3 | 1,652 | 组件库与尺寸令牌：`UiKit` `UiTokens` `Insets` | 是 |
+| `com.weihe.schedule.data` | 5 | 1,826 | 存储与编解码：`CourseRepository` `CourseList` `MiniJson` `SemesterJson` `BellScheduleJson` | 仅 `CourseRepository` |
+| `com.weihe.schedule.rule` | 5 | 997 | 规则：`CourseQuery` `CourseConflicts` `CourseFormValidator` `BellScheduleEditor` `WeekGridPlan` | 否 |
+| `com.weihe.schedule.model` | 5 | 859 | 数据模型与日历运算：`Course` `Semester` `ScheduleUtils` `BellSchedule` `BellSchedules` | 否 |
+| `com.weihe.schedule.importer` | 4 | 524 | 外部课表导入：`TimetableGrid` `TimetableImportParser` `ExcelTimetableReader` `TimetableImportException` | 否 |
+| `com.weihe.schedule.design` | 2 | 271 | 颜色：`Palette` `Colors` | 否 |
+
+**包之间的依赖，全部单向，无环：**
+
+```
+com.weihe.schedule（根包）  ──►  .ui  .data  .rule  .importer  .design  .model
+.ui                          ──►  .design
+.data                        ──►  .model  .design
+.rule                        ──►  .model
+.importer                    ──►  .model  .design
+.design                      ──►  .model
+.model                       ──►  （叶子，不依赖任何其它包）
 ```
 
 **依赖方向是单向的：上层依赖下层，下层不知道上层存在。**
 `ScheduleUtils` 不知道 `CourseQuery`，`CourseQuery` 不知道 Activity，
 `MiniJson` 不知道 `SharedPreferences`。
+
+几个边界值得说明，它们都是**为了打破依赖**而划的，不是为了凑层数：
+
+- **`.design` 与 `.ui` 分开**：`Palette` 有三个包在读——`.ui` 画组件、`.data` 的样例课程取色、
+  `.importer` 的 `colorFor` 分配课程颜色。放进 `.ui` 就会让存储层和导入器依赖界面层。
+- **`UiTokens` 留在 `.ui`**：它的 `px(Context, dp)` 委托给 `UiKit.dp`，而 `UiKit` 又用
+  `UiTokens` 的常量，两者放一起才不会让 `.design` 与 `.ui` 互相 import。
+- **`.model` 收了 `ScheduleUtils`**：`Course → ScheduleUtils → BellSchedules → BellSchedule
+  → ScheduleUtils` 是一团互相引用，拆成两个包会让包图成环。
+- **`.importer` 不并进 `.data`**：`.data` 管"我们自己的数据存哪"，`.importer` 管
+  "教务系统的 `.xls` 怎么变成课程"，也是全项目唯一依赖外部 jar（jxl）的地方。
+
+**7 个 Activity 留在根包**，`AndroidManifest.xml` 里的 `.MainActivity` 这类相对名因此不用改。
+
+其余分层内容：
+
+```
+   存储：CourseRepository ──► MiniJson ──► SharedPreferences
+         （每个学期一套 courses:<id> 与 semester_start:<id>；
+           作息表全局共用；内存快照缓存 + 每次返回深拷贝）
+   图标：tools/IconForge.java 由 icon.png 生成 adaptive（背景/前景/单色三层）
+         与 legacy（方/圆两种）五种密度的 mipmap；tools/IconProbe.java 量取
+         安全区与配色，tools/PaletteCheck.java 离线校验配色对比度
+   外部读取：ExcelTimetableReader（jxl，只读 .xls）→ TimetableImportParser
+```
+
+> 包结构是在 2026-10 的一次纯移动整理中定下来的，逐文件的目标包、依赖实测数据、
+> 迁移顺序与验证方式见 `ARCHITECTURE_REFACTOR_PLAN.md`。整理前后行为完全一致：
+> 未改业务逻辑、未改 SharedPreferences 键名与 JSON 格式、未改时间规则、未改 UI。
 
 ---
 

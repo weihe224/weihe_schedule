@@ -11,6 +11,23 @@
 > **方法**：31 个生产源文件 + 18 个测试文件逐文件通读（编辑器/列表页、周网格/导入管线由子代理并行全读并回报带行号结论）；只读检查全部构建配置；只读运行检查（`adb` 读设备上真实 `SharedPreferences`、`uiautomator dump` 逐屏核对）。
 > **未运行 Gradle**，因此构建/测试结果引用仓库内 `ARCHITECTURE.md:84-91` 记录的上一次执行，本次未复现。
 
+> ### ⚠️ 时效说明（后续更新，正文未改）
+>
+> 本文是 **git HEAD `21f20ec` 时点的分析快照**。此后项目发生了两批改动，正文中的部分数字与
+> 结构描述已不再准确，**阅读时请以本说明与 `PROJECT_ARCHITECTURE.md` 为准**：
+>
+> 1. **5 个 P0 正确性修复**（提交 `1213ef7`）：地点→作息表匹配、作息表重命名级联、禁止删除最后一张
+>    作息表、作息表改用稳定标识定位、`WeekGridActivity` 总览页最后一行高度。测试数由
+>    **221 增至 239**。
+> 2. **包结构整理**（见 `ARCHITECTURE_REFACTOR_PLAN.md`）：31 个类由单包拆为 7 个包
+>    ——根包（7 个 Activity）+ `.model` `.rule` `.data` `.importer` `.design` `.ui`。
+>    **纯移动 + 补 import，未改任何行为。**
+>
+> 因此正文中下列说法已过时：第 41/58/592/775 行的「221 个测试」现为 **239**；
+> 第 51/63-65 行的「31 个类全部在 `com.weihe.schedule` 单包内」现为 **7 个包**；
+> 全部 `文件:行号` 引用在两次改动后可能有偏移。
+> **§十六「结构评价」提出的问题已在第 2 项改动中解决。**
+
 ---
 
 ## 二、技术栈分析（实际配置）
@@ -48,7 +65,7 @@ release 不混淆（`minifyEnabled false`）。
 
 | 关注点 | 实际情况 |
 |---|---|
-| `app/src/main/java` | 31 个文件，10,538 行，全部在 `com.weihe.schedule` 单包内 |
+| `app/src/main/java` | 31 个文件，10,538 行，全部在 `com.weihe.schedule` 单包内（**时点快照；现已拆为 7 个包，见文首时效说明**） |
 | `app/src/main/kotlin` | **不存在** |
 | `app/src/main/res/layout` | **不存在** |
 | `app/src/main/res/drawable` | 11 个 Material 矢量图标（24dp vector） |
@@ -63,6 +80,7 @@ release 不混淆（`minifyEnabled false`）。
 **结构评价**：单包 31 个类，靠类名而非包名分层。对 10K 行规模够用，但已到边界——
 `com.weihe.schedule` 里同时住着 Activity、设计系统、JSON 解析器和网格算法，
 仅靠命名约定（`*Activity` / `*Json` / `*Plan`）区分。**详见 §十六。**
+（**该问题已解决**：31 个类现分居 7 个包，见文首时效说明与 `ARCHITECTURE_REFACTOR_PLAN.md`。）
 
 ---
 

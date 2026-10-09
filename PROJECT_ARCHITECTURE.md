@@ -24,7 +24,7 @@
 | Java 源码/目标版本 | **17** | `app/build.gradle:58-59` — `sourceCompatibility/targetCompatibility JavaVersion.VERSION_17` |
 | 本机构建用 JDK | **20**（`C:\Program Files\Java\jdk-20`） | 环境变量探测；不影响产物字节码目标（17） |
 | Kotlin | **未使用**。无 Kotlin 插件、无 `.kt` 文件、无 `kotlin-stdlib` 依赖 | `app/build.gradle` plugins 块只有 `com.android.application`；`app/src/main/kotlin` 不存在 |
-| 主要语言 | **100% Java**，31 个源文件 / 10,538 行 | `app/src/main/java/com/weihe/schedule/` |
+| 主要语言 | **100% Java**，31 个源文件 / 10,820 行 / 7 个包 | `app/src/main/java/com/weihe/schedule/`（根包 = 7 个 Activity，另有 `ui/ data/ rule/ model/ importer/ design/`） |
 | UI 实现方式 | **既不是 XML 布局，也不是 Jetpack Compose**，而是**纯 Java 代码构建 View 树** | `app/src/main/res/layout` 目录不存在；`Activity.setContentView(View)`（如 `MainActivity.java:82`、`WeekGridActivity.java:127`） |
 | AndroidX | **明确关闭** | `gradle.properties:4` — `android.useAndroidX=false` |
 | Material Components | **未使用** `com.google.android.material` | `app/build.gradle:78-86` 依赖块 |
@@ -69,7 +69,20 @@ D:\vibe coding\Weihe\Weihe\           （= 需求里说的 D:\Weihe，见文首�
 │   │   └── jxl-2.6.12.jar            唯一的二进制依赖，只读 .xls
 │   ├── src/
 │   │   ├── main/
-│   │   │   ├── java/com/weihe/schedule/     31 个 .java，10,538 行
+│   │   │   ├── java/com/weihe/schedule/     31 个 .java，10,820 行，7 个包
+│   │   │   │   ├── (根包)                    7 个 Activity，4,691 行
+│   │   │   │   ├── ui/                       UiKit、UiTokens、Insets，1,652 行
+│   │   │   │   ├── data/                     CourseRepository、CourseList、MiniJson、
+│   │   │   │   │                             SemesterJson、BellScheduleJson，1,826 行
+│   │   │   │   ├── rule/                     CourseQuery、CourseConflicts、
+│   │   │   │   │                             CourseFormValidator、BellScheduleEditor、
+│   │   │   │   │                             WeekGridPlan，997 行
+│   │   │   │   ├── model/                    Course、Semester、ScheduleUtils、
+│   │   │   │   │                             BellSchedule、BellSchedules，859 行
+│   │   │   │   ├── importer/                 TimetableGrid、TimetableImportParser、
+│   │   │   │   │                             ExcelTimetableReader、
+│   │   │   │   │                             TimetableImportException，524 行
+│   │   │   │   └── design/                   Palette、Colors，271 行
 │   │   │   ├── res/
 │   │   │   │   ├── anim/            7 个：dialog_in/out、page_in/out/still、sheet_slide_up/down
 │   │   │   │   ├── drawable/        10 个 Material 矢量图标（全部 24dp vector）
@@ -77,8 +90,10 @@ D:\vibe coding\Weihe\Weihe\           （= 需求里说的 D:\Weihe，见文首�
 │   │   │   │   ├── mipmap-{m,h,xh,xxh,xxxh}dpi/  各 5 个 PNG（legacy 方/圆 + 自适应三层）
 │   │   │   │   ├── values/          animations.xml、colors.xml、strings.xml、themes.xml
 │   │   │   │   └── values-v27/      themes.xml（完整副本 + windowLightNavigationBar）
-│   │   │   └── AndroidManifest.xml  47 行，7 个 Activity
-│   │   └── test/java/com/weihe/schedule/    18 个 .java，3,533 行，221 个 @Test
+│   │   │   └── AndroidManifest.xml  47 行，7 个 Activity（全在根包，用相对名注册）
+│   │   └── test/java/com/weihe/schedule/    18 个 .java，3,928 行，239 个 @Test
+│   │       ├── (根包)                WeekGridRowsTest（与 WeekGridActivity 同包）
+│   │       └── model/ rule/ data/ importer/ design/  与所在生产包一一对应
 │   ├── build.gradle                 86 行
 │   └── proguard-rules.pro           1 行注释
 ├── build/                           根项目构建产物（.gitignore）
@@ -104,41 +119,44 @@ D:\vibe coding\Weihe\Weihe\           （= 需求里说的 D:\Weihe，见文首�
 
 **不存在**的目录（已确认）：`app/src/main/assets/`、`app/src/main/kotlin/`、`app/src/main/res/layout/`、`app/src/androidTest/`。
 
-### 2.1 源码清单（按行数降序）
+### 2.1 源码清单（按包分组，组内按行数降序）
 
-| 文件 | 行数 | 层 |
-|---|---|---|
-| `UiKit.java` | 1432 | 界面组件层（**最大类**） |
-| `MainActivity.java` | 1324 | 界面 |
-| `CourseRepository.java` | 986 | 存储 |
-| `WeekGridActivity.java` | 907 | 界面 |
-| `EditCourseActivity.java` | 795 | 界面 |
-| `SettingsActivity.java` | 511 | 界面 |
-| `MiniJson.java` | 453 | 存储 |
-| `EditScheduleActivity.java` | 434 | 界面 |
-| `WeekGridPlan.java` | 388 | 规则 |
-| `TimetableImportParser.java` | 367 | 规则 |
-| `SemesterListActivity.java` | 364 | 界面 |
-| `BellScheduleEditor.java` | 255 | 规则 |
-| `ScheduleListActivity.java` | 251 | 界面 |
-| `BellSchedule.java` | 242 | 领域模型 |
-| `BellSchedules.java` | 193 | 领域模型 |
-| `Palette.java` | 192 | 设计系统 |
-| `ScheduleUtils.java` | 170 | 规则 |
-| `UiTokens.java` | 140 | 设计系统 |
-| `CourseFormValidator.java` | 139 | 规则 |
-| `BellScheduleJson.java` | 126 | 存储 |
-| `Semester.java` | 120 | 领域模型 |
-| `CourseQuery.java` | 117 | 规则 |
-| `CourseList.java` | 104 | 规则 |
-| `CourseConflicts.java` | 90 | 规则 |
-| `TimetableGrid.java` | 87 | 导入 |
-| `Colors.java` | 77 | 设计系统 |
-| `Insets.java` | 74 | 界面基础设施 |
-| `Course.java` | 69 | 领域模型 |
-| `SemesterJson.java` | 65 | 存储 |
-| `ExcelTimetableReader.java` | 54 | 导入 |
-| `TimetableImportException.java` | 12 | 导入 |
+| 文件 | 行数 | 包 | 层 |
+|---|---|---|---|
+| `MainActivity.java` | 1339 | `com.weihe.schedule` | 界面 |
+| `WeekGridActivity.java` | 939 | `com.weihe.schedule` | 界面 |
+| `EditCourseActivity.java` | 806 | `com.weihe.schedule` | 界面 |
+| `SettingsActivity.java` | 523 | `com.weihe.schedule` | 界面 |
+| `EditScheduleActivity.java` | 457 | `com.weihe.schedule` | 界面 |
+| `SemesterListActivity.java` | 371 | `com.weihe.schedule` | 界面 |
+| `ScheduleListActivity.java` | 256 | `com.weihe.schedule` | 界面 |
+| `UiKit.java` | 1435 | `.ui` | 界面组件层（**最大类**） |
+| `UiTokens.java` | 142 | `.ui` | 设计系统（尺寸） |
+| `Insets.java` | 75 | `.ui` | 界面基础设施（系统栏） |
+| `CourseRepository.java` | 1073 | `.data` | 存储 |
+| `MiniJson.java` | 453 | `.data` | 存储 |
+| `BellScheduleJson.java` | 128 | `.data` | 存储 |
+| `CourseList.java` | 105 | `.data` | 存储（列表语义） |
+| `SemesterJson.java` | 67 | `.data` | 存储 |
+| `WeekGridPlan.java` | 389 | `.rule` | 规则（网格排布/分道） |
+| `BellScheduleEditor.java` | 257 | `.rule` | 规则（作息表单） |
+| `CourseFormValidator.java` | 140 | `.rule` | 规则（表单校验） |
+| `CourseQuery.java` | 119 | `.rule` | 规则（按周/天查课） |
+| `CourseConflicts.java` | 92 | `.rule` | 规则（时间冲突判定） |
+| `BellSchedule.java` | 307 | `.model` | 领域模型（作息与时间） |
+| `BellSchedules.java` | 193 | `.model` | 领域模型（作息解析顺序） |
+| `ScheduleUtils.java` | 170 | `.model` | 领域模型（周次/节次/日期） |
+| `Semester.java` | 120 | `.model` | 领域模型 |
+| `Course.java` | 69 | `.model` | 领域模型 |
+| `TimetableImportParser.java` | 370 | `.importer` | 导入 |
+| `TimetableGrid.java` | 87 | `.importer` | 导入 |
+| `ExcelTimetableReader.java` | 55 | `.importer` | 导入（jxl，唯一的二进制依赖） |
+| `TimetableImportException.java` | 12 | `.importer` | 导入 |
+| `Palette.java` | 194 | `.design` | 设计系统（颜色） |
+| `Colors.java` | 77 | `.design` | 设计系统（对比度运算，纯逻辑） |
+
+**合计 31 个文件 / 10,820 行。** 「层」一列是概念分层，「包」一列是它在磁盘上的位置；
+两者一一对应，包结构就是 `ARCHITECTURE.md` §一 那张分层图。
 
 ---
 
@@ -179,7 +197,7 @@ D:\vibe coding\Weihe\Weihe\           （= 需求里说的 D:\Weihe，见文首�
 ### 4.1 核心领域模型
 
 ```
-Course  (app/src/main/java/com/weihe/schedule/Course.java, 69 行, implements Serializable)
+Course  (app/src/main/java/com/weihe/schedule/model/Course.java, 69 行, implements Serializable)
 ├── long   id              稳定标识；0 = 尚未分配（Course.java:24）
 ├── String name            课程名（Course.java:25）
 ├── String teacher         任课教师（Course.java:26）
@@ -210,7 +228,7 @@ Semester  (Semester.java, 120 行)
 ```
 
 ```
-BellSchedule  (BellSchedule.java, 242 行，**不可变**)
+BellSchedule  (model/BellSchedule.java, 307 行，**不可变**)
 ├── String       name              作息表名
 ├── int[]        starts            每节开始时间，**分钟数**（index 0 = 第 1 节）
 ├── int[]        ends              每节结束时间，分钟数
@@ -236,7 +254,7 @@ BellSchedules  (BellSchedules.java, 193 行，静态工厂 + 解析规则)
 ```
 
 ```
-WeekGridPlan  (WeekGridPlan.java, 388 行，纯逻辑，零 Android 依赖)
+WeekGridPlan  (rule/WeekGridPlan.java, 389 行，纯逻辑，零 Android 依赖)
 ├── static final class Cluster  一次"列簇"：同一天的若干课程按车道排布
 │     day() startPeriod() endPeriod() periodSpan() laneCount() cells() blocks()
 ├── static final class Cell     簇内一个"起始节次"格
@@ -468,50 +486,81 @@ saveCourses → SharedPreferences → 各界面 onResume → reload()
 
 ## 六、模块依赖（分层）
 
+包名就是层名。下面这张图与磁盘上的目录一一对应，也等同于 `ARCHITECTURE.md` §一。
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  界面层（Android）—— 只读规则，不实现规则                                  │
+│  com.weihe.schedule —— 界面层（Android）—— 只读规则，不实现规则            │
 │  MainActivity · WeekGridActivity · EditCourseActivity · SettingsActivity   │
 │  SemesterListActivity · ScheduleListActivity · EditScheduleActivity        │
+│  （7 个 Activity 留在根包，AndroidManifest 用相对名注册）                   │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  界面基础设施                                                              │
-│  UiKit（1432 行，组件工厂）· Insets（系统栏）                               │
-│  Palette / UiTokens / Colors（设计系统，纯数据 + 算术）                     │
+│  .ui —— 组件库与尺寸令牌（Android）                                        │
+│  UiKit（1435 行，组件工厂）· UiTokens（间距/圆角/字阶/控件尺寸）· Insets      │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  规则层（零 Android 依赖，全部有 JVM 测试）                                 │
-│  WeekGridPlan  │ CourseQuery │ CourseConflicts │ CourseFormValidator       │
-│  ScheduleUtils │ CourseList  │ BellScheduleEditor                          │
-├──────────────────────────────────────────────────────────────────────────┤
-│  领域模型 + 存储编解码（零 Android 依赖）                                   │
-│  Course · Semester · BellSchedule · BellSchedules · TimetableGrid          │
+│  .data —— 存储适配与编解码（仅 CourseRepository 依赖 Android）              │
+│  CourseRepository（SharedPreferences）· CourseList（列表语义）              │
 │  MiniJson · SemesterJson · BellScheduleJson                                │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  存储适配层（依赖 Android SharedPreferences）                              │
-│  CourseRepository                                                          │
+│  .rule —— 规则层（零 Android 依赖，全部有 JVM 测试）                        │
+│  WeekGridPlan │ CourseQuery │ CourseConflicts │ CourseFormValidator        │
+│  BellScheduleEditor                                                        │
 ├──────────────────────────────────────────────────────────────────────────┤
-│  外部读取                                                                  │
-│  ExcelTimetableReader（jxl 2.6.12，只读 .xls）→ TimetableImportParser      │
+│  .importer —— 外部读取（零 Android 依赖，唯一用 jxl 的包）                  │
+│  ExcelTimetableReader（只读 .xls）→ TimetableImportParser → TimetableGrid   │
+│  TimetableImportException                                                  │
+├──────────────────────────────────────────────────────────────────────────┤
+│  .design —— 设计系统数据（零 Android 依赖）                                 │
+│  Palette（颜色角色）· Colors（对比度运算，纯算术）                          │
+├──────────────────────────────────────────────────────────────────────────┤
+│  .model —— 领域模型与日历运算（零 Android 依赖，叶子包）                    │
+│  Course · Semester · ScheduleUtils · BellSchedule · BellSchedules          │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**依赖方向是单向的**：上层依赖下层，下层不知道上层存在。
+**包之间的依赖，全部单向，无环：**
+
+```
+com.weihe.schedule（根包）  ──►  .ui  .data  .rule  .importer  .design  .model
+.ui                          ──►  .design
+.data                        ──►  .model  .design
+.rule                        ──►  .model
+.importer                    ──►  .model  .design
+.design                      ──►  .model
+.model                       ──►  （叶子，不依赖任何其它包）
+```
+
 `ScheduleUtils` 不知道 `CourseQuery`；`CourseQuery` 不知道 Activity；`MiniJson` 不知道 `SharedPreferences`。
 
-**唯一打破"零 Android 依赖"的地方**（已在代码注释中说明）：
+**两处例外，都是刻意划的边界，不是分层失误：**
 
-| 类 | 打破方式 | 原因 |
+| 位置 | 情况 | 原因 |
 |---|---|---|
-| `CourseRepository` | `android.content.Context` / `SharedPreferences` | 存储适配层本来就该依赖平台 |
-| `UiTokens` | `px(Context,float)` 委托给 `UiKit.dp` | 唯一的越界方法，`UiTokens.java:128-130` |
-| `Palette` / `Colors` | **不打破**，纯 `int` 与算术 | 这正是 `PaletteContrastTest` 能在 JVM 跑的原因 |
-| `MiniJson` | **不打破**，手写而非用 `org.json` | `org.json` 在 JVM 上是 null 桩，不可测 |
-| `WeekGridPlan` / `CourseQuery` / `CourseConflicts` / `CourseList` / `CourseFormValidator` / `BellScheduleEditor` / `ScheduleUtils` / `BellSchedules` / `BellSchedule` / `Semester` / `TimetableGrid` | **不打破** | 全部可在 JVM 上直接测试 |
+| `.ui` → `.design` | `UiTokens` 与 `Palette` 分在两个包 | `UiTokens.px(Context,dp)` 委托 `UiKit.dp`，而 `UiKit` 又用 `UiTokens` 的常量。两者放一起才不会让 `.design` 与 `.ui` 互相 import |
+| `.data` / `.importer` → `.design` | 存储层与导入器都读 `Palette` | `CourseRepository.createSampleCourses` 与 `TimetableImportParser.colorFor` 都要"取一个课程颜色"。把颜色放进 `.ui` 会让它们依赖界面层，所以单独立 `.design` |
+
+**打破"零 Android 依赖"的地方**（已在代码注释中说明）。整理成包之后，这一列同时说明了
+**哪些包无法整体脱离 Android 测试**：
+
+| 类 | 所在包 | 打破方式 | 原因 |
+|---|---|---|---|
+| `CourseRepository` | `.data` | `android.content.Context` / `SharedPreferences` | 存储适配层本来就该依赖平台 |
+| `UiTokens` | `.ui` | `px(Context,float)` 委托给 `UiKit.dp` | 唯一的越界方法，`UiTokens.java:139-141`。也是它留在 `.ui` 而不是进 `.design` 的原因 |
+| `Palette` / `Colors` | `.design` | **不打破**，纯 `int` 与算术 | 这正是 `PaletteContrastTest` 能在 JVM 跑的原因 |
+| `MiniJson` | `.data` | **不打破**，手写而非用 `org.json` | `org.json` 在 JVM 上是 null 桩，不可测 |
+| `.model` / `.rule` / `.importer` 全部 14 个类 | 各自 | **不打破** | 全部可在 JVM 上直接测试 |
 
 **测试与生产的边界**：`CourseRepository` 有一个包级静态测试缝
-`CourseRepository.useStoreForNextInstance(SharedPreferences)`（`CourseRepository.java:81-86`），
-背后是 `private static final ThreadLocal<SharedPreferences> pendingPreferences`，
-由 `CourseRepository(Context)` 在 `context == null` 时消费并 `remove()`。
+`CourseRepository.useStoreForNextInstance(SharedPreferences)`（`data/CourseRepository.java:87`），
+背后是 `private static final ThreadLocal<SharedPreferences> pendingPreferences`（同文件 `:91`），
+由 `CourseRepository(Context)`（同文件 `:65`）在 `context == null` 时消费并 `remove()`。
 这是让 `CourseRepositoryTest` 能跑到**真实构造函数**（含迁移逻辑）的唯一手段。
+
+正因为这个缝是**包级私有**的，`CourseRepositoryTest` 与 `FakePreferences` 必须与
+`CourseRepository` 同包——这就是它们位于 `app/src/test/java/com/weihe/schedule/data/` 的原因。
+Java 的包级私有访问按包名判定，测试源集与主源集包名相同即可，**不需要把任何成员放宽成 `public`**。
+同理，`WeekGridRowsTest` 留在根包，因为 `WeekGridActivity.lastPeriodInUse` 与 `dayColumnRows`
+也是包级静态方法，供测试直接调用。
 
 ---
 
