@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.importer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;

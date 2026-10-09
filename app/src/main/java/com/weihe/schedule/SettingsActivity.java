@@ -27,6 +27,9 @@ import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.data.CourseRepository;
+import com.weihe.schedule.importer.ExcelTimetableReader;
+import com.weihe.schedule.importer.TimetableImportException;
+import com.weihe.schedule.importer.TimetableImportParser;
 
 /**
  * Everything that is not the timetable itself.

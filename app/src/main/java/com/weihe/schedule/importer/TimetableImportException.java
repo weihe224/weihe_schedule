@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.importer;
 
 /** Raised when an imported timetable does not contain a usable schedule. */
 public class TimetableImportException extends Exception {

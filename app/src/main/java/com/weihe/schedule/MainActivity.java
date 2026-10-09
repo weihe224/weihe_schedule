@@ -36,6 +36,9 @@ import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseConflicts;
 import com.weihe.schedule.rule.CourseQuery;
 import com.weihe.schedule.data.CourseRepository;
+import com.weihe.schedule.importer.ExcelTimetableReader;
+import com.weihe.schedule.importer.TimetableImportException;
+import com.weihe.schedule.importer.TimetableImportParser;
 
 /**
  * Today's courses, and the way into everything else.
