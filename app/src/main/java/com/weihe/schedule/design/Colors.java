@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.design;
 
 /**
  * WCAG contrast arithmetic, so the palette can be checked without a device.

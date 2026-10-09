@@ -10,7 +10,7 @@ public class Course implements Serializable {
     /**
      * Colour a brand new course starts with. Kept here rather than in the
      * persistence layer so the model stays the single owner of its own default;
-     * {@link Palette#COURSE_COLORS} reuses it as the first selectable colour.
+     * {@link com.weihe.schedule.design.Palette#COURSE_COLORS} reuses it as the first selectable colour.
      *
      * <p>A muted slate blue: the default has to be the quietest option in the
      * picker, because most courses keep it and most cards are therefore drawn in

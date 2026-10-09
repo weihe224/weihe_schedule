@@ -8,6 +8,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
+import com.weihe.schedule.design.Palette;
 
 /** Parses the timetable layout exported by the school's Excel template. */
 public final class TimetableImportParser {

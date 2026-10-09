@@ -122,7 +122,7 @@ public final class ScheduleUtils {
      *
      * <p>Kept for callers that do not care which venue applies, and it is what
      * the tests pin. Anything that shows the time of a real course asks
-     * {@link CourseRepository#timeRangeOf}, because a course in the lab building
+     * {@link com.weihe.schedule.CourseRepository#timeRangeOf}, because a course in the lab building
      * does not ring with the standard schedule -- which is also why the week
      * overview shows no clock times at all.</p>
      */

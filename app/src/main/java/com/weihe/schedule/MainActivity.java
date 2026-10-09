@@ -32,6 +32,7 @@ import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
+import com.weihe.schedule.design.Palette;
 
 /**
  * Today's courses, and the way into everything else.

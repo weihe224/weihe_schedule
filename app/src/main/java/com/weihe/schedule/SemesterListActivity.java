@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.util.List;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
+import com.weihe.schedule.design.Palette;
 
 /**
  * The list of semesters, and the way to look at a past one.

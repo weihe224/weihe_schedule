@@ -15,6 +15,7 @@ import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
+import com.weihe.schedule.design.Palette;
 
 public class CourseRepository {
     private static final String PREFS = "weihe_schedule";

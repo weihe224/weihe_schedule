@@ -10,6 +10,8 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import com.weihe.schedule.design.Colors;
+import com.weihe.schedule.design.Palette;
 
 /**
  * The component layer: every piece of chrome the app draws, defined once.

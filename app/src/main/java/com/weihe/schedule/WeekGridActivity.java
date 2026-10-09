@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
+import com.weihe.schedule.design.Palette;
 
 /**
  * The timetable as a rectangular spreadsheet-like grid.

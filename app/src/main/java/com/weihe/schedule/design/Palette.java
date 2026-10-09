@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.design;
 
 import com.weihe.schedule.model.Course;
 

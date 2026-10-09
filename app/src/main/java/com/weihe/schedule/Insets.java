@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.os.Build;
 import android.view.View;
 import android.view.Window;
+import com.weihe.schedule.design.Palette;
 
 /**
  * Window-level setup that the theme cannot express on its own.

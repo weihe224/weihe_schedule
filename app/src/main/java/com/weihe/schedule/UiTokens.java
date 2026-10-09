@@ -1,5 +1,7 @@
 package com.weihe.schedule;
 
+import com.weihe.schedule.design.Palette;
+
 /**
  * Design tokens: the numbers that make the screens look like one product.
  *

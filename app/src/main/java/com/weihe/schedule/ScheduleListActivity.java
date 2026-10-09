@@ -16,6 +16,7 @@ import java.util.List;
 import com.weihe.schedule.model.BellSchedule;
 import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
+import com.weihe.schedule.design.Palette;
 
 /**
  * The list of bell schedules.
