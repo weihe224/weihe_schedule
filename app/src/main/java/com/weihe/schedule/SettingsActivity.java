@@ -18,14 +18,24 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import com.weihe.schedule.model.BellSchedule;
+import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
+import com.weihe.schedule.data.BackupCodec;
+import com.weihe.schedule.data.BackupPreview;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.importer.ExcelTimetableReader;
 import com.weihe.schedule.importer.TimetableImportException;
@@ -46,6 +56,18 @@ import com.weihe.schedule.ui.UiTokens;
  */
 public class SettingsActivity extends Activity {
     private static final int REQUEST_IMPORT_TIMETABLE = 3001;
+    private static final int REQUEST_EXPORT_BACKUP = 3002;
+    private static final int REQUEST_PREVIEW_BACKUP = 3003;
+
+    /**
+     * The backup checked and waiting for the user to choose a destination.
+     *
+     * <p>Built before the picker opens so that the slow part -- writing the file
+     * -- is the only thing left to do afterwards, and so a cancelled picker costs
+     * nothing. Cleared as soon as the result arrives either way.</p>
+     */
+    private BackupCodec.Document pendingBackupDocument;
+    private TextView backupValue;
 
     private CourseRepository repository;
     private TextView semesterValue;
@@ -87,6 +109,26 @@ public class SettingsActivity extends Activity {
                 importTimetable(uri);
             }
         }
+        if (requestCode == REQUEST_EXPORT_BACKUP) {
+            // The payload was built before the picker opened; whichever way this
+            // came back, it is not needed any more.
+            BackupCodec.Document document = pendingBackupDocument;
+            pendingBackupDocument = null;
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                // Cancelled: nothing was written anywhere, so say nothing.
+                return;
+            }
+            if (document != null) {
+                writeBackup(data.getData(), document);
+            }
+        }
+        if (requestCode == REQUEST_PREVIEW_BACKUP
+                && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri != null) {
+                previewBackup(uri);
+            }
+        }
     }
 
     // ---------------------------------------------------------------- layout
@@ -106,6 +148,7 @@ public class SettingsActivity extends Activity {
 
         body.addView(sectionLabel("\u8BFE\u8868\u6570\u636E"));
         body.addView(createImportCard());
+        body.addView(createBackupCard(), margins(dp(10)));
 
         LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -207,6 +250,175 @@ public class SettingsActivity extends Activity {
                 action("\u9009\u62E9\u6587\u4EF6\u5BFC\u5165", Palette.PRIMARY, true,
                         view -> openImportPicker())));
         return card;
+    }
+
+    private View createBackupCard() {
+        LinearLayout card = card();
+        addTitle(card, R.drawable.ic_semester, "\u5907\u4EFD\u4E0E\u6062\u590D");
+        backupValue = valueLine("", 11);
+        card.addView(backupValue);
+        card.addView(hintLine("\u5BFC\u51FA\u4E00\u4EFD JSON \u5907\u4EFD\u6587\u4EF6\uFF0C"
+                + "\u5305\u542B\u5168\u90E8\u5B66\u671F\u7684\u8BFE\u7A0B\u3001\u4F5C\u606F"
+                + "\u8868\u4E0E\u8BBE\u7F6E\u3002", 6));
+        card.addView(hintLine("\u5907\u4EFD\u662F\u660E\u6587\uFF0C\u542B\u6559\u5E08\u59D3"
+                + "\u540D\u4E0E\u4E0A\u8BFE\u5730\u70B9\uFF0C\u8BF7\u5B58\u653E\u5728\u81EA"
+                + "\u5DF1\u4FE1\u4EFB\u7684\u4F4D\u7F6E\u3002", 2));
+        card.addView(actionRow(
+                action("\u5BFC\u51FA\u5907\u4EFD", Palette.PRIMARY, true,
+                        view -> exportBackup()),
+                action("\u4ECE\u5907\u4EFD\u9884\u89C8", Palette.PRIMARY, false,
+                        view -> openBackupPicker())));
+        return card;
+    }
+
+    // ----------------------------------------------------------------- backup
+
+    /**
+     * Builds the backup, checks it, then asks the user where to put it.
+     *
+     * <p>The payload is produced and re-parsed <em>before</em> the picker opens,
+     * so a cancelled picker costs nothing and a payload that would not survive a
+     * round trip is never written to a file. Everything here is a read: no
+     * storage key is touched.</p>
+     */
+    private void exportBackup() {
+        BackupCodec.Document document;
+        try {
+            document = buildBackup();
+        } catch (RuntimeException error) {
+            UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25",
+                    "\u8BFB\u53D6\u5F53\u524D\u8BFE\u8868\u65F6\u51FA\u9519\uFF1A" + error);
+            return;
+        }
+        // Self-check: the very bytes that will be written are parsed back and
+        // validated before the user is asked where to put them.
+        BackupCodec.Result check = BackupCodec.parse(BackupCodec.write(document));
+        if (!check.isOk()) {
+            UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25",
+                    "\u751F\u6210\u7684\u5907\u4EFD\u672A\u901A\u8FC7\u81EA\u68C0\uFF1A"
+                            + check.problem());
+            return;
+        }
+        pendingBackupDocument = document;
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, backupFileName());
+        startActivityForResult(intent, REQUEST_EXPORT_BACKUP);
+    }
+
+    /** Reads everything worth keeping out of the current timetable. */
+    private BackupCodec.Document buildBackup() {
+        List<Semester> semesters = repository.getSemesters();
+        Map<Long, List<Course>> coursesBySemester = new LinkedHashMap<>();
+        for (Semester semester : semesters) {
+            coursesBySemester.put(Long.valueOf(semester.id()),
+                    repository.coursesOf(semester));
+        }
+        // getBellSchedules hands out its cached list rather than a copy, so take
+        // one before the document is built.
+        List<BellSchedule> schedules =
+                BellSchedules.copyOf(repository.getBellSchedules());
+        return BackupCodec.of(semesters, coursesBySemester, schedules,
+                repository.getActiveSemester().id(),
+                OffsetDateTime.now().toString(), appVersionName());
+    }
+
+    /** Writes the already-checked backup to wherever the user pointed. */
+    private void writeBackup(Uri uri, BackupCodec.Document document) {
+        final String name = displayNameOf(uri);
+        new Thread(() -> {
+            String failure = null;
+            try (OutputStream output =
+                         getContentResolver().openOutputStream(uri, "wt")) {
+                if (output == null) {
+                    failure = "\u65E0\u6CD5\u5199\u5165\u6240\u9009\u4F4D\u7F6E";
+                } else {
+                    BackupCodec.writeTo(document, output);
+                }
+            } catch (IOException error) {
+                failure = writeFailureReason(error);
+            } catch (SecurityException denied) {
+                failure = "\u6CA1\u6709\u5199\u5165\u8BE5\u4F4D\u7F6E\u7684\u6743\u9650";
+            }
+            final String problem = failure;
+            runOnUiThread(() -> {
+                if (isFinishing()) {
+                    return;
+                }
+                if (problem != null) {
+                    UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25", problem);
+                    return;
+                }
+                Toast.makeText(this, "\u5DF2\u5BFC\u51FA "
+                        + BackupPreview.of(name, document).summary()
+                        + (name.isEmpty() ? "" : "\n" + name),
+                        Toast.LENGTH_LONG).show();
+            });
+        }).start();
+    }
+
+    /** Picks a backup file and opens the read-only preview for it. */
+    private void openBackupPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
+                "application/json", "text/plain", "application/octet-stream"
+        });
+        startActivityForResult(intent, REQUEST_PREVIEW_BACKUP);
+    }
+
+    /**
+     * Opens the preview screen for the picked file.
+     *
+     * <p>Nothing is read, parsed or written here: the screen is handed the
+     * document and does the rest itself, so there is exactly one place that reads
+     * a backup file and exactly one place that decides what it means.</p>
+     */
+    private void previewBackup(Uri uri) {
+        Intent intent = new Intent(this, BackupPreviewActivity.class);
+        intent.putExtra(BackupPreviewActivity.EXTRA_URI, uri.toString());
+        intent.putExtra(BackupPreviewActivity.EXTRA_FILE_NAME, displayNameOf(uri));
+        startActivity(intent);
+    }
+
+    private String backupFileName() {
+        return "weihe-backup-" + DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")
+                .format(LocalDateTime.now()) + ".json";
+    }
+
+    private String appVersionName() {
+        try {
+            String name = getPackageManager()
+                    .getPackageInfo(getPackageName(), 0).versionName;
+            return name == null ? "" : name;
+        } catch (android.content.pm.PackageManager.NameNotFoundException absent) {
+            // Only reachable if the package is being uninstalled underneath us.
+            return "";
+        }
+    }
+
+    /** The file name the picker showed, for the confirmation message. */
+    private static String displayNameOf(Uri uri) {
+        String segment = uri == null ? null : uri.getLastPathSegment();
+        if (segment == null) {
+            return "";
+        }
+        int slash = segment.lastIndexOf('/');
+        return slash >= 0 ? segment.substring(slash + 1) : segment;
+    }
+
+    private static String writeFailureReason(IOException error) {
+        String message = error.getMessage();
+        if (message == null || message.trim().isEmpty()) {
+            return "\u5199\u5165\u6587\u4EF6\u5931\u8D25\uFF0C\u8BF7\u6362\u4E00\u4E2A"
+                    + "\u4F4D\u7F6E\u518D\u8BD5";
+        }
+        return "\u5199\u5165\u6587\u4EF6\u5931\u8D25\uFF1A" + message
+                + "\n\u82E5\u662F\u5B58\u50A8\u7A7A\u95F4\u4E0D\u8DB3\uFF0C\u8BF7\u6E05"
+                + "\u7406\u540E\u91CD\u8BD5\u3002";
     }
 
     /** Which term is on screen, and the way to look at another one. */
@@ -333,6 +545,9 @@ public class SettingsActivity extends Activity {
 
         schedulesValue.setText(schedules.size() + " \u4E2A\u4F5C\u606F\u8868 \u00B7 "
                 + "\u6BCF\u8282 " + BellSchedule.PERIODS + " \u8282");
+        backupValue.setText("\u5F85\u5BFC\u51FA\uFF1A" + semesters.size() + " \u4E2A\u5B66\u671F"
+                + " \u00B7 " + courses.size() + " \u95E8\u8BFE\u7A0B \u00B7 "
+                + schedules.size() + " \u5F20\u4F5C\u606F\u8868");
         weekValue.setText("WeiheSchedule 1.0 \u00B7 minSdk 26");
     }
 

@@ -28,6 +28,37 @@ public final class FakePreferences implements SharedPreferences {
 
     private final Map<String, Object> values = new HashMap<>();
 
+    /**
+     * How many times {@link Editor#commit()} has succeeded.
+     *
+     * <p>Lets a test say "this operation is one transaction" rather than only
+     * "it ended up with the right values" -- which is the difference between a
+     * restore that cannot be half-applied and one that merely happened not to
+     * fail.</p>
+     */
+    private int commits;
+
+    /**
+     * When above zero, the commit with this number reports failure without
+     * changing anything.
+     *
+     * <p>This is what a real store does when the write cannot be persisted: the
+     * in-memory map keeps the old values and {@code commit()} returns false.
+     * Naming the commit lets a test fail exactly the one it means -- the restore,
+     * or the rollback after it -- and leave the other able to succeed.</p>
+     */
+    private int failingCommitNumber;
+
+    /** Makes the {@code number}-th commit (counting from 1) fail. */
+    public void failCommitNumber(int number) {
+        failingCommitNumber = number;
+    }
+
+    /** How many commits have gone through. */
+    public int commitCount() {
+        return commits;
+    }
+
     /** Every string currently stored, for assertions. */
     public Map<String, Object> snapshot() {
         return new HashMap<>(values);
@@ -159,7 +190,16 @@ public final class FakePreferences implements SharedPreferences {
 
         @Override
         public boolean commit() {
+            if (failingCommitNumber > 0 && commits + 1 == failingCommitNumber) {
+                // A refused commit leaves the store exactly as it was, which is
+                // what the real implementation does too.
+                pending.clear();
+                removals.clear();
+                clear = false;
+                return false;
+            }
             apply();
+            commits++;
             return true;
         }
 

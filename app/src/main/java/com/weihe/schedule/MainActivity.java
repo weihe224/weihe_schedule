@@ -35,6 +35,7 @@ import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseConflicts;
 import com.weihe.schedule.rule.CourseQuery;
+import com.weihe.schedule.data.RestoreReport;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.importer.ExcelTimetableReader;
 import com.weihe.schedule.importer.TimetableImportException;
@@ -96,6 +97,28 @@ public class MainActivity extends Activity {
         Insets.applyBrandedSystemBars(this);
         setContentView(buildRoot());
         refreshAll();
+        warnAboutUnsettledRestore();
+    }
+
+    /**
+     * Tells the user when a restore could not be settled.
+     *
+     * <p>The repository puts the previous data back whenever it can, and does it
+     * silently. The one case it cannot fix is when neither the restored data nor
+     * the rollback could be confirmed -- then the only honest thing to do is say
+     * so on the first screen the app opens, rather than let someone keep editing
+     * a timetable whose state nobody can vouch for.</p>
+     */
+    private void warnAboutUnsettledRestore() {
+        RestoreReport report = repository.recoveryReport();
+        if (report == null || !report.needsAttention()) {
+            return;
+        }
+        UiKit.message(this, "\u4E0A\u4E00\u6B21\u6062\u590D\u672A\u5B8C\u6210",
+                report.message() + (report.detail().isEmpty() ? "" : "\n\n" + report.detail())
+                        + "\n\n\u5F53\u524D\u6570\u636E\u72B6\u6001\u65E0\u6CD5\u786E\u8BA4"
+                        + "\uFF0C\u8BF7\u5148\u4E0D\u8981\u7EE7\u7EED\u4FEE\u6539\u8BFE\u8868"
+                        + "\uFF0C\u5E76\u4FDD\u7559\u539F\u5907\u4EFD\u6587\u4EF6\u3002");
     }
 
     @Override

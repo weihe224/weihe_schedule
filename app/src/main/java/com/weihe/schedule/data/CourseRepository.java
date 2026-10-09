@@ -30,6 +30,27 @@ public class CourseRepository {
     /** Per-semester keys are the legacy key plus the semester id. */
     private static final String SUFFIX_SEPARATOR = ":";
 
+    /**
+     * The pre-restore copy of everything a restore replaces.
+     *
+     * <p>Written in the same transaction as the restored data, so it cannot be
+     * half-there, and kept until the next restore overwrites it. It is the only
+     * thing standing between a bad restore and a lost timetable, so nothing
+     * clears it on a hunch.</p>
+     */
+    private static final String KEY_RESTORE_SNAPSHOT = "restore_snapshot";
+
+    /**
+     * What a restore intended to write, present only between the commit and the
+     * read-back check.
+     *
+     * <p>If the process dies in that window the marker survives, and the next
+     * repository reads it and finishes the job: the data is checked, and put back
+     * if it does not match. Without it an interrupted restore would be
+     * indistinguishable from a completed one.</p>
+     */
+    private static final String KEY_RESTORE_PENDING = "restore_pending";
+
     private final SharedPreferences preferences;
     /**
      * Snapshot of the last read, dropped by every write.
@@ -62,6 +83,9 @@ public class CourseRepository {
      */
     private long semesterId;
 
+    /** Set only when this instance had to settle an interrupted restore. */
+    private RestoreReport recoveryReport;
+
     public CourseRepository(Context context) {
         this(context == null ? pendingPreferences.get() : preferencesOf(context));
         pendingPreferences.remove();
@@ -71,7 +95,21 @@ public class CourseRepository {
     CourseRepository(SharedPreferences store) {
         preferences = store;
         migrateLegacyStorage();
+        // Finishes a restore that was cut short between its commit and its check.
+        // Returns null on every ordinary start, which is what makes it cheap.
+        recoveryReport = resolvePendingRestore();
         adoptSemester(activeSemester());
+    }
+
+    /**
+     * What the last interrupted restore did, when this instance had to settle one.
+     *
+     * <p>Null on an ordinary start. Only {@link RestoreReport.Status#NEEDS_ATTENTION}
+     * is worth showing the user: the other outcomes leave the app in a state it
+     * understands.</p>
+     */
+    public RestoreReport recoveryReport() {
+        return recoveryReport;
     }
 
     /**
@@ -1070,4 +1108,371 @@ public class CourseRepository {
         course.color = color;
         return course;
     }
+    // --------------------------------------------------------------- restoring
+
+    /**
+     * Replaces everything a backup covers, in one transaction, keeping the old
+     * state aside until the new one has been read back and checked.
+     *
+     * <p>The whole restore is a single {@link SharedPreferences.Editor} commit.
+     * That matters: the keys involved are {@code semesters}, {@code active_semester},
+     * {@code bell_schedules} and one {@code courses:<id>} and {@code semester_start:<id>}
+     * per semester -- three plus two per term. Saving them through the ordinary
+     * methods would be one commit each, and a process that died between two of
+     * them would leave a store holding the new semesters and the old courses,
+     * which nothing in the app would repair.</p>
+     *
+     * <p>The snapshot is written in the same commit as the new data, so the two
+     * cannot disagree about whether a restore was in progress. Everything the
+     * backup does not cover -- the damaged-payload copy, the retired legacy keys,
+     * anything a future version adds -- is left exactly as it was: this replaces
+     * a known set of keys, it does not clear the file.</p>
+     *
+     * @return what actually happened, never null
+     */
+    public RestoreReport restoreFrom(BackupCodec.Document document) {
+        if (document == null || document.semesters().isEmpty()
+                || document.schedules().isEmpty()) {
+            return RestoreReport.unchanged(
+                    "\u5907\u4EFD\u5185\u5BB9\u4E0D\u5B8C\u6574\uFF0C\u672A\u505A\u4EFB"
+                            + "\u4F55\u6539\u52A8");
+        }
+        Map<String, Object> snapshot = captureRestoreScope();
+        String expectation = expectationOf(document);
+
+        SharedPreferences.Editor editor = preferences.edit();
+        for (String key : preferences.getAll().keySet()) {
+            if (isScopedKey(key)) {
+                editor.remove(key);
+            }
+        }
+        editor.putString(KEY_RESTORE_SNAPSHOT, MiniJson.write(snapshot));
+        editor.putString(KEY_RESTORE_PENDING, expectation);
+        editor.putString(KEY_SEMESTERS, SemesterJson.write(document.semesters()));
+        editor.putLong(KEY_ACTIVE_SEMESTER, document.activeSemesterId());
+        editor.putString(KEY_BELL_SCHEDULES, BellScheduleJson.write(document.schedules()));
+        for (Semester semester : document.semesters()) {
+            editor.putString(coursesKeyFor(semester.id()),
+                    coursesJsonOf(document.coursesOf(semester.id())));
+            editor.putString(startKeyFor(semester.id()), semester.start().toString());
+        }
+        if (!editor.commit()) {
+            // SharedPreferences applies an editor all-or-nothing, so a refusal
+            // here means nothing was written and the old data is untouched.
+            return RestoreReport.unchanged("\u5199\u5165\u5931\u8D25\uFF0C\u5F53\u524D"
+                    + "\u6570\u636E\u4FDD\u6301\u4E0D\u53D8");
+        }
+
+        reload();
+        String problem = verifyStored(expectation);
+        if (problem == null) {
+            clearPending();
+            adoptSemester(activeSemester());
+            return RestoreReport.restored("\u5DF2\u6062\u590D " + document.semesterCount()
+                    + " \u4E2A\u5B66\u671F \u00B7 " + document.courseCount()
+                    + " \u95E8\u8BFE\u7A0B \u00B7 " + document.scheduleCount()
+                    + " \u5F20\u4F5C\u606F\u8868");
+        }
+        return rollBackTo(snapshot, problem);
+    }
+
+    /**
+     * Settles a restore that was interrupted between its commit and its check.
+     *
+     * <p>Only the marker makes this distinguishable from an ordinary start, and
+     * only the marker is checked, so the ordinary start costs one {@code contains}.
+     * The new data is either all there -- the commit was atomic -- or it is not;
+     * this re-checks it against what the restore intended and puts the snapshot
+     * back when it does not match.</p>
+     *
+     * @return what was settled, or null when there was nothing to settle
+     */
+    private RestoreReport resolvePendingRestore() {
+        String expectation = preferences.getString(KEY_RESTORE_PENDING, null);
+        if (expectation == null) {
+            return null;
+        }
+        String problem = verifyStored(expectation);
+        if (problem == null) {
+            clearPending();
+            return RestoreReport.restored("\u4E0A\u4E00\u6B21\u6062\u590D\u5DF2\u5B8C"
+                    + "\u6210\u5E76\u901A\u8FC7\u6821\u9A8C");
+        }
+        Map<String, Object> snapshot = readSnapshot();
+        if (snapshot == null) {
+            return RestoreReport.needsAttention(
+                    "\u4E0A\u4E00\u6B21\u6062\u590D\u672A\u5B8C\u6210\uFF0C\u4E14\u627E"
+                            + "\u4E0D\u5230\u56DE\u6EDA\u6750\u6599",
+                    problem);
+        }
+        return rollBackTo(snapshot, problem);
+    }
+
+    /**
+     * Puts the captured state back and checks that it landed.
+     *
+     * <p>A rollback is itself a single commit, so it either applies in full or
+     * not at all. When it does not verify, nothing is cleared: the snapshot and
+     * the marker both stay on disk so a later attempt -- or a person -- can still
+     * see what the data was before.</p>
+     */
+    private RestoreReport rollBackTo(Map<String, Object> snapshot, String reason) {
+        if (snapshot == null) {
+            return RestoreReport.needsAttention(
+                    "\u6062\u590D\u672A\u901A\u8FC7\u6821\u9A8C\uFF0C\u4E14\u6CA1\u6709"
+                            + "\u53EF\u7528\u7684\u56DE\u6EDA\u6750\u6599", reason);
+        }
+        if (!applySnapshot(snapshot)) {
+            return RestoreReport.needsAttention(
+                    "\u6062\u590D\u672A\u901A\u8FC7\u6821\u9A8C\uFF0C\u56DE\u6EDA"
+                            + "\u4E5F\u672A\u5199\u5165\u6210\u529F", reason);
+        }
+        String residual = verifyStored(expectationOfSnapshot(snapshot));
+        if (residual != null) {
+            return RestoreReport.needsAttention(
+                    "\u56DE\u6EDA\u540E\u6821\u9A8C\u4ECD\u672A\u901A\u8FC7", residual);
+        }
+        clearPending();
+        adoptSemester(activeSemester());
+        return RestoreReport.rolledBack(
+                "\u6062\u590D\u672A\u901A\u8FC7\u6821\u9A8C\uFF0C\u5DF2\u8FD8\u539F"
+                        + "\u5230\u6062\u590D\u524D\u7684\u6570\u636E", reason);
+    }
+
+    /** Everything a restore would replace, exactly as it is stored now. */
+    private Map<String, Object> captureRestoreScope() {
+        Map<String, Object> snapshot = MiniJson.object();
+        for (Map.Entry<String, ?> entry : preferences.getAll().entrySet()) {
+            String key = entry.getKey();
+            if (!isScopedKey(key)) {
+                continue;
+            }
+            Object value = entry.getValue();
+            Map<String, Object> encoded = MiniJson.object();
+            if (value instanceof String) {
+                encoded.put("s", value);
+            } else if (value instanceof Number) {
+                encoded.put("l", Long.valueOf(((Number) value).longValue()));
+            } else {
+                // Nothing this app writes has another type; leave it alone rather
+                // than pretend to have captured it.
+                continue;
+            }
+            snapshot.put(key, encoded);
+        }
+        return snapshot;
+    }
+
+    /** Writes a captured state back in one commit, dropping keys it did not have. */
+    private boolean applySnapshot(Map<String, Object> snapshot) {
+        SharedPreferences.Editor editor = preferences.edit();
+        for (String key : preferences.getAll().keySet()) {
+            if (isScopedKey(key) && !snapshot.containsKey(key)) {
+                editor.remove(key);
+            }
+        }
+        for (Map.Entry<String, Object> entry : snapshot.entrySet()) {
+            Object value = entry.getValue();
+            if (!(value instanceof Map)) {
+                continue;
+            }
+            Map<?, ?> encoded = (Map<?, ?>) value;
+            Object text = encoded.get("s");
+            Object number = encoded.get("l");
+            if (text instanceof String) {
+                editor.putString(entry.getKey(), (String) text);
+            } else if (number instanceof Number) {
+                editor.putLong(entry.getKey(), ((Number) number).longValue());
+            }
+        }
+        boolean applied = editor.commit();
+        reload();
+        return applied;
+    }
+
+    private Map<String, Object> readSnapshot() {
+        Object parsed = MiniJson.parse(
+                preferences.getString(KEY_RESTORE_SNAPSHOT, null));
+        if (!(parsed instanceof Map)) {
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> snapshot = (Map<String, Object>) parsed;
+        return snapshot.isEmpty() ? null : snapshot;
+    }
+
+    /**
+     * The keys a restore owns.
+     *
+     * <p>Deliberately a positive list. {@code courses_backup} holds a damaged
+     * payload that has nothing to do with a restore, the retired {@code courses}
+     * and {@code semester_start} keys are read-only history, and a future version
+     * may add keys this one knows nothing about -- clearing the file would throw
+     * all of that away.</p>
+     */
+    private static boolean isScopedKey(String key) {
+        return KEY_SEMESTERS.equals(key)
+                || KEY_ACTIVE_SEMESTER.equals(key)
+                || KEY_BELL_SCHEDULES.equals(key)
+                || key.startsWith(KEY_COURSES + SUFFIX_SEPARATOR)
+                || key.startsWith(KEY_START + SUFFIX_SEPARATOR);
+    }
+
+    /**
+     * Reads the store back and checks it against what the restore intended.
+     *
+     * <p>Reads the raw payloads rather than going through the ordinary getters.
+     * They repair as they read -- a schedule whose time arrays do not line up
+     * becomes the built-in timetable, an empty schedule list is re-seeded -- so
+     * checking through them would report on what the app would decide the data
+     * means rather than on what was actually written.</p>
+     *
+     * @return null when everything matches, otherwise what did not
+     */
+    private String verifyStored(String expectationJson) {
+        Object parsed = MiniJson.parse(expectationJson);
+        if (!(parsed instanceof Map)) {
+            return "\u65E0\u6CD5\u8BFB\u53D6\u6062\u590D\u6821\u9A8C\u4FE1\u606F";
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expected = (Map<String, Object>) parsed;
+        List<Object> wantedIds = MiniJson.optArray(expected, "semesterIds");
+
+        List<Semester> stored = SemesterJson.parse(
+                preferences.getString(KEY_SEMESTERS, null));
+        if (stored.size() != wantedIds.size()) {
+            return "\u5B66\u671F\u6570\u91CF\u4E0D\u7B26\uFF1A\u5E94\u4E3A "
+                    + wantedIds.size() + "\uFF0C\u5B9E\u9645\u4E3A " + stored.size();
+        }
+        List<String> scheduleNames = new ArrayList<>();
+        for (BellSchedule schedule : BellScheduleJson.parse(
+                preferences.getString(KEY_BELL_SCHEDULES, null))) {
+            scheduleNames.add(schedule.name());
+        }
+        if (scheduleNames.size() != MiniJson.optInt(expected, "scheduleCount", -1)) {
+            return "\u4F5C\u606F\u8868\u6570\u91CF\u4E0D\u7B26\uFF1A\u5B9E\u9645\u4E3A "
+                    + scheduleNames.size();
+        }
+        Object rawCounts = expected.get("courseCounts");
+        Map<?, ?> counts = rawCounts instanceof Map ? (Map<?, ?>) rawCounts : null;
+        for (int i = 0; i < wantedIds.size(); i++) {
+            Object rawId = wantedIds.get(i);
+            if (!(rawId instanceof Number)) {
+                return "\u6062\u590D\u6821\u9A8C\u4FE1\u606F\u5DF2\u635F\u574F";
+            }
+            long id = ((Number) rawId).longValue();
+            if (stored.get(i).id() != id) {
+                return "\u5B66\u671F\u6807\u8BC6\u4E0D\u7B26\uFF1A\u7B2C " + (i + 1)
+                        + " \u4E2A\u5E94\u4E3A " + id;
+            }
+            List<Object> courses = MiniJson.parseArray(
+                    preferences.getString(coursesKeyFor(id), null));
+            int want = 0;
+            Object rawWant = counts == null ? null : counts.get(String.valueOf(id));
+            if (rawWant instanceof Number) {
+                want = ((Number) rawWant).intValue();
+            }
+            if (courses.size() != want) {
+                return "\u8BFE\u7A0B\u6570\u91CF\u4E0D\u7B26\uFF1A\u5B66\u671F " + id
+                        + " \u5E94\u4E3A " + want + "\uFF0C\u5B9E\u9645\u4E3A "
+                        + courses.size();
+            }
+            for (Object entry : courses) {
+                if (!(entry instanceof Map)) {
+                    return "\u8BFE\u7A0B\u6570\u636E\u5DF2\u635F\u574F";
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> item = (Map<String, Object>) entry;
+                String name = MiniJson.optString(item, "scheduleName", "").trim();
+                if (!name.isEmpty() && !scheduleNames.contains(name)) {
+                    return "\u8BFE\u7A0B\u5F15\u7528\u4E86\u4E0D\u5B58\u5728\u7684"
+                            + "\u4F5C\u606F\u8868\uFF1A" + name;
+                }
+            }
+        }
+        long active = preferences.getLong(KEY_ACTIVE_SEMESTER, 0L);
+        boolean activeFound = false;
+        for (Semester semester : stored) {
+            if (semester.id() == active) {
+                activeFound = true;
+            }
+        }
+        if (!activeFound) {
+            return "\u5F53\u524D\u5B66\u671F\u4E0D\u5728\u6062\u590D\u7ED3\u679C\u4E2D";
+        }
+        return null;
+    }
+
+    /** What a restore of {@code document} must leave behind, in one small object. */
+    private static String expectationOf(BackupCodec.Document document) {
+        Map<String, Object> expectation = MiniJson.object();
+        List<Object> ids = MiniJson.array();
+        Map<String, Object> counts = MiniJson.object();
+        for (Semester semester : document.semesters()) {
+            ids.add(Long.valueOf(semester.id()));
+            counts.put(String.valueOf(semester.id()),
+                    Integer.valueOf(document.coursesOf(semester.id()).size()));
+        }
+        expectation.put("semesterIds", ids);
+        expectation.put("courseCounts", counts);
+        expectation.put("scheduleCount", Integer.valueOf(document.scheduleCount()));
+        return MiniJson.write(expectation);
+    }
+
+    /** The same, worked out from a captured snapshot rather than a document. */
+    private String expectationOfSnapshot(Map<String, Object> snapshot) {
+        List<Semester> semesters = SemesterJson.parse(valueOf(snapshot, KEY_SEMESTERS));
+        Map<String, Object> expectation = MiniJson.object();
+        List<Object> ids = MiniJson.array();
+        Map<String, Object> counts = MiniJson.object();
+        for (Semester semester : semesters) {
+            ids.add(Long.valueOf(semester.id()));
+            counts.put(String.valueOf(semester.id()), Integer.valueOf(
+                    MiniJson.parseArray(valueOf(snapshot, coursesKeyFor(semester.id())))
+                            .size()));
+        }
+        expectation.put("semesterIds", ids);
+        expectation.put("courseCounts", counts);
+        expectation.put("scheduleCount", Integer.valueOf(BellScheduleJson.parse(
+                valueOf(snapshot, KEY_BELL_SCHEDULES)).size()));
+        return MiniJson.write(expectation);
+    }
+
+    /** The captured text of one key, or null when the snapshot did not hold it. */
+    private static String valueOf(Map<String, Object> snapshot, String key) {
+        Object value = snapshot.get(key);
+        if (!(value instanceof Map)) {
+            return null;
+        }
+        Object text = ((Map<?, ?>) value).get("s");
+        return text instanceof String ? (String) text : null;
+    }
+
+    /** One semester's courses in the stored shape. */
+    private static String coursesJsonOf(List<Course> courses) {
+        List<Object> array = MiniJson.array();
+        for (Course course : courses) {
+            Map<String, Object> object = MiniJson.object();
+            object.put("id", Long.valueOf(course.id));
+            object.put("name", course.name);
+            object.put("teacher", course.teacher);
+            object.put("location", course.location);
+            object.put("day", Integer.valueOf(course.dayOfWeek));
+            object.put("startPeriod", Integer.valueOf(course.startPeriod));
+            object.put("endPeriod", Integer.valueOf(course.endPeriod));
+            object.put("startWeek", Integer.valueOf(course.startWeek));
+            object.put("endWeek", Integer.valueOf(course.endWeek));
+            object.put("parity", Integer.valueOf(course.parity));
+            object.put("color", Long.valueOf(course.color & 0xFFFFFFFFL));
+            object.put("scheduleName", course.scheduleName);
+            array.add(object);
+        }
+        return MiniJson.write(array);
+    }
+
+    /** Clears the marker; a failure here only means the next start re-checks. */
+    private void clearPending() {
+        preferences.edit().remove(KEY_RESTORE_PENDING).apply();
+    }
+
 }
