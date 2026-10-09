@@ -95,7 +95,7 @@ public class ScheduleListActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         ImageButton add = UiKit.fab(this, R.drawable.ic_add,
-                "\u65B0\u5EFA\u4F5C\u606F\u8868", view -> openEditor(-1));
+                "\u65B0\u5EFA\u4F5C\u606F\u8868", view -> openEditor(null));
         android.widget.FrameLayout.LayoutParams fabParams =
                 new android.widget.FrameLayout.LayoutParams(
                         dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE),
@@ -119,9 +119,8 @@ public class ScheduleListActivity extends Activity {
         summary.setText("\u5171 " + schedules.size()
                 + " \u4E2A\u4F5C\u606F\u8868 \u00B7 \u70B9\u51FB\u4FEE\u6539\uFF0C\u957F\u6309\u5220\u9664");
 
-        for (int i = 0; i < schedules.size(); i++) {
-            BellSchedule schedule = schedules.get(i);
-            list.addView(scheduleCard(schedule, i, usersOf(schedule, courses)));
+        for (BellSchedule schedule : schedules) {
+            list.addView(scheduleCard(schedule, usersOf(schedule, courses)));
         }
     }
 
@@ -135,8 +134,7 @@ public class ScheduleListActivity extends Activity {
         return users;
     }
 
-    private View scheduleCard(final BellSchedule schedule, final int index,
-            int users) {
+    private View scheduleCard(final BellSchedule schedule, int users) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(15), dp(13), dp(15), dp(14));
@@ -150,7 +148,10 @@ public class ScheduleListActivity extends Activity {
         titleRow.addView(UiKit.text(this, schedule.name(), UiTokens.Type.TITLE_MEDIUM, Palette.ON_SURFACE, true),
                 new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        if (index == 0) {
+        // "Default" is the schedule the app falls back to, not whichever happens to
+        // be stored first: the badge moved with the array before, so any future
+        // reordering would have re-labelled the wrong row.
+        if (BellSchedules.STANDARD_NAME.equals(schedule.name())) {
             titleRow.addView(badge("\u9ED8\u8BA4", Palette.PRIMARY));
         }
         card.addView(titleRow);
@@ -188,9 +189,9 @@ public class ScheduleListActivity extends Activity {
         keywordParams.topMargin = dp(8);
         card.addView(keywords, keywordParams);
 
-        card.setOnClickListener(view -> openEditor(index));
+        card.setOnClickListener(view -> openEditor(schedule.name()));
         card.setOnLongClickListener(view -> {
-            confirmDelete(schedule, index);
+            confirmDelete(schedule);
             return true;
         });
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
@@ -210,15 +211,16 @@ public class ScheduleListActivity extends Activity {
                 Palette.ON_PRIMARY, true, UiTokens.RADIUS_S);
     }
 
-    private void openEditor(int index) {
+    private void openEditor(String scheduleName) {
         Intent intent = new Intent(this, EditScheduleActivity.class);
-        intent.putExtra(EditScheduleActivity.EXTRA_INDEX, index);
+        intent.putExtra(EditScheduleActivity.EXTRA_NAME, scheduleName);
         startActivityForResult(intent, REQUEST_EDIT);
     }
 
-    private void confirmDelete(final BellSchedule schedule, final int index) {
-        final List<BellSchedule> schedules = repository.getBellSchedules();
-        if (schedules.size() <= 1) {
+    private void confirmDelete(final BellSchedule schedule) {
+        // Checked here and in the repository: this tells the user why nothing
+        // happened, the repository is what actually guarantees it.
+        if (repository.getBellSchedules().size() <= 1) {
             Toast.makeText(this, "\u81F3\u5C11\u4FDD\u7559\u4E00\u4E2A\u4F5C\u606F\u8868",
                     Toast.LENGTH_SHORT).show();
             return;
@@ -233,15 +235,10 @@ public class ScheduleListActivity extends Activity {
         UiKit.dialog(this, "\u5220\u9664\u4F5C\u606F\u8868", message, null, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.destructive("\u5220\u9664", () -> {
-                    List<BellSchedule> remaining = BellSchedules.copyOf(
-                            repository.getBellSchedules());
-                    if (index >= 0 && index < remaining.size()) {
-                        remaining.remove(index);
+                    if (repository.deleteBellSchedule(schedule.name())) {
+                        render();
+                        Toast.makeText(this, "\u5DF2\u5220\u9664", Toast.LENGTH_SHORT).show();
                     }
-                    repository.saveBellSchedules(remaining);
-                    repository.clearScheduleReferences(schedule.name());
-                    render();
-                    Toast.makeText(this, "\u5DF2\u5220\u9664", Toast.LENGTH_SHORT).show();
                 }));
     }
 

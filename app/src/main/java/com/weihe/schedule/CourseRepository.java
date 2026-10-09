@@ -703,6 +703,87 @@ public class CourseRepository {
     }
 
     /**
+     * Stores one bell schedule, replacing the one that carried
+     * {@code originalName}, and keeps the courses that named it in step.
+     *
+     * <p>Addressed by <em>name</em>, not by position. The editor used to write
+     * back with an index captured when it opened, against a repository that never
+     * reloads; if any other screen added or removed a table in between, that index
+     * named a different one and the save silently overwrote it.</p>
+     *
+     * <p>When the name changed, every course that pinned the old name is repointed
+     * at the new one. Without that they keep a name that no longer exists, fall
+     * back to venue resolution, and can end up on a different clock because
+     * somebody renamed a timetable -- see {@link #renameSchedule}.</p>
+     *
+     * @param originalName the name the editor opened with, or {@code null}/empty
+     *                     when this is a new schedule
+     * @return the schedule that was stored
+     */
+    public BellSchedule saveBellSchedule(String originalName, BellSchedule schedule) {
+        if (schedule == null) {
+            return null;
+        }
+        List<BellSchedule> schedules = BellSchedules.copyOf(getBellSchedules());
+        int at = indexOfSchedule(schedules, originalName);
+        if (at >= 0) {
+            schedules.set(at, schedule);
+        } else {
+            schedules.add(schedule);
+        }
+        saveBellSchedules(schedules);
+        if (originalName != null && !originalName.trim().isEmpty()
+                && !originalName.trim().equals(schedule.name())) {
+            renameSchedule(originalName, schedule.name());
+        }
+        return schedule;
+    }
+
+    /**
+     * Deletes one bell schedule and clears the courses that named it.
+     *
+     * <p>Refuses to remove the last one. {@link #getBellSchedules} reads an empty
+     * stored list as "this install has never stored any" and writes
+     * {@link BellSchedules#presets()} back, so deleting the final schedule would
+     * not delete anything -- it would look like the delete silently undid itself
+     * on the next screen that reads.</p>
+     *
+     * @param name the schedule to remove
+     * @return false when no schedule carries that name, or it is the only one
+     */
+    public boolean deleteBellSchedule(String name) {
+        List<BellSchedule> schedules = BellSchedules.copyOf(getBellSchedules());
+        if (schedules.size() <= 1) {
+            return false;
+        }
+        int at = indexOfSchedule(schedules, name);
+        if (at < 0) {
+            return false;
+        }
+        schedules.remove(at);
+        saveBellSchedules(schedules);
+        clearScheduleReferences(name);
+        return true;
+    }
+
+    /** Position of the schedule with this name, or -1 when there is none. */
+    private static int indexOfSchedule(List<BellSchedule> schedules, String name) {
+        if (schedules == null || name == null) {
+            return -1;
+        }
+        String wanted = name.trim();
+        if (wanted.isEmpty()) {
+            return -1;
+        }
+        for (int i = 0; i < schedules.size(); i++) {
+            if (schedules.get(i).name().equals(wanted)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
      * The displayed time span of a course, according to the schedule that
      * applies to it.
      *

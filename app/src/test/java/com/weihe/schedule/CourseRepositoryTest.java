@@ -142,6 +142,229 @@ public class CourseRepositoryTest {
                 repository.findCourse(course.id).scheduleName);
     }
 
+    // ------------------------------------------- saving and deleting by name
+
+    /** A course whose schedule choice is pinned to {@code scheduleName}. */
+    private static Course courseNaming(String scheduleName, String location) {
+        Course course = new Course();
+        course.name = "\u9AD8\u7B49\u6570\u5B66";
+        course.teacher = "\u5F20\u8001\u5E08";
+        course.location = location;
+        course.dayOfWeek = 1;
+        course.startPeriod = 3;
+        course.endPeriod = 4;
+        course.startWeek = 1;
+        course.endWeek = 16;
+        course.parity = Course.PARITY_ALL;
+        course.scheduleName = scheduleName;
+        return course;
+    }
+
+    /** How many schedules carry this name. */
+    private static int countNamed(List<BellSchedule> schedules, String name) {
+        int found = 0;
+        for (BellSchedule schedule : schedules) {
+            if (schedule.name().equals(name)) {
+                found++;
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Renaming through the operation the editor actually performs.
+     *
+     * <p>{@code renameSchedule} was already correct and tested; the editor simply
+     * never called it, so it wrote the renamed table back and left every course
+     * that pinned the old name pointing at a name that no longer existed. Those
+     * courses then fell back to venue resolution and could land on a different
+     * clock -- the schedule silently changing under the user.</p>
+     */
+    @Test
+    public void savingAScheduleUnderANewNameRepointsTheCoursesThatNamedIt() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Course course = courseNaming(BellSchedules.DE_NAME, "\u6CA1\u6709\u5173\u952E\u8BCD\u7684\u5730\u70B9");
+        repository.upsertCourse(course);
+
+        repository.saveBellSchedule(BellSchedules.DE_NAME,
+                BellSchedules.deBuilding().renamed("\u6539\u540D\u540E\u7684\u4F5C\u606F\u8868"));
+
+        List<BellSchedule> schedules = repository.getBellSchedules();
+        assertEquals(3, schedules.size());
+        assertEquals(0, countNamed(schedules, BellSchedules.DE_NAME));
+        assertEquals(1, countNamed(schedules, "\u6539\u540D\u540E\u7684\u4F5C\u606F\u8868"));
+        assertEquals("\u6539\u540D\u540E\u7684\u4F5C\u606F\u8868",
+                repository.findCourse(course.id).scheduleName);
+
+        // And the repointed name survives a reopen, which is what makes it a fix
+        // rather than a session-long illusion.
+        CourseRepository reopened = repositoryFor(preferences);
+        assertEquals("\u6539\u540D\u540E\u7684\u4F5C\u606F\u8868",
+                reopened.findCourse(course.id).scheduleName);
+        assertNotNull(BellSchedules.byName(reopened.getBellSchedules(),
+                "\u6539\u540D\u540E\u7684\u4F5C\u606F\u8868"));
+    }
+
+    @Test
+    public void renamingAScheduleKeepsTheClockTimesItWasGiven() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        BellSchedule renamed = BellSchedules.deBuilding()
+                .renamed("\u6539\u540D\u540E\u7684\u4F5C\u606F\u8868");
+
+        repository.saveBellSchedule(BellSchedules.DE_NAME, renamed);
+
+        BellSchedule stored = BellSchedules.byName(repository.getBellSchedules(),
+                "\u6539\u540D\u540E\u7684\u4F5C\u606F\u8868");
+        assertNotNull(stored);
+        assertEquals("10:15 - 10:55", stored.timeRange(3, 3));
+        assertEquals(BellSchedule.PERIODS, stored.periodCount());
+    }
+
+    /**
+     * The write lands on the schedule that was opened, not on whatever sits at
+     * that position now.
+     *
+     * <p>The editor used to carry a list index for its whole life while holding a
+     * repository that never reloads; anything another screen did in between made
+     * that index name a different table.</p>
+     */
+    @Test
+    public void savingAScheduleReplacesItByNameNotByPosition() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        // Reverse the stored order, so position and name disagree.
+        List<BellSchedule> reordered = BellSchedules.copyOf(repository.getBellSchedules());
+        java.util.Collections.reverse(reordered);
+        repository.saveBellSchedules(reordered);
+
+        repository.saveBellSchedule(BellSchedules.STANDARD_NAME,
+                BellSchedules.standard().withTimes(
+                        new int[] {500, 540, 600, 645, 685, 805, 845, 905,
+                                945, 1000, 1040, 1095, 1135, 1180, 1225},
+                        new int[] {540, 580, 640, 685, 725, 845, 885, 945,
+                                985, 1040, 1080, 1135, 1175, 1220, 1265}));
+
+        List<BellSchedule> stored = repository.getBellSchedules();
+        assertEquals(3, stored.size());
+        // The D/E and B/C tables are untouched...
+        assertEquals("10:15 - 10:55",
+                BellSchedules.byName(stored, BellSchedules.DE_NAME).timeRange(3, 3));
+        assertEquals("10:35 - 11:15",
+                BellSchedules.byName(stored, BellSchedules.BC_NAME).timeRange(4, 4));
+        // ...and the edit went to the one that was named.
+        assertEquals("08:20 - 09:00",
+                BellSchedules.byName(stored, BellSchedules.STANDARD_NAME).timeRange(1, 1));
+    }
+
+    @Test
+    public void addingANewScheduleLeavesTheOthersAlone() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+
+        repository.saveBellSchedule(null, BellSchedules.standard()
+                .renamed("\u5B9E\u9A8C\u697C\u4F5C\u606F")
+                .withLocationKeywords(java.util.Arrays.asList("\u5B9E\u9A8C\u697C")));
+
+        List<BellSchedule> stored = repository.getBellSchedules();
+        assertEquals(4, stored.size());
+        assertEquals(1, countNamed(stored, "\u5B9E\u9A8C\u697C\u4F5C\u606F"));
+        assertEquals(1, countNamed(stored, BellSchedules.STANDARD_NAME));
+        assertEquals(1, countNamed(stored, BellSchedules.DE_NAME));
+        assertEquals(1, countNamed(stored, BellSchedules.BC_NAME));
+    }
+
+    @Test
+    public void savingWithAnUnknownOriginalNameAppendsRatherThanReplacing() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+
+        repository.saveBellSchedule("\u4E0D\u5B58\u5728\u7684\u4F5C\u606F\u8868",
+                BellSchedules.standard().renamed("\u53E6\u4E00\u5F20\u8868"));
+
+        assertEquals(4, repository.getBellSchedules().size());
+    }
+
+    /**
+     * The last schedule may not be deleted.
+     *
+     * <p>An empty stored list is not "no schedules" to
+     * {@link CourseRepository#getBellSchedules} -- it is "this install has not
+     * been read yet", and the presets are written straight back. So deleting the
+     * final one did not delete anything; it looked like the app had ignored the
+     * user, and the table reappeared on the next screen that read.</p>
+     */
+    @Test
+    public void theLastScheduleMayNotBeDeleted() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        List<BellSchedule> only = new ArrayList<>();
+        only.add(BellSchedules.deBuilding());
+        repository.saveBellSchedules(only);
+
+        assertFalse(repository.deleteBellSchedule(BellSchedules.DE_NAME));
+
+        assertEquals(1, repository.getBellSchedules().size());
+        assertEquals(BellSchedules.DE_NAME, repository.getBellSchedules().get(0).name());
+        // Nothing was resurrected and nothing was written over: reopening still
+        // shows the one table the user had, not the three presets.
+        CourseRepository reopened = repositoryFor(preferences);
+        assertEquals(1, reopened.getBellSchedules().size());
+        assertEquals(BellSchedules.DE_NAME, reopened.getBellSchedules().get(0).name());
+    }
+
+    @Test
+    public void deletingAScheduleClearsTheCoursesThatNamedIt() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Course course = courseNaming(BellSchedules.DE_NAME, "\u6559\u5B66\u697C E302");
+        repository.upsertCourse(course);
+
+        assertTrue(repository.deleteBellSchedule(BellSchedules.DE_NAME));
+
+        List<BellSchedule> stored = repository.getBellSchedules();
+        assertEquals(2, stored.size());
+        assertEquals(0, countNamed(stored, BellSchedules.DE_NAME));
+
+        // The course is cleared rather than left holding a name nothing answers to,
+        // and it falls back to venue resolution -- which is what the delete
+        // confirmation promises: "these courses will switch to matching by venue".
+        Course cleared = repository.findCourse(course.id);
+        assertEquals("", cleared.scheduleName);
+        // That fallback now lands on the B/C group, because the keyword that knew
+        // about 教学楼 E lived on the table that was just deleted. Worth pinning:
+        // deleting a schedule does not only stop it being chosen, it takes its
+        // venue keywords with it, and the "other teaching places" rule picks up
+        // whatever they used to claim.
+        assertEquals(BellSchedules.BC_NAME, repository.scheduleFor(cleared).name());
+    }
+
+    @Test
+    public void deletingAScheduleThatIsNotThereChangesNothing() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+
+        assertFalse(repository.deleteBellSchedule("\u4E0D\u5B58\u5728\u7684\u4F5C\u606F\u8868"));
+        assertFalse(repository.deleteBellSchedule(null));
+        assertFalse(repository.deleteBellSchedule("   "));
+
+        assertEquals(3, repository.getBellSchedules().size());
+    }
+
+    @Test
+    public void deletingAScheduleIsPersisted() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+
+        assertTrue(repository.deleteBellSchedule(BellSchedules.BC_NAME));
+
+        CourseRepository reopened = repositoryFor(preferences);
+        assertEquals(2, reopened.getBellSchedules().size());
+        assertNull(BellSchedules.byName(reopened.getBellSchedules(),
+                BellSchedules.BC_NAME));
+    }
+
     @Test
     public void everyCourseGetsItsClockTimesFromItsOwnSchedule() {
         FakePreferences preferences = new FakePreferences();

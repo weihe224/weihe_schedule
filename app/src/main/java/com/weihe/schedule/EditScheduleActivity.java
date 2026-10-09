@@ -14,6 +14,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -24,13 +25,21 @@ import java.util.List;
  * this screen only turns its {@code Problem} list into field errors.</p>
  */
 public class EditScheduleActivity extends Activity {
-    /** Index of the schedule to edit, or -1 for a new one. */
-    public static final String EXTRA_INDEX = "index";
+    /**
+     * Name of the schedule to edit, or absent for a new one.
+     *
+     * <p>A name rather than a list position. An index is only valid against the
+     * list it was read from, and this screen holds its repository for its whole
+     * life without ever reloading it, so anything another screen did in between
+     * turned the index into a pointer at a different table.</p>
+     */
+    public static final String EXTRA_NAME = "schedule_name";
 
     private CourseRepository repository;
     private BellScheduleEditor editor;
-    private int index;
-    private String originalName;
+    /** Name this editor opened with; empty when it is creating a new schedule. */
+    private String originalName = "";
+    private boolean existingSchedule;
 
     private EditText nameInput;
     private EditText keywordInput;
@@ -42,15 +51,16 @@ public class EditScheduleActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         repository = new CourseRepository(this);
-        index = getIntent().getIntExtra(EXTRA_INDEX, -1);
 
         List<BellSchedule> schedules = repository.getBellSchedules();
-        if (index >= 0 && index < schedules.size()) {
-            BellSchedule source = schedules.get(index);
+        BellSchedule source = BellSchedules.byName(schedules,
+                getIntent().getStringExtra(EXTRA_NAME));
+        existingSchedule = source != null;
+        if (source != null) {
             originalName = source.name();
-            editor = new BellScheduleEditor(source, otherNames(schedules, index));
+            editor = new BellScheduleEditor(source, otherNames(schedules, originalName));
         } else {
-            editor = BellScheduleEditor.blank(otherNames(schedules, -1));
+            editor = BellScheduleEditor.blank(otherNames(schedules, null));
             editor.setName(uniqueName(schedules));
         }
         // The app bar is the page surface, so both system bars take that colour and
@@ -59,11 +69,12 @@ public class EditScheduleActivity extends Activity {
         setContentView(buildRoot());
     }
 
-    private List<String> otherNames(List<BellSchedule> schedules, int skip) {
-        List<String> names = new java.util.ArrayList<>();
-        for (int i = 0; i < schedules.size(); i++) {
-            if (i != skip) {
-                names.add(schedules.get(i).name());
+    /** Every schedule name except {@code skipName}, for the duplicate check. */
+    private List<String> otherNames(List<BellSchedule> schedules, String skipName) {
+        List<String> names = new ArrayList<>();
+        for (BellSchedule schedule : schedules) {
+            if (skipName == null || !skipName.equals(schedule.name())) {
+                names.add(schedule.name());
             }
         }
         return names;
@@ -107,7 +118,7 @@ public class EditScheduleActivity extends Activity {
 
     private View createHeader() {
         return UiKit.detailAppBar(this,
-                index >= 0 ? "\u7F16\u8F91\u4F5C\u606F\u8868" : "\u65B0\u5EFA\u4F5C\u606F\u8868",
+                existingSchedule ? "\u7F16\u8F91\u4F5C\u606F\u8868" : "\u65B0\u5EFA\u4F5C\u606F\u8868",
                 null, view -> finish());
     }
 
@@ -313,7 +324,7 @@ public class EditScheduleActivity extends Activity {
         bar.addView(UiKit.primaryAction(this, "\u4FDD\u5B58\u4F5C\u606F\u8868",
                 view -> validateAndSave()));
 
-        if (index >= 0) {
+        if (existingSchedule) {
             TextView delete = UiKit.textButton(this, "\u5220\u9664\u4F5C\u606F\u8868",
                     Palette.ERROR, view -> confirmDelete());
             bar.addView(delete, new LinearLayout.LayoutParams(
@@ -323,23 +334,30 @@ public class EditScheduleActivity extends Activity {
         return bar;
     }
 
-    /** Asks before deleting the schedule this editor is showing. */
+    /**
+     * Asks before deleting the schedule this editor is showing.
+     *
+     * <p>The "keep one" rule is checked here as well as in the repository, so the
+     * user is told instead of watching a confirmation dialog do nothing. The
+     * repository still enforces it, because this is not the only way in.</p>
+     */
     private void confirmDelete() {
+        if (repository.getBellSchedules().size() <= 1) {
+            Toast.makeText(this, "\u81F3\u5C11\u4FDD\u7559\u4E00\u4E2A\u4F5C\u606F\u8868",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
         UiKit.dialog(this, "\u5220\u9664\u4F5C\u606F\u8868",
                 "\u786E\u5B9A\u5220\u9664\u201C" + editor.name()
                         + "\u201D\u5417\uFF1F\u5220\u9664\u540E\u65E0\u6CD5\u6062\u590D\u3002",
                 null, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.destructive("\u5220\u9664", () -> {
-                    List<BellSchedule> remaining = BellSchedules.copyOf(
-                            repository.getBellSchedules());
-                    if (index >= 0 && index < remaining.size()) {
-                        remaining.remove(index);
+                    // By name, and the repository clears the courses that named it.
+                    if (repository.deleteBellSchedule(editor.originalName())) {
+                        setResult(RESULT_OK);
+                        finish();
                     }
-                    repository.saveBellSchedules(remaining);
-                    repository.clearScheduleReferences(editor.originalName());
-                    setResult(RESULT_OK);
-                    finish();
                 }));
     }
 
@@ -358,15 +376,12 @@ public class EditScheduleActivity extends Activity {
             showProblems(problems);
             return;
         }
-        List<BellSchedule> schedules = BellSchedules.copyOf(
-                repository.getBellSchedules());
-        BellSchedule built = editor.build();
-        if (index >= 0 && index < schedules.size()) {
-            schedules.set(index, built);
-        } else {
-            schedules.add(built);
-        }
-        repository.saveBellSchedules(schedules);
+        // One call does three things that have to agree: replace the table this
+        // editor opened (by name, so a list that moved underneath cannot redirect
+        // the write), store it, and repoint every course that pinned the old name.
+        // Saving the list directly, as this used to, silently left those courses
+        // naming a table that no longer existed.
+        repository.saveBellSchedule(originalName, editor.build());
         List<Integer> overlaps = editor.overlappingPeriods();
         String note = overlaps.isEmpty() ? "\u4F5C\u606F\u8868\u5DF2\u4FDD\u5B58"
                 : "\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u7B2C " + joinPeriods(overlaps)

@@ -10,7 +10,8 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * The overview grid's row count, and the invariant that broke it once.
+ * The overview grid's row count and column height, and the invariants that broke
+ * them once.
  *
  * <p>{@code GridLayout.setRowCount} validates the new count against the children
  * it already holds. The screen shrank the grid before clearing it, so switching
@@ -20,22 +21,15 @@ import java.util.List;
  * the contract that made it fatal -- the number of rows is a function of the
  * courses currently shown, so it can go down.</p>
  *
- * <p>{@code lastPeriodInUse} itself is private to the Activity and cannot be
- * reached from a JVM test. The rule is re-expressed here against the same inputs
- * so that a change to either {@code MIN_ROWS} or the period cap is noticed.</p>
+ * <p>Both rules are called on the Activity itself rather than copied. They used
+ * to be private, and this file carried a hand-written copy of
+ * {@code lastPeriodInUse} with {@code MIN_ROWS} typed out again -- which meant
+ * changing the Activity left the test passing against a stale mirror.</p>
+ *
+ * <p>They are static methods that touch no Android API, so a plain JVM test can
+ * call them; the class they live on is only loaded, never instantiated.</p>
  */
 public class WeekGridRowsTest {
-
-    /** Mirrors WeekGridActivity.MIN_ROWS. */
-    private static final int MIN_ROWS = 10;
-
-    private static int lastPeriodInUse(List<Course> courses) {
-        int last = 0;
-        for (Course course : courses) {
-            last = Math.max(last, course.endPeriod);
-        }
-        return Math.max(MIN_ROWS, Math.min(ScheduleUtils.PERIODS_PER_DAY, last));
-    }
 
     private static Course courseEndingAt(int endPeriod) {
         Course course = new Course();
@@ -51,35 +45,81 @@ public class WeekGridRowsTest {
 
     @Test
     public void aLongerTimetableNeedsMorePeriods() {
-        assertEquals(MIN_ROWS, lastPeriodInUse(new ArrayList<Course>()));
-        assertEquals(MIN_ROWS, lastPeriodInUse(
+        // The floor is WeekGridActivity.MIN_ROWS; reaching it through the real
+        // method is the point, so it is not repeated here.
+        int floor = WeekGridActivity.lastPeriodInUse(new ArrayList<Course>());
+        assertEquals(floor, WeekGridActivity.lastPeriodInUse(
                 Arrays.asList(courseEndingAt(3))));
-        // The return value is a period number, not a row count; render() adds one
-        // for the header row.
-        assertEquals(13, lastPeriodInUse(Arrays.asList(courseEndingAt(13))));
-        assertEquals(15, lastPeriodInUse(Arrays.asList(courseEndingAt(15))));
+        assertEquals(10, floor);
+        assertEquals(13, WeekGridActivity.lastPeriodInUse(
+                Arrays.asList(courseEndingAt(13))));
+        assertEquals(15, WeekGridActivity.lastPeriodInUse(
+                Arrays.asList(courseEndingAt(15))));
     }
 
     @Test
     public void theRowCountCanShrinkWhenTheShownCoursesChange() {
         // The exact transition that crashed: the whole semester reaches period
         // 13, the single week ends at period 5.
-        int wholeSemester = lastPeriodInUse(Arrays.asList(courseEndingAt(13)));
-        int singleWeek = lastPeriodInUse(Arrays.asList(courseEndingAt(5)));
+        int wholeSemester = WeekGridActivity.lastPeriodInUse(
+                Arrays.asList(courseEndingAt(13)));
+        int singleWeek = WeekGridActivity.lastPeriodInUse(Arrays.asList(courseEndingAt(5)));
 
         assertTrue("the single-week grid must be shorter than the whole-semester one",
                 singleWeek < wholeSemester);
         // Which is only safe because render() clears the children before it
         // resizes; if that order is ever swapped back, this is the number that
         // the old children would be measured against.
-        assertEquals(MIN_ROWS, singleWeek);
+        assertEquals(10, singleWeek);
     }
 
     @Test
     public void theRowCountNeverExceedsThePeriodCap() {
         // A course that claims more periods than a day has must not push the
         // grid past the table it draws.
-        int rows = lastPeriodInUse(Arrays.asList(courseEndingAt(15)));
+        int rows = WeekGridActivity.lastPeriodInUse(Arrays.asList(courseEndingAt(15)));
         assertTrue(rows <= ScheduleUtils.PERIODS_PER_DAY);
+        assertTrue(WeekGridActivity.lastPeriodInUse(
+                Arrays.asList(courseEndingAt(99))) <= ScheduleUtils.PERIODS_PER_DAY);
+    }
+
+    /**
+     * The day column has to be tall enough for the last period it draws.
+     *
+     * <p>Every day is one frame spanning all the rows, with the period cells
+     * positioned inside it by {@code rowTop}. That frame used to be sized with
+     * {@code rowTop(rows)} -- the top edge of the last row -- so it was exactly one
+     * row shorter than the rows it held: the frame's own bounds cut the last
+     * period off, and because the grid's content was then shorter than the period
+     * column's, scrolling could not bring that row fully into view either.</p>
+     *
+     * <p>Checked against the courses rather than against a number, so the
+     * assertion is about the timetable the user can see: a day that runs to
+     * period 13 needs a column at least 13 rows tall.</p>
+     */
+    @Test
+    public void aDayColumnIsTallEnoughForTheLastPeriodItDraws() {
+        for (int endPeriod = 1; endPeriod <= ScheduleUtils.PERIODS_PER_DAY; endPeriod++) {
+            List<Course> courses = Arrays.asList(courseEndingAt(endPeriod));
+            int rows = WeekGridActivity.lastPeriodInUse(courses);
+            int heightRows = WeekGridActivity.dayColumnRows(rows);
+
+            assertTrue("a column of " + heightRows + " rows cannot draw a course"
+                            + " ending at period " + endPeriod,
+                    heightRows >= endPeriod);
+            // The column and the period label column draw the same rows, which is
+            // what keeps the two in step when the grid scrolls.
+            assertEquals(rows, heightRows);
+        }
+    }
+
+    @Test
+    public void theDayColumnHeightIsBoundedLikeTheRowCount() {
+        assertEquals(1, WeekGridActivity.dayColumnRows(0));
+        assertEquals(1, WeekGridActivity.dayColumnRows(-4));
+        assertEquals(ScheduleUtils.PERIODS_PER_DAY,
+                WeekGridActivity.dayColumnRows(ScheduleUtils.PERIODS_PER_DAY));
+        assertEquals(ScheduleUtils.PERIODS_PER_DAY,
+                WeekGridActivity.dayColumnRows(99));
     }
 }

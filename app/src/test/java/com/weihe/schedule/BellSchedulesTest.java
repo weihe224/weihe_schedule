@@ -192,4 +192,116 @@ public class BellSchedulesTest {
     public void aVenueScheduleWithNoKeywordsNeverMatchesALocation() {
         assertTrue(!BellSchedules.standard().matchesLocation("\u5B9E\u9A8C\u697C"));
     }
+
+    // ------------------------------------------------------- the real presets
+
+    /** Resolution against the three schedules a fresh install ships with. */
+    private static String resolveOnPresets(String location) {
+        return BellSchedules.resolve(BellSchedules.presets(), "", location).name();
+    }
+
+    /**
+     * The building letter standing on its own, in front of a room number.
+     *
+     * <p>This is the form the app's own sample courses use ("教学楼 A203") and the
+     * form its own venue hint suggests, and it contains no "A楼": a plain
+     * substring search matched none of them, so every course in every building
+     * fell through to the B/C group. For a D/E room that is twenty minutes early
+     * in periods 3 to 5 -- the app telling a student the wrong time to turn up.</p>
+     */
+    @Test
+    public void aBuildingLetterInFrontOfARoomNumberSelectsThatBuildingsSchedule() {
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("\u6559\u5B66\u697C A203"));
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("\u6559\u5B66\u697C F305"));
+        assertEquals(BellSchedules.BC_NAME, resolveOnPresets("\u6559\u5B66\u697C B203"));
+        assertEquals(BellSchedules.BC_NAME, resolveOnPresets("\u6559\u5B66\u697C C203"));
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("\u6559\u5B66\u697C D305"));
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("\u6559\u5B66\u697C E302"));
+
+        // No "教学楼" at all, and a prefix that is not a building.
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("D305"));
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("A203"));
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("\u56DB\u6559D305"));
+    }
+
+    @Test
+    public void theBuildingLetterFormStillWorksWhenShangKeLouIsAttached() {
+        // The older, already-working spelling must not regress.
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("D\u697C305"));
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("A\u697C203"));
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("\u6559\u5B66\u697CD\u697C305"));
+    }
+
+    @Test
+    public void aVenueThatNamesNoBuildingFallsBackToTheOtherTeachingPlaces() {
+        // The school's table puts "other teaching places" in the B/C group, and
+        // nothing used to check that against the real presets -- the only test of
+        // the fallback used a hand-built list with no B/C schedule in it.
+        assertEquals(BellSchedules.BC_NAME,
+                resolveOnPresets("\u73B0\u4EE3\u5DE5\u4E1A\u8BAD\u7EC3\u4E2D\u5FC3\u8BAD2307"));
+        assertEquals(BellSchedules.BC_NAME,
+                resolveOnPresets("\u73B0\u4EE3\u4EA4\u901A\u5DE5\u7A0B\u4E2D\u5FC3\u4EA47509"));
+        assertEquals(BellSchedules.BC_NAME, resolveOnPresets("\u4E1C\u64CD\u573A"));
+        assertEquals(BellSchedules.BC_NAME, resolveOnPresets(""));
+        assertEquals(BellSchedules.BC_NAME, resolveOnPresets(null));
+    }
+
+    @Test
+    public void aRoomNumberKeywordDoesNotWidenIntoABuilding() {
+        // "j301" is a room keyword, not "<letter>楼", so it must stay a plain
+        // substring test: a J-room that is not one of the three named ones must
+        // not start selecting the A/F schedule on the strength of its letter.
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("J301 \u5BA4"));
+        assertNull(BellSchedules.forLocation(BellSchedules.presets(), "J999 \u5BA4"));
+        // The same for a keyword that is not a building at all.
+        assertNull(BellSchedules.forLocation(BellSchedules.presets(), "\u5B9E\u9A8C\u697C301"));
+    }
+
+    /**
+     * Every venue the sample timetable seeds, against the schedule it should get.
+     *
+     * <p>Pinned as a table rather than left to the resolution tests above: the
+     * first thing a new user sees is these nine courses, and eight of them used to
+     * resolve to the wrong group.</p>
+     */
+    @Test
+    public void theSampleVenuesReachTheScheduleTheirBuildingRings() {
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("\u6559\u5B66\u697C A203"));
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("\u6559\u5B66\u697C F305"));
+        assertEquals(BellSchedules.BC_NAME, resolveOnPresets("\u6559\u5B66\u697C C203"));
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("\u6559\u5B66\u697C D102"));
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("\u6559\u5B66\u697C E302"));
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("\u6559\u5B66\u697C A201"));
+        assertEquals(BellSchedules.BC_NAME, resolveOnPresets("\u4E1C\u64CD\u573A"));
+        assertEquals(BellSchedules.STANDARD_NAME, resolveOnPresets("J301 \u5BA4"));
+        assertEquals(BellSchedules.DE_NAME, resolveOnPresets("\u6559\u5B66\u697C E402"));
+    }
+
+    @Test
+    public void theCorrectedVenueShowsTheBuildingsOwnClockTimes() {
+        // The name is not the point; the minutes are. Periods 3-5 are where the
+        // three groups disagree, and where the wrong group used to be twenty
+        // minutes early for a D/E room.
+        BellSchedule de = BellSchedules.resolve(BellSchedules.presets(), "",
+                "\u6559\u5B66\u697C D305");
+        assertEquals("10:15 - 10:55", de.timeRange(3, 3));
+        assertEquals("10:55 - 11:35", de.timeRange(4, 4));
+        assertEquals("11:40 - 12:20", de.timeRange(5, 5));
+
+        BellSchedule standard = BellSchedules.resolve(BellSchedules.presets(), "",
+                "\u6559\u5B66\u697C A203");
+        assertEquals("09:55 - 10:35", standard.timeRange(3, 3));
+        assertEquals("10:40 - 11:20", standard.timeRange(4, 4));
+
+        BellSchedule bc = BellSchedules.resolve(BellSchedules.presets(), "",
+                "\u6559\u5B66\u697C C203");
+        assertEquals("10:35 - 11:15", bc.timeRange(4, 4));
+    }
+
+    @Test
+    public void anExplicitChoiceStillBeatsTheVenueAfterTheMatchingChange() {
+        assertEquals(BellSchedules.BC_NAME, BellSchedules.resolve(
+                BellSchedules.presets(), BellSchedules.BC_NAME,
+                "\u6559\u5B66\u697C D305").name());
+    }
 }

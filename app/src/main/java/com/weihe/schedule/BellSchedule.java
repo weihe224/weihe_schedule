@@ -91,6 +91,20 @@ public final class BellSchedule {
      * find the same building; requiring an exact substring made a keyword like
      * "C楼" miss every one of them.</p>
      *
+     * <p>A building keyword is accepted in two shapes, because the app's own
+     * sample courses and its own placeholder text use the second one and a plain
+     * substring search sent all of them to the fallback group:</p>
+     *
+     * <ul>
+     *   <li>{@code D楼305} -- the letter and 楼 are adjacent;</li>
+     *   <li>{@code 教学楼 D305} / {@code D305} / {@code 四教D305} -- the letter
+     *       stands on its own and the room number follows it.</li>
+     * </ul>
+     *
+     * <p>Only "<em>one ASCII letter</em> + 楼" keywords get the second reading, so
+     * room keywords keep working exactly as before: {@code j301} is still a
+     * substring test and never means "building J".</p>
+     *
      * <p>A schedule with no keywords never matches, which is what lets the
      * generic standard schedule act purely as the fallback.</p>
      */
@@ -104,11 +118,62 @@ public final class BellSchedule {
         }
         for (String keyword : locationKeywords) {
             String needle = squeeze(keyword);
-            if (!needle.isEmpty() && haystack.contains(needle)) {
+            if (needle.isEmpty()) {
+                continue;
+            }
+            if (haystack.contains(needle)) {
+                return true;
+            }
+            String letter = buildingLetter(needle);
+            if (letter != null && namesBuilding(haystack, letter)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * The single letter of a {@code <letter>楼} keyword, or {@code null} when the
+     * keyword is not of that shape.
+     *
+     * <p>Deliberately narrow. A two-character keyword ending in 楼 is a building;
+     * anything else -- {@code j301}, {@code 实验楼}, {@code 东校区} -- is matched
+     * as a substring only, so this rule cannot widen a room keyword into a whole
+     * building.</p>
+     */
+    private static String buildingLetter(String squeezedKeyword) {
+        if (squeezedKeyword.length() != 2
+                || squeezedKeyword.charAt(1) != '\u697C') {
+            return null;
+        }
+        char letter = squeezedKeyword.charAt(0);
+        return letter >= 'a' && letter <= 'z' ? String.valueOf(letter) : null;
+    }
+
+    /**
+     * Whether {@code haystack} names that building by putting the letter straight
+     * in front of a room number.
+     *
+     * <p>"教学楼 D305" squeezes to {@code 教学楼d305}: the D is followed by a
+     * digit. A venue that merely contains the letter -- {@code 东操场},
+     * {@code 现代工业训练中心训2307} -- has no ASCII letter in front of a digit and
+     * keeps falling through to the fallback group, which is where the school's
+     * table puts "other teaching places".</p>
+     */
+    private static boolean namesBuilding(String haystack, String letter) {
+        int from = 0;
+        while (true) {
+            int at = haystack.indexOf(letter, from);
+            if (at < 0) {
+                return false;
+            }
+            int next = at + letter.length();
+            if (next < haystack.length()
+                    && Character.isDigit(haystack.charAt(next))) {
+                return true;
+            }
+            from = at + 1;
+        }
     }
 
     /** Lower case with every space and separator removed. */

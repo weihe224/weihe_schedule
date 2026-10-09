@@ -482,12 +482,32 @@ public class WeekGridActivity extends Activity {
             labelColumn.addView(periodCell(period),
                     cellParamsPx(period - 1, 0, 1, dp(LABEL_WIDTH_DP), rowHeight()));
         }
-        // Each day spans every row in one cell, so the row count has to match what
-        // the day frames actually measure.
+        // Each day spans every row in one cell, so the column has to be as tall as
+        // the rows it positions -- dayColumnRows, not rowTop, which is the top
+        // *edge* of the last row.
         for (int day = 1; day <= 7; day++) {
             grid.addView(dayColumn(perDay.get(day - 1), day >= 6, periods),
-                    cellParamsPx(0, day - 1, rows, dp(DAY_WIDTH_DP), rowTop(rows)));
+                    cellParamsPx(0, day - 1, rows, dp(DAY_WIDTH_DP),
+                            rowSpan(dayColumnRows(periods))));
         }
+    }
+
+    /**
+     * How many period rows a day column must be tall enough for.
+     *
+     * <p>The column is given {@code periods} rows of {@link #rowHeight()} each, so
+     * its height in rows is that same number. It used to be sized with
+     * {@link #rowTop(int)}, which is the <em>top edge</em> of the last row: every
+     * day column came out exactly one row short of the rows it positioned.</p>
+     *
+     * <p>Two things followed from that. The frame's own bounds cut the last
+     * period, because the grid never had clipping turned off; and the grid's total
+     * content height was one row less than the period column's, so the vertical
+     * scroll range could not bring that row fully into view either. Both are gone
+     * once the two numbers agree.</p>
+     */
+    static int dayColumnRows(int periods) {
+        return Math.max(1, Math.min(ScheduleUtils.PERIODS_PER_DAY, periods));
     }
 
     /**
@@ -497,8 +517,11 @@ public class WeekGridActivity extends Activity {
      * {@link ScheduleUtils#PERIODS_PER_DAY}, so a school day of nine periods
      * gets nine rows. The floor of {@link #MIN_ROWS} keeps an empty week looking
      * like a timetable rather than a two-row stub.</p>
+     *
+     * <p>Package-private rather than private so {@code WeekGridRowsTest} can
+     * exercise the real rule instead of a hand-written copy of it.</p>
      */
-    private int lastPeriodInUse(List<Course> courses) {
+    static int lastPeriodInUse(List<Course> courses) {
         int last = 0;
         for (Course course : courses) {
             last = Math.max(last, course.endPeriod);
