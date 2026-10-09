@@ -21,6 +21,9 @@ import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.data.CourseRepository;
+import com.weihe.schedule.ui.Insets;
+import com.weihe.schedule.ui.UiKit;
+import com.weihe.schedule.ui.UiTokens;
 
 /**
  * The list of semesters, and the way to look at a past one.

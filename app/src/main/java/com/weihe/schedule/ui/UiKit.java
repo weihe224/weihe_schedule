@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.ui;
 
 import android.content.Context;
 import android.graphics.Color;
@@ -12,6 +12,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import com.weihe.schedule.design.Colors;
 import com.weihe.schedule.design.Palette;
+import com.weihe.schedule.R;
 
 /**
  * The component layer: every piece of chrome the app draws, defined once.

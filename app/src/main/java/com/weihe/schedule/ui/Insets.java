@@ -1,4 +1,4 @@
-package com.weihe.schedule;
+package com.weihe.schedule.ui;
 
 import android.app.Activity;
 import android.graphics.Color;

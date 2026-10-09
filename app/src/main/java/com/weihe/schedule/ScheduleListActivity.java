@@ -18,6 +18,9 @@ import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.data.CourseRepository;
+import com.weihe.schedule.ui.Insets;
+import com.weihe.schedule.ui.UiKit;
+import com.weihe.schedule.ui.UiTokens;
 
 /**
  * The list of bell schedules.

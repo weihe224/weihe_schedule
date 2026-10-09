@@ -39,6 +39,9 @@ import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.importer.ExcelTimetableReader;
 import com.weihe.schedule.importer.TimetableImportException;
 import com.weihe.schedule.importer.TimetableImportParser;
+import com.weihe.schedule.ui.Insets;
+import com.weihe.schedule.ui.UiKit;
+import com.weihe.schedule.ui.UiTokens;
 
 /**
  * Today's courses, and the way into everything else.
