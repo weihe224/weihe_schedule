@@ -36,6 +36,8 @@ import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseConflicts;
 import com.weihe.schedule.rule.CourseQuery;
 import com.weihe.schedule.data.RestoreReport;
+import com.weihe.schedule.reminder.ReminderNotifications;
+import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.importer.ExcelTimetableReader;
 import com.weihe.schedule.importer.TimetableImportException;
@@ -98,6 +100,10 @@ public class MainActivity extends Activity {
         setContentView(buildRoot());
         refreshAll();
         warnAboutUnsettledRestore();
+        // The channel has to exist before anything is posted, and the launcher is
+        // the one screen every launch goes through. Creating it again is a no-op,
+        // so this costs nothing on the second and later starts.
+        ReminderNotifications.ensureChannel(this);
     }
 
     /**
@@ -137,6 +143,13 @@ public class MainActivity extends Activity {
             semesterStart = repository.getSemesterStart();
             refreshAll();
         }
+        // The timetable may have changed on any screen since the alarms were last
+        // planned -- an import, an edit, a semester switch, a restored backup. The
+        // app's own start is the one place that sees all of them, so it is where
+        // the plan is brought up to date. This is idempotent and bounded: it
+        // cancels what it registered last time and registers at most a week's
+        // worth again, so resuming repeatedly cannot pile alarms up.
+        ReminderScheduler.sync(this);
     }
 
     // ---------------------------------------------------------------- layout
@@ -1055,7 +1068,7 @@ public class MainActivity extends Activity {
         content.addView(createTag(tag, course.color));
 
         UiKit.ripple(card, UiTokens.RADIUS_L, false);
-        UiKit.pressable(card, view -> openEditor(course));
+        UiKit.pressable(card, view -> showDetails(course));
         card.setOnLongClickListener(view -> {
             showDeleteDialog(course);
             return true;
@@ -1334,11 +1347,16 @@ public class MainActivity extends Activity {
 
     // ----------------------------------------------------------------- actions
 
-    private void openEditor(Course course) {
-        Intent intent = new Intent(this, EditCourseActivity.class);
-        intent.putExtra(EditCourseActivity.EXTRA_COURSE_ID,
-                course == null ? 0L : course.id);
-        intent.putExtra(EditCourseActivity.EXTRA_DAY, selectedDay);
+    /**
+     * Opens the course's own page.
+     *
+     * <p>A tap used to open the editor, which put a form -- and the keyboard --
+     * between the user and simply reading the course. Editing is one tap further
+     * on, from the detail page, and nothing here changes what the editor does.</p>
+     */
+    private void showDetails(Course course) {
+        Intent intent = new Intent(this, CourseDetailActivity.class);
+        intent.putExtra(CourseDetailActivity.EXTRA_COURSE_ID, course.id);
         startActivity(intent);
     }
 

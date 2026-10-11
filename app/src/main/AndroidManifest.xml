@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Class reminders. This is the only permission the feature needs, and it is
+        asked for at runtime from the settings screen, not at launch.
+
+        SCHEDULE_EXACT_ALARM is deliberately absent. From Android 14 an app
+        targeting 33 or later is refused it by default, so asking for it would mean
+        sending the user into system settings before reminders worked at all. The
+        alarms use setAndAllowWhileIdle instead, which needs no permission; the
+        cost is that a reminder may arrive a few minutes late on a sleeping phone,
+        and the settings screen says so.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -35,6 +49,10 @@
             android:exported="false"
             android:screenOrientation="portrait" />
         <activity
+            android:name=".CourseDetailActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity
             android:name=".WeekGridActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
@@ -47,5 +65,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!--
+            Not exported and with no intent filter: the only thing that ever sends
+            this broadcast is the app's own AlarmManager alarm, addressed to this
+            component by class. Nothing outside the app can make a reminder appear.
+        -->
+        <receiver
+            android:name=".reminder.ReminderReceiver"
+            android:exported="false" />
     </application>
 </manifest>

@@ -1,5 +1,6 @@
 package com.weihe.schedule;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.Dialog;
 import android.app.AlertDialog;
@@ -7,6 +8,9 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.provider.Settings;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -26,6 +30,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import com.weihe.schedule.model.BellSchedule;
@@ -40,6 +45,10 @@ import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.importer.ExcelTimetableReader;
 import com.weihe.schedule.importer.TimetableImportException;
 import com.weihe.schedule.importer.TimetableImportParser;
+import com.weihe.schedule.reminder.ReminderNotifications;
+import com.weihe.schedule.reminder.ReminderScheduler;
+import com.weihe.schedule.reminder.ReminderSettings;
+import com.weihe.schedule.rule.ReminderPlan;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
@@ -59,6 +68,9 @@ public class SettingsActivity extends Activity {
     private static final int REQUEST_EXPORT_BACKUP = 3002;
     private static final int REQUEST_PREVIEW_BACKUP = 3003;
 
+    /** Asking for POST_NOTIFICATIONS, which only exists from Android 13. */
+    private static final int REQUEST_NOTIFICATIONS = 3004;
+
     /**
      * The backup checked and waiting for the user to choose a destination.
      *
@@ -77,6 +89,11 @@ public class SettingsActivity extends Activity {
     private TextView schedulesValue;
     private TextView coursesValue;
     private TextView weekValue;
+
+    private UiKit.Check reminderCheck;
+    private TextView reminderStatus;
+    private TextView reminderPermissionAction;
+    private List<TextView> reminderLeadChips;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -163,6 +180,9 @@ public class SettingsActivity extends Activity {
         body.addView(sectionLabel("\u4E0A\u4E0B\u8BFE\u65F6\u95F4"),
                 margins(dp(16)));
         body.addView(createScheduleCard());
+
+        body.addView(sectionLabel("\u4E0A\u8BFE\u63D0\u9192"), margins(dp(16)));
+        body.addView(createReminderCard());
 
         body.addView(createAboutCard(), margins(dp(20)));
 
@@ -467,6 +487,170 @@ public class SettingsActivity extends Activity {
         return card;
     }
 
+    /**
+     * The reminder settings: on or off, how early, and whether it can work.
+     *
+     * <p>The card always says which of three states it is in -- off, on, or on but
+     * unable to show anything -- rather than a switch that looks on while nothing
+     * will arrive. That third state is the one worth the space: on Android 13 and
+     * later the permission can be refused, and a reminder feature that quietly
+     * does nothing is worse than one that says why.</p>
+     */
+    private View createReminderCard() {
+        LinearLayout card = card();
+        addTitle(card, R.drawable.ic_today, "\u4E0A\u8BFE\u63D0\u9192");
+
+        reminderCheck = UiKit.checkbox(this, "\u5F00\u542F\u4E0A\u8BFE\u63D0\u9192",
+                ReminderSettings.isEnabled(this));
+        reminderCheck.onChanged(this::onReminderEnabledChanged);
+        card.addView(reminderCheck.view(), margins(11));
+
+        reminderStatus = valueLine("", 6);
+        card.addView(reminderStatus);
+
+        LinearLayout leadRow = new LinearLayout(this);
+        leadRow.setOrientation(LinearLayout.HORIZONTAL);
+        leadRow.setGravity(Gravity.CENTER_VERTICAL);
+        reminderLeadChips = new ArrayList<>();
+        int current = ReminderSettings.leadMinutes(this);
+        int[] choices = leadChoices();
+        for (int index = 0; index < choices.length; index++) {
+            final int minutes = choices[index];
+            TextView chip = UiKit.chip(this, minutes + " \u5206\u949F", minutes == current);
+            chip.setOnClickListener(view -> onLeadMinutesChosen(minutes));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT));
+            if (index > 0) {
+                params.leftMargin = dp(UiTokens.SPACE_S);
+            }
+            leadRow.addView(chip, params);
+            reminderLeadChips.add(chip);
+        }
+        LinearLayout.LayoutParams leadParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        leadParams.topMargin = dp(UiTokens.SPACE_L);
+        card.addView(leadRow, leadParams);
+
+        // Said plainly, because it is the price of not asking for the exact-alarm
+        // permission: a reminder is not late by design, but it can be late.
+        card.addView(hintLine("\u63D0\u9192\u4E0D\u65E9\u4E8E\u8BBE\u5B9A\u65F6\u95F4\uFF1B\u8BBE\u5907\u957F\u65F6\u95F4\u5F85\u673A\u65F6\u53EF\u80FD\u665A\u51E0\u5206\u949F\u3002", 8));
+
+        reminderPermissionAction = action("\u53BB\u5F00\u542F\u901A\u77E5\u6743\u9650", Palette.PRIMARY, true,
+                view -> openNotificationSettings());
+        card.addView(actionRow(reminderPermissionAction));
+        return card;
+    }
+
+    /** The three lead times the feature offers, taken from the planner's own range. */
+    private static int[] leadChoices() {
+        return new int[] {
+                ReminderPlan.MIN_LEAD_MINUTES,
+                ReminderPlan.DEFAULT_LEAD_MINUTES,
+                ReminderPlan.MAX_LEAD_MINUTES
+        };
+    }
+
+    private void onReminderEnabledChanged() {
+        boolean wanted = reminderCheck.isChecked();
+        ReminderSettings.setEnabled(this, wanted);
+        if (wanted) {
+            // Asked for here, from a screen the user is looking at. A broadcast
+            // receiver must never raise a permission prompt, and neither should a
+            // launch the user did not connect with reminders.
+            requestNotificationPermissionIfNeeded();
+        } else {
+            ReminderScheduler.cancelAll(this);
+        }
+        ReminderScheduler.sync(this);
+        refreshReminderCard();
+    }
+
+    private void onLeadMinutesChosen(int minutes) {
+        if (ReminderSettings.leadMinutes(this) == minutes) {
+            return;
+        }
+        ReminderSettings.setLeadMinutes(this, minutes);
+        // sync() cancels every registered alarm before planning again, so the old
+        // lead time cannot survive beside the new one.
+        ReminderScheduler.sync(this);
+        refreshReminderCard();
+    }
+
+    private void refreshReminderCard() {
+        if (reminderStatus == null) {
+            return;
+        }
+        boolean enabled = ReminderSettings.isEnabled(this);
+        boolean allowed = ReminderNotifications.canPost(this);
+        int minutes = ReminderSettings.leadMinutes(this);
+        int[] choices = leadChoices();
+        for (int index = 0; index < reminderLeadChips.size(); index++) {
+            UiKit.styleChip(reminderLeadChips.get(index), choices[index] == minutes);
+        }
+        if (!enabled) {
+            reminderStatus.setText("\u5DF2\u5173\u95ED");
+            reminderStatus.setTextColor(Palette.ON_SURFACE_VARIANT);
+        } else if (!allowed) {
+            reminderStatus.setText("\u901A\u77E5\u6743\u9650\u672A\u5F00\u542F\uFF0C\u63D0\u9192\u4E0D\u4F1A\u663E\u793A");
+            reminderStatus.setTextColor(Palette.ERROR);
+        } else {
+            reminderStatus.setText("\u5DF2\u5F00\u542F \u00B7 \u63D0\u524D " + minutes + " \u5206\u949F \u00B7 \u5DF2\u5B89\u6392 "
+                    + ReminderScheduler.registeredCount(this) + " \u6761\u63D0\u9192");
+            reminderStatus.setTextColor(Palette.ON_SURFACE);
+        }
+        reminderPermissionAction.setVisibility(
+                enabled && !allowed ? View.VISIBLE : View.GONE);
+    }
+
+    /** Whether the app may post at all. The permission only exists from Android 13. */
+    private boolean hasNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return true;
+        }
+        return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            // Before Android 13 there is no such permission to ask for, so the
+            // check is written here and not only inside hasNotificationPermission:
+            // the guard belongs beside the call it protects.
+            return;
+        }
+        if (hasNotificationPermission()) {
+            return;
+        }
+        requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS },
+                REQUEST_NOTIFICATIONS);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_NOTIFICATIONS) {
+            return;
+        }
+        // Either way the timetable is unaffected: the switch stays where the user
+        // put it, sync() registers nothing while posting is impossible, and the
+        // status line says so.
+        ReminderScheduler.sync(this);
+        refreshReminderCard();
+    }
+
+    private void openNotificationSettings() {
+        Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+        intent.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+        try {
+            startActivity(intent);
+        } catch (RuntimeException unavailable) {
+            // No settings screen to open on this device; the status line already
+            // said what is wrong.
+            Toast.makeText(this, "\u65E0\u6CD5\u6253\u5F00\u7CFB\u7EDF\u901A\u77E5\u8BBE\u7F6E", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private View createAboutCard() {
         LinearLayout card = card();
         card.setBackground(UiKit.outline(this, Palette.SURFACE_CONTAINER_LOW,
@@ -518,6 +702,7 @@ public class SettingsActivity extends Activity {
     // ----------------------------------------------------------------- state
 
     private void refresh() {
+        refreshReminderCard();
         Semester active = repository.getActiveSemester();
         List<Semester> semesters = repository.getSemesters();
         List<Course> courses = repository.getCourses();

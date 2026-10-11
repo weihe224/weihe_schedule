@@ -313,6 +313,17 @@ public class WeekGridActivity extends Activity {
      * week is showing, Monday otherwise. Guessing a day for an older week would
      * put the course somewhere the user is not looking.</p>
      */
+    /**
+     * Opens the course's own page rather than the editor.
+     *
+     * <p>The add button still goes straight to the editor, because there is
+     * nothing to describe about a course that does not exist yet.</p>
+     */
+    private void showDetails(Course course) {
+        Intent intent = new Intent(this, CourseDetailActivity.class);
+        intent.putExtra(CourseDetailActivity.EXTRA_COURSE_ID, course.id);
+        startActivity(intent);
+    }
     private void openEditor(Course course) {
         Intent intent = new Intent(this, EditCourseActivity.class);
         intent.putExtra(EditCourseActivity.EXTRA_COURSE_ID,
@@ -790,7 +801,7 @@ public class WeekGridActivity extends Activity {
             }
         }
 
-        blockView.setOnClickListener(view -> openEditor(course));
+        blockView.setOnClickListener(view -> showDetails(course));
         return blockView;
     }
 
