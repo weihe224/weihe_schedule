@@ -90,6 +90,9 @@ $env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
 - 交付前**三项都要是绿的**：测试全通过、`assembleDebug` 成功、`lintDebug` 报
   `No issues found.`。
 - **项目没有 `androidTest` 源集**，不要写仪器测试，也不要声称跑过 UI 自动化。
+- **`assembleDebug` 不会安装**：改完界面必须
+  `adb install -r app\build\outputs\apk\debug\app-debug.apk`，
+  否则设备上跑的还是旧包。本项目已两次因此误判"新功能没生效"。
 - 改了 UI 就**必须在模拟器上打开那个页面走一遍主路径**再交付。
   仅"编译通过 + 测试全绿 + lint 干净"**不能**证明 UI 可用
   （本项目出过 `ArrayStoreException` 只有在打开页面时才暴露、而 776 项测试全绿的先例）。
@@ -110,7 +113,19 @@ $env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
 
 ---
 
-## 7. 环境陷阱（会浪费大量时间）
+## 7. 交接文档的维护
+
+- **每完成一项任务就更新 `AGENT_HANDOFF.md`**（当前状态的唯一有效文档）：
+  更新 Git 状态、功能完成状态、已知问题与下一步。
+- **逐轮开发日志（根因、修法、当轮测试结果）追加到 `AGENT_HANDOFF_ARCHIVE.md`**，
+  不要堆进 `AGENT_HANDOFF.md`，也不要覆盖其他 Agent 的记录。
+- 完成状态必须使用明确标签（已实现并已验证 / 已实现但尚未充分验证 / 部分实现 /
+  尚未实现 / 存在问题 / 待确认），并附代码路径或测试类作为依据。
+- **讨论过、计划过、写过提示词，都不等于已实现。**
+
+---
+
+## 8. 环境陷阱（会浪费大量时间）
 
 **PowerShell**
 
