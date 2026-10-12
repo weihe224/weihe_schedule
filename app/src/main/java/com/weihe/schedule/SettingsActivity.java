@@ -42,6 +42,7 @@ import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.data.BackupCodec;
 import com.weihe.schedule.data.BackupPreview;
 import com.weihe.schedule.data.CourseRepository;
+import com.weihe.schedule.data.DamagedCourseCopy;
 import com.weihe.schedule.importer.ExcelTimetableReader;
 import com.weihe.schedule.importer.TimetableImportException;
 import com.weihe.schedule.importer.TimetableImportParser;
@@ -50,6 +51,7 @@ import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.reminder.ReminderSettings;
 import com.weihe.schedule.rule.ReminderPlan;
 import com.weihe.schedule.ui.Insets;
+import com.weihe.schedule.ui.Pickers;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
 
@@ -71,6 +73,9 @@ public class SettingsActivity extends Activity {
     /** Asking for POST_NOTIFICATIONS, which only exists from Android 13. */
     private static final int REQUEST_NOTIFICATIONS = 3004;
 
+    /** Where to put the copy of a course payload that could not be read. */
+    private static final int REQUEST_EXPORT_DAMAGED = 3005;
+
     /**
      * The backup checked and waiting for the user to choose a destination.
      *
@@ -81,6 +86,18 @@ public class SettingsActivity extends Activity {
     private BackupCodec.Document pendingBackupDocument;
     private TextView backupValue;
 
+    /**
+     * The damaged copy read and waiting for a destination.
+     *
+     * <p>Held the same way the backup is, and for the same reason: the text is
+     * taken before the picker opens, so cancelling writes nothing and a payload
+     * that changed underneath cannot be exported by halves.</p>
+     */
+    private DamagedCourseCopy pendingDamagedCopy;
+    private LinearLayout damagedCopyCard;
+    private TextView damagedCopyValue;
+    private View damagedCopyAction;
+
     private CourseRepository repository;
     private TextView semesterValue;
     private TextView semesterDetail;
@@ -89,6 +106,9 @@ public class SettingsActivity extends Activity {
     private TextView schedulesValue;
     private TextView coursesValue;
     private TextView weekValue;
+
+    /** The undo entry in the import card; shown only when there is one. */
+    private LinearLayout undoImportSection;
 
     private UiKit.Check reminderCheck;
     private TextView reminderStatus;
@@ -146,6 +166,17 @@ public class SettingsActivity extends Activity {
                 previewBackup(uri);
             }
         }
+        if (requestCode == REQUEST_EXPORT_DAMAGED) {
+            DamagedCourseCopy copy = pendingDamagedCopy;
+            pendingDamagedCopy = null;
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                // Cancelled: the copy stays where it is and nothing is written.
+                return;
+            }
+            if (copy != null) {
+                writeDamagedCopy(data.getData(), copy);
+            }
+        }
     }
 
     // ---------------------------------------------------------------- layout
@@ -163,26 +194,34 @@ public class SettingsActivity extends Activity {
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(14), dp(14), dp(14), dp(20));
 
-        body.addView(sectionLabel("\u8BFE\u8868\u6570\u636E"));
-        body.addView(createImportCard());
-        body.addView(createBackupCard(), margins(dp(10)));
+        // Ordered by how often each item is reached for. The term on screen and the
+        // date its week 1 begins are one subject, so they sit together; then the
+        // reminder, which is set once and lived with; then the periods every course
+        // is laid out against; and last the data management -- importing and
+        // backing up are done rarely and deliberately, and they belong at the end
+        // rather than between the settings people change.
+        body.addView(sectionLabel("\u5B66\u671F\u7BA1\u7406"));
+        body.addView(createSemesterGroup());
 
-        LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        gap.topMargin = dp(16);
-        body.addView(sectionLabel("\u5B66\u671F"), gap);
-        body.addView(createSemesterCard());
-
-        body.addView(sectionLabel("\u5F53\u524D\u5B66\u671F\u7684\u7B2C\u4E00\u5468"),
+        // Named for what it changes rather than for where it sits: this is the
+        // date week 1 begins, and moving it re-dates every course in the term.
+        body.addView(sectionLabel("\u5B66\u671F\u8D77\u59CB\u65E5\u671F"),
                 margins(dp(16)));
         body.addView(createSemesterStartCard());
 
-        body.addView(sectionLabel("\u4E0A\u4E0B\u8BFE\u65F6\u95F4"),
-                margins(dp(16)));
-        body.addView(createScheduleCard());
-
         body.addView(sectionLabel("\u4E0A\u8BFE\u63D0\u9192"), margins(dp(16)));
         body.addView(createReminderCard());
+
+        body.addView(sectionLabel("\u4E0A\u4E0B\u8BFE\u65F6\u95F4"), margins(dp(16)));
+        body.addView(createScheduleGroup());
+
+        body.addView(sectionLabel("\u8BFE\u8868\u6570\u636E"), margins(dp(16)));
+        body.addView(createDataGroup());
+        // Only ever visible when a course payload actually failed to read, so the
+        // page does not carry a diagnostic row for a situation most installs never
+        // reach. refresh() decides.
+        damagedCopyCard = createDamagedCopyCard();
+        body.addView(damagedCopyCard, margins(dp(10)));
 
         body.addView(createAboutCard(), margins(dp(20)));
 
@@ -192,6 +231,167 @@ public class SettingsActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         return root;
+    }
+
+    /**
+     * One row of a settings group: an icon, a title, a line of context, a chevron.
+     *
+     * <p>The page used to give every entry its own card, a bold heading, a value
+     * line and one or two paragraphs of explanation. That is a lot of height and a
+     * lot of reading for entries that are all the same kind of thing -- a place to
+     * go. A row says the same in one line, and the group card around it says which
+     * entries belong together without a heading repeating what the rows already
+     * say.</p>
+     */
+    private static final class Row {
+        final LinearLayout view;
+        final TextView title;
+        final TextView subtitle;
+
+        Row(LinearLayout view, TextView title, TextView subtitle) {
+            this.view = view;
+            this.title = title;
+            this.subtitle = subtitle;
+        }
+    }
+
+    /** A tappable row: icon, title over a line of context, and a chevron. */
+    private Row settingRow(int icon, String title, String subtitle,
+            View.OnClickListener listener) {
+        LinearLayout row = new UiKit.PressFeedback(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M),
+                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M));
+        // Tall enough to be an easy target, and the same height whatever the
+        // subtitle says, so a column of rows lines up.
+        row.setMinimumHeight(dp(UiTokens.TOUCH_TARGET + 12));
+
+        android.widget.ImageView image = new android.widget.ImageView(this);
+        image.setImageResource(icon);
+        image.setColorFilter(Palette.PRIMARY);
+        row.addView(image, new LinearLayout.LayoutParams(
+                dp(UiTokens.ICON_SIZE), dp(UiTokens.ICON_SIZE)));
+
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        TextView titleView = UiKit.text(this, title, UiTokens.Type.TITLE_SMALL,
+                Palette.ON_SURFACE, Typeface.BOLD);
+        text.addView(titleView);
+        TextView subtitleView = UiKit.text(this, subtitle, UiTokens.Type.BODY_MEDIUM,
+                Palette.ON_SURFACE_VARIANT, Typeface.NORMAL);
+        subtitleView.setMaxLines(2);
+        subtitleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        subParams.topMargin = dp(2);
+        text.addView(subtitleView, subParams);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        textParams.leftMargin = dp(UiTokens.SPACE_M);
+        row.addView(text, textParams);
+
+        row.addView(UiKit.inlineIcon(this, R.drawable.ic_chevron_right,
+                Palette.OUTLINE), new LinearLayout.LayoutParams(
+                        dp(UiTokens.ICON_SIZE - 4), dp(UiTokens.ICON_SIZE - 4)));
+
+        UiKit.ripple(row, UiTokens.RADIUS_L, false);
+        UiKit.pressable(row, listener);
+        return new Row(row, titleView, subtitleView);
+    }
+
+    /** A card of rows, with no padding of its own so the rows run edge to edge. */
+    private LinearLayout groupCard() {
+        LinearLayout group = UiKit.card(this);
+        group.setPadding(0, dp(UiTokens.SPACE_XS), 0, dp(UiTokens.SPACE_XS));
+        return group;
+    }
+
+    /** The hairline between two rows of a group. */
+    private View rowDivider() {
+        return UiKit.divider(this, 0, 0);
+    }
+
+    /**
+     * The timetable's data entries: import, export, preview, and the undo that is
+     * only there when there is something to undo.
+     *
+     * <p>Import and export are separate rows rather than one card with two buttons,
+     * because they are separate decisions: one replaces the term's courses, the
+     * other writes a file and changes nothing. The counts each row needs are the
+     * row's own second line, which is where a number about an action belongs.</p>
+     */
+    private View createDataGroup() {
+        LinearLayout group = groupCard();
+
+        Row importRow = settingRow(R.drawable.ic_add, "\u5BFC\u5165\u8BFE\u8868", "",
+                view -> openImportPicker());
+        coursesValue = importRow.subtitle;
+        group.addView(importRow.view);
+
+        group.addView(rowDivider());
+        Row backupRow = settingRow(R.drawable.ic_download, "\u5BFC\u51FA\u5907\u4EFD", "",
+                view -> exportBackup());
+        backupValue = backupRow.subtitle;
+        group.addView(backupRow.view);
+        // The warning is the one thing here worth the lines: the file is readable
+        // text and the decision to write it is the user's.
+        group.addView(hintLine("\u5907\u4EFD\u662F\u660E\u6587\uFF0C\u542B\u6559\u5E08"
+                + "\u59D3\u540D\u4E0E\u4E0A\u8BFE\u5730\u70B9\u3002", 0), indented());
+
+        group.addView(rowDivider());
+        Row previewRow = settingRow(R.drawable.ic_search, "\u4ECE\u5907\u4EFD\u9884\u89C8",
+                "\u5148\u68C0\u67E5\u5907\u4EFD\u5185\u5BB9\uFF0C\u786E\u8BA4\u540E\u518D\u6062\u590D",
+                view -> openBackupPicker());
+        group.addView(previewRow.view);
+
+        // Offered only while there is something to go back to. A row that never
+        // becomes usable is worse than no row: it says the feature exists and is
+        // broken, when in fact the term has simply not imported.
+        undoImportSection = new LinearLayout(this);
+        undoImportSection.setOrientation(LinearLayout.VERTICAL);
+        undoImportSection.addView(rowDivider());
+        undoImportSection.addView(settingRow(R.drawable.ic_back,
+                "\u64A4\u9500\u4E0A\u6B21\u5BFC\u5165",
+                "\u628A\u672C\u5B66\u671F\u8BFE\u8868\u6062\u590D\u4E3A\u5BFC\u5165\u524D"
+                        + "\u7684\u5185\u5BB9",
+                view -> confirmUndoImport()).view);
+        undoImportSection.setVisibility(View.GONE);
+        group.addView(undoImportSection);
+        return group;
+    }
+
+    /** A caption under a row, aligned with the row's title rather than its icon. */
+    private LinearLayout.LayoutParams indented() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = dp(UiTokens.SPACE_L + UiTokens.ICON_SIZE + UiTokens.SPACE_M);
+        params.rightMargin = dp(UiTokens.SPACE_L + UiTokens.ICON_SIZE);
+        params.bottomMargin = dp(UiTokens.SPACE_S);
+        return params;
+    }
+
+    /** The term on screen, with its dates and length, opening the term list. */
+    private View createSemesterGroup() {
+        LinearLayout group = groupCard();
+        Row row = settingRow(R.drawable.ic_semester, "", "",
+                view -> startActivity(new Intent(this, SemesterListActivity.class)));
+        semesterValue = row.title;
+        semesterDetail = row.subtitle;
+        group.addView(row.view);
+        return group;
+    }
+
+    /** The bell schedules, opening the list that manages them. */
+    private View createScheduleGroup() {
+        LinearLayout group = groupCard();
+        Row row = settingRow(R.drawable.ic_settings, "\u4F5C\u606F\u65F6\u95F4\u8868", "",
+                view -> startActivity(new Intent(this, ScheduleListActivity.class)));
+        schedulesValue = row.subtitle;
+        group.addView(row.view);
+        return group;
     }
 
     private View createHeader() {
@@ -259,36 +459,47 @@ public class SettingsActivity extends Activity {
         return hint;
     }
 
-    private View createImportCard() {
-        LinearLayout card = card();
-        addTitle(card, R.drawable.ic_add, "\u6279\u91CF\u5BFC\u5165\u8BFE\u8868");
-        coursesValue = valueLine("", 11);
-        card.addView(coursesValue);
-        card.addView(hintLine("\u8BFB\u53D6\u6559\u52A1\u7CFB\u7EDF\u5BFC\u51FA\u7684 .xls \u8BFE\u8868\uFF0C"
-                + "\u5BFC\u5165\u4F1A\u66FF\u6362\u5F53\u524D\u5168\u90E8\u8BFE\u7A0B\u3002", 6));
-        card.addView(actionRow(
-                action("\u9009\u62E9\u6587\u4EF6\u5BFC\u5165", Palette.PRIMARY, true,
-                        view -> openImportPicker())));
-        return card;
+    // ------------------------------------------------------------- undo import
+
+    /**
+     * Asks once, in words that say what is about to change, then puts the term
+     * back the way it was before the last import.
+     *
+     * <p>The entry can go stale between being drawn and being pressed -- another
+     * screen may have imported, undone, or switched semester in between. When
+     * that has happened there is nothing to undo, so the press refreshes instead
+     * of opening a dialog that would fail.</p>
+     */
+    private void confirmUndoImport() {
+        if (!repository.hasPreviousCourses()) {
+            refresh();
+            return;
+        }
+        UiKit.dialog(this, "\u64A4\u9500\u4E0A\u6B21\u5BFC\u5165",
+                "\u5C06\u628A\u5F53\u524D\u5B66\u671F\u7684\u8BFE\u8868\u6062\u590D\u4E3A\u4E0A"
+                        + "\u6B21\u5BFC\u5165\u4E4B\u524D\u7684\u5185\u5BB9\u3002\n\n"
+                        + "\u5F53\u524D\u8BFE\u8868\u4F1A\u88AB\u66FF\u6362\uFF0C\u5BFC\u5165\u540E"
+                        + "\u65B0\u589E\u7684\u8BFE\u7A0B\u5C06\u6D88\u5931\uFF1B\u6BCF\u6B21"
+                        + "\u5BFC\u5165\u53EA\u80FD\u64A4\u9500\u4E00\u6B21\u3002",
+                null, null,
+                UiKit.Action.of("\u53D6\u6D88", null),
+                UiKit.Action.destructive("\u64A4\u9500\u5BFC\u5165", this::undoImport));
     }
 
-    private View createBackupCard() {
-        LinearLayout card = card();
-        addTitle(card, R.drawable.ic_semester, "\u5907\u4EFD\u4E0E\u6062\u590D");
-        backupValue = valueLine("", 11);
-        card.addView(backupValue);
-        card.addView(hintLine("\u5BFC\u51FA\u4E00\u4EFD JSON \u5907\u4EFD\u6587\u4EF6\uFF0C"
-                + "\u5305\u542B\u5168\u90E8\u5B66\u671F\u7684\u8BFE\u7A0B\u3001\u4F5C\u606F"
-                + "\u8868\u4E0E\u8BBE\u7F6E\u3002", 6));
-        card.addView(hintLine("\u5907\u4EFD\u662F\u660E\u6587\uFF0C\u542B\u6559\u5E08\u59D3"
-                + "\u540D\u4E0E\u4E0A\u8BFE\u5730\u70B9\uFF0C\u8BF7\u5B58\u653E\u5728\u81EA"
-                + "\u5DF1\u4FE1\u4EFB\u7684\u4F4D\u7F6E\u3002", 2));
-        card.addView(actionRow(
-                action("\u5BFC\u51FA\u5907\u4EFD", Palette.PRIMARY, true,
-                        view -> exportBackup()),
-                action("\u4ECE\u5907\u4EFD\u9884\u89C8", Palette.PRIMARY, false,
-                        view -> openBackupPicker())));
-        return card;
+    private void undoImport() {
+        if (!repository.restorePreviousCourses()) {
+            // Deliberately not "数据未改变": a refused commit is not proof of
+            // that, so the wording leaves the real state to be confirmed on screen.
+            refresh();
+            UiKit.message(this, "\u64A4\u9500\u5931\u8D25",
+                    "\u8BFE\u8868\u53EF\u80FD\u672A\u6062\u590D\u4E3A\u5BFC\u5165\u524D"
+                            + "\u7684\u5185\u5BB9\uFF0C\u8BF7\u8FD4\u56DE\u9996\u9875\u786E\u8BA4"
+                            + "\u540E\u518D\u8BD5\u3002");
+            return;
+        }
+        refresh();
+        Toast.makeText(this, "\u5DF2\u6062\u590D\u4E3A\u5BFC\u5165\u524D\u7684\u8BFE\u8868",
+                Toast.LENGTH_SHORT).show();
     }
 
     // ----------------------------------------------------------------- backup
@@ -409,6 +620,166 @@ public class SettingsActivity extends Activity {
                 .format(LocalDateTime.now()) + ".json";
     }
 
+    // --------------------------------------------------------- damaged copy
+
+    /**
+     * The card for a course payload the reader could not make sense of.
+     *
+     * <p>Built once and shown only when there is something to say. The copy is not
+     * a backup and not a repair: it is the evidence, kept so that a file that
+     * failed to read can still be looked at. The wording says so, because a user
+     * who thinks this is a restore will be disappointed by it.</p>
+     */
+    private LinearLayout createDamagedCopyCard() {
+        LinearLayout card = card();
+        card.setBackground(UiKit.outline(this, Palette.SURFACE_CONTAINER_LOW,
+                UiTokens.RADIUS_L, Palette.OUTLINE_VARIANT,
+                UiTokens.STROKE_HAIRLINE));
+        UiKit.elevate(card, UiTokens.RADIUS_L, UiTokens.ELEVATION_NONE);
+        addTitle(card, R.drawable.ic_settings, "\u65E0\u6CD5\u8BC6\u522B\u7684\u8BFE\u7A0B\u6570\u636E");
+        damagedCopyValue = valueLine("", 11);
+        card.addView(damagedCopyValue);
+        card.addView(hintLine("\u8FD9\u662F\u8BFB\u53D6\u5931\u8D25\u65F6\u539F\u6837\u4FDD\u7559"
+                + "\u7684\u539F\u59CB\u5185\u5BB9\uFF0C\u53EF\u80FD\u542B\u8BFE\u7A0B\u540D\u3001"
+                + "\u6559\u5E08\u4E0E\u6559\u5BA4\u3002", 6));
+        card.addView(hintLine("\u4EC5\u4F9B\u6280\u672F\u6392\u67E5\uFF0C\u4E0D\u4FDD\u8BC1"
+                + "\u80FD\u76F4\u63A5\u6062\u590D\u6210\u8BFE\u8868\uFF1B\u672C\u5E94\u7528"
+                + "\u4E0D\u4F1A\u81EA\u52A8\u4FEE\u590D\u6216\u56DE\u5199\u3002", 2));
+        damagedCopyAction = actionRow(
+                action("\u5BFC\u51FA\u635F\u574F\u6570\u636E\u526F\u672C", Palette.PRIMARY, true,
+                        view -> confirmExportDamagedCopy()));
+        card.addView(damagedCopyAction);
+        return card;
+    }
+
+    /**
+     * Shows the card only when there is something to say about it.
+     *
+     * <p>Absent is the ordinary state, and a row saying "no damaged data" on every
+     * visit would be noise on a page opened for other reasons. Empty and unreadable
+     * are not ordinary: the slot exists, so the card appears and says which of the
+     * two it is rather than offering an export that cannot happen.</p>
+     */
+    private void refreshDamagedCopyCard() {
+        if (damagedCopyCard == null) {
+            return;
+        }
+        DamagedCourseCopy copy = repository.damagedCopy();
+        if (!copy.exists()) {
+            damagedCopyCard.setVisibility(View.GONE);
+            return;
+        }
+        damagedCopyCard.setVisibility(View.VISIBLE);
+        damagedCopyAction.setVisibility(copy.isExportable() ? View.VISIBLE : View.GONE);
+        switch (copy.state()) {
+            case PRESENT:
+                damagedCopyValue.setText("\u5DF2\u4FDD\u7559\u4E00\u4EFD\u539F\u59CB\u526F"
+                        + "\u672C\uFF08" + copy.length() + " \u4E2A\u5B57\u7B26\uFF09");
+                break;
+            case EMPTY:
+                damagedCopyValue.setText("\u526F\u672C\u4E3A\u7A7A\uFF0C\u6CA1\u6709\u53EF"
+                        + "\u5BFC\u51FA\u7684\u5185\u5BB9\u3002");
+                break;
+            default:
+                damagedCopyValue.setText("\u526F\u672C\u65E0\u6CD5\u8BFB\u53D6\uFF0C"
+                        + "\u65E0\u6CD5\u5BFC\u51FA\u3002");
+                break;
+        }
+    }
+
+    /**
+     * Says what the file is before the picker opens.
+     *
+     * <p>Exported because the user asked for it, never as a side effect: this
+     * dialog is the only way in, and cancelling it leaves every key alone. The
+     * wording promises nothing about recovery -- the payload is precisely what the
+     * reader could not use.</p>
+     */
+    private void confirmExportDamagedCopy() {
+        if (!repository.damagedCopy().isExportable()) {
+            // The card can go stale between being drawn and being pressed.
+            refresh();
+            return;
+        }
+        UiKit.dialog(this, "\u5BFC\u51FA\u635F\u574F\u6570\u636E\u526F\u672C",
+                "\u8FD9\u4EFD\u526F\u672C\u662F\u8BFE\u7A0B\u6570\u636E\u8BFB\u53D6\u5931"
+                        + "\u8D25\u65F6\u539F\u6837\u4FDD\u7559\u7684\u539F\u59CB\u5185\u5BB9"
+                        + "\uFF0C\u4E3B\u8981\u7528\u4E8E\u6280\u672F\u6392\u67E5\uFF0C"
+                        + "\u4E0D\u4FDD\u8BC1\u80FD\u591F\u76F4\u63A5\u6062\u590D\u3002\n\n"
+                        + "\u6587\u4EF6\u662F\u660E\u6587\uFF0C\u53EF\u80FD\u542B\u8BFE\u7A0B"
+                        + "\u540D\u3001\u6559\u5E08\u4E0E\u6559\u5BA4\uFF0C\u8BF7\u59A5\u5584"
+                        + "\u4FDD\u7BA1\u3002",
+                null, null,
+                UiKit.Action.of("\u53D6\u6D88", null),
+                UiKit.Action.of("\u9009\u62E9\u5BFC\u51FA\u4F4D\u7F6E",
+                        this::exportDamagedCopy));
+    }
+
+    /** Opens the destination picker with the copy already read. */
+    private void exportDamagedCopy() {
+        DamagedCourseCopy copy = repository.damagedCopy();
+        if (!copy.isExportable()) {
+            refresh();
+            return;
+        }
+        pendingDamagedCopy = copy;
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        // Plain text, not the backup's JSON: the payload is whatever was stored,
+        // and the app does not know what that is. Claiming a format it cannot
+        // verify would be a guess, and the extension keeps the two files apart.
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, damagedCopyFileName());
+        startActivityForResult(intent, REQUEST_EXPORT_DAMAGED);
+    }
+
+    /** Writes the copy out exactly as it was read. */
+    private void writeDamagedCopy(Uri uri, DamagedCourseCopy copy) {
+        final String name = displayNameOf(uri);
+        new Thread(() -> {
+            String failure = null;
+            try (OutputStream output =
+                         getContentResolver().openOutputStream(uri, "wt")) {
+                if (output == null) {
+                    failure = "\u65E0\u6CD5\u5199\u5165\u6240\u9009\u4F4D\u7F6E";
+                } else {
+                    copy.writeTo(output);
+                }
+            } catch (IOException error) {
+                failure = writeFailureReason(error);
+            } catch (SecurityException denied) {
+                failure = "\u6CA1\u6709\u5199\u5165\u8BE5\u4F4D\u7F6E\u7684\u6743\u9650";
+            }
+            final String problem = failure;
+            runOnUiThread(() -> {
+                if (isFinishing()) {
+                    return;
+                }
+                if (problem != null) {
+                    // The internal copy is left where it is: a failed export is a
+                    // reason to keep the evidence, not to throw it away.
+                    UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25", problem);
+                    return;
+                }
+                Toast.makeText(this, "\u5DF2\u5BFC\u51FA\u635F\u574F\u6570\u636E\u526F\u672C"
+                        + (name.isEmpty() ? "" : "\n" + name),
+                        Toast.LENGTH_LONG).show();
+            });
+        }).start();
+    }
+
+    /**
+     * A name that cannot be mistaken for a normal backup.
+     *
+     * <p>{@code weihe-backup-….json} is the app's own format and can be restored;
+     * this is neither, so it gets its own stem and its own extension.</p>
+     */
+    private String damagedCopyFileName() {
+        return "weihe-damaged-courses-" + DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")
+                .format(LocalDateTime.now()) + ".txt";
+    }
+
     private String appVersionName() {
         try {
             String name = getPackageManager()
@@ -442,27 +813,25 @@ public class SettingsActivity extends Activity {
     }
 
     /** Which term is on screen, and the way to look at another one. */
-    private View createSemesterCard() {
-        LinearLayout card = card();
-        addTitle(card, R.drawable.ic_semester, "\u5B66\u671F");
-        semesterValue = valueLine("", 11);
-        card.addView(semesterValue);
-        semesterDetail = hintLine("", 6);
-        card.addView(semesterDetail);
-        card.addView(actionRow(
-                action("\u67E5\u770B\u4E0E\u5207\u6362\u5B66\u671F", Palette.PRIMARY, true,
-                        view -> startActivity(new Intent(this,
-                                SemesterListActivity.class)))));
-        return card;
-    }
-
+    /**
+     * Week 1 of the term on screen, and the three ways to move it.
+     *
+     * <p>These controls change stored data: they move the Monday that week 1 begins
+     * on, so every course's weeks line up with different real dates afterwards. The
+     * card says so in one line, because it is the one entry on this page whose
+     * buttons are not navigation -- without that, "previous week" next to a date
+     * reads like browsing a calendar.</p>
+     */
     private View createSemesterStartCard() {
         LinearLayout card = card();
-        addTitle(card, R.drawable.ic_semester, "\u5F00\u5B66\u7B2C\u4E00\u5468\u5468\u4E00");
-        semesterStartValue = valueLine("", 11);
+        addTitle(card, R.drawable.ic_today, "\u7B2C 1 \u5468\u5468\u4E00");
+        semesterStartValue = valueLine("", 10);
         card.addView(semesterStartValue);
-        semesterStartDetail = hintLine("", 6);
+        semesterStartDetail = hintLine("", 4);
         card.addView(semesterStartDetail);
+        card.addView(hintLine("\u6539\u7684\u662F\u672C\u5B66\u671F\u7B2C 1 \u5468\u7684"
+                + "\u5468\u4E00\uFF0C\u8BFE\u7A0B\u5468\u6B21\u5BF9\u5E94\u7684\u5B9E"
+                + "\u9645\u65E5\u671F\u4F1A\u8DDF\u7740\u53D8\u3002", 4));
         card.addView(actionRow(
                 action("\u524D\u79FB\u4E00\u5468", Palette.INK, false,
                         view -> shiftSemesterStart(-1)),
@@ -470,20 +839,6 @@ public class SettingsActivity extends Activity {
                         view -> shiftSemesterStart(1)),
                 action("\u8F93\u5165\u65E5\u671F", Palette.PRIMARY, true,
                         view -> editSemesterStart())));
-        return card;
-    }
-
-    private View createScheduleCard() {
-        LinearLayout card = card();
-        addTitle(card, R.drawable.ic_settings, "\u4F5C\u606F\u65F6\u95F4\u4E0E\u8282\u6B21");
-        schedulesValue = valueLine("", 11);
-        card.addView(schedulesValue);
-        card.addView(hintLine("\u4E0D\u540C\u6559\u5B66\u697C\u53EF\u4EE5\u4E0A\u4E0B\u8BFE\u65F6\u95F4\u4E0D\u540C\uFF0C"
-                + "\u8BFE\u7A0B\u53EF\u6309\u5730\u70B9\u81EA\u52A8\u5339\u914D\u3002", 6));
-        card.addView(actionRow(
-                action("\u7BA1\u7406\u4F5C\u606F\u8868", Palette.PRIMARY, true,
-                        view -> startActivity(new Intent(this,
-                                ScheduleListActivity.class)))));
         return card;
     }
 
@@ -658,7 +1013,7 @@ public class SettingsActivity extends Activity {
                 UiTokens.STROKE_HAIRLINE));
         UiKit.elevate(card, UiTokens.RADIUS_L, UiTokens.ELEVATION_NONE);
         addTitle(card, R.drawable.ic_grid, "\u5173\u4E8E");
-        weekValue = valueLine("", 11);
+        weekValue = valueLine("", 8);
         card.addView(weekValue);
         card.addView(hintLine("\u6570\u636E\u53EA\u5B58\u5728\u672C\u673A\uFF08SharedPreferences\uFF09\uFF0C"
                 + "\u5378\u8F7D\u5E94\u7528\u4F1A\u4E00\u5E76\u5220\u9664\u3002", 6));
@@ -712,14 +1067,29 @@ public class SettingsActivity extends Activity {
         boolean inSession = !LocalDate.now().isBefore(active.start())
                 && !LocalDate.now().isAfter(active.lastDay());
 
-        coursesValue.setText(courses.isEmpty()
-                ? "\u5F53\u524D\u6CA1\u6709\u8BFE\u7A0B"
-                : "\u5F53\u524D\u5171 " + courses.size() + " \u6761\u5B89\u6392");
+        // Read from the store rather than remembered, so switching semester,
+        // importing or undoing on another screen is reflected the moment this one
+        // comes back.
+        if (undoImportSection != null) {
+            undoImportSection.setVisibility(
+                    repository.hasPreviousCourses() ? View.VISIBLE : View.GONE);
+        }
+        refreshDamagedCopyCard();
 
-        semesterValue.setText("\u5F53\u524D\uFF1A" + active.label());
-        semesterDetail.setText("\u5171 " + semesters.size() + " \u4E2A\u5B66\u671F \u00B7 "
-                + ScheduleUtils.formatDate(active.start()) + " - "
+        // The count and the file type, which is what decides whether to tap. How
+        // the import behaves is said in the import flow, where it is acted on.
+        coursesValue.setText((courses.isEmpty()
+                ? "\u5F53\u524D\u6CA1\u6709\u8BFE\u7A0B"
+                : "\u5F53\u524D\u5171 " + courses.size() + " \u6761\u5B89\u6392")
+                + " \u00B7 \u4ECE Excel \u6587\u4EF6\u5BFC\u5165");
+
+        // The row's title is the term itself; the line under it is the summary the
+        // section exists to give. The number of terms is not repeated here -- the
+        // row opens the list, where that is the first thing on screen.
+        semesterValue.setText(active.label());
+        semesterDetail.setText(ScheduleUtils.formatDate(active.start()) + " - "
                 + ScheduleUtils.formatDate(active.lastDay())
+                + " \u00B7 \u5171 " + ScheduleUtils.SEMESTER_WEEKS + " \u5468"
                 + (inSession ? " \u00B7 \u8FDB\u884C\u4E2D" : " \u00B7 \u5DF2\u7ED3\u675F"));
 
         semesterStartValue.setText(ScheduleUtils.formatFullDate(start));
@@ -753,31 +1123,18 @@ public class SettingsActivity extends Activity {
         applySemesterStart(start.plusWeeks(weeks));
     }
 
+    /**
+     * Moves week 1 of the term on screen, by calendar.
+     *
+     * <p>A calendar rather than a text field: the only thing this asks for is a
+     * date, and a date picker cannot produce the thirtieth of February. The term's
+     * own rule still applies afterwards -- any day is accepted and rounded to its
+     * Monday -- and the confirmation names the day that actually took effect, so a
+     * Tuesday typed in does not silently become a Monday.</p>
+     */
     private void editSemesterStart() {
-        final LocalDate start = repository.getSemesterStart();
-        final EditText input = UiKit.field(this, "yyyy-MM-dd", false);
-        input.setInputType(android.text.InputType.TYPE_CLASS_DATETIME);
-        input.setText(start.toString());
-        input.setSelection(input.getText().length());
-        input.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M),
-                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M));
-
-        UiKit.dialog(this, "\u5F00\u5B66\u7B2C\u4E00\u5468\u5468\u4E00",
-                "\u683C\u5F0F\uFF1A2026-02-23\u3002\u4E0D\u662F\u5468\u4E00\u4F1A\u81EA\u52A8"
-                        + "\u5F52\u5230\u5F53\u5468\u5468\u4E00\u3002",
-                input, null,
-                UiKit.Action.of("\u53D6\u6D88", null),
-                UiKit.Action.validated("\u4FDD\u5B58", () -> {
-                    LocalDate parsed = ScheduleUtils.parseDate(
-                            input.getText().toString());
-                    if (parsed == null) {
-                        input.setError("\u65E5\u671F\u683C\u5F0F\u5E94\u4E3A 2026-02-23");
-                        input.requestFocus();
-                        return false;
-                    }
-                    applySemesterStart(parsed);
-                    return true;
-                }));
+        Pickers.showDatePicker(this, repository.getSemesterStart(),
+                this::applySemesterStart);
     }
 
     private void applySemesterStart(LocalDate date) {
@@ -812,11 +1169,12 @@ public class SettingsActivity extends Activity {
                     throw new TimetableImportException(
                             "\u65E0\u6CD5\u6253\u5F00\u6240\u9009\u6587\u4EF6");
                 }
-                List<Course> parsed = ExcelTimetableReader.read(input);
+                TimetableImportParser.Report report =
+                        ExcelTimetableReader.readWithReport(input);
                 runOnUiThread(() -> {
                     progress.dismiss();
                     if (!isFinishing()) {
-                        confirmImport(parsed);
+                        confirmImport(report);
                     }
                 });
             } catch (Exception error) {
@@ -830,16 +1188,22 @@ public class SettingsActivity extends Activity {
         }).start();
     }
 
-    private void confirmImport(List<Course> courses) {
-        if (courses.isEmpty()) {
-            Toast.makeText(this, "\u6CA1\u6709\u8BC6\u522B\u5230\u8BFE\u7A0B",
-                    Toast.LENGTH_LONG).show();
+    /**
+     * Shows what the file turned into, before anything is replaced.
+     *
+     * <p>The counts come from the report, so the sentence describes the file rather
+     * than the app's hopes for it. When something could not be recognised the
+     * screen says so with a few located examples, and the user decides whether an
+     * incomplete timetable is still worth having -- which is a decision only they
+     * can make. Nothing here writes: cancelling leaves the timetable, and any
+     * snapshot an earlier import left behind, exactly as they were.</p>
+     */
+    private void confirmImport(TimetableImportParser.Report report) {
+        if (!report.isUsable()) {
+            showNothingRecognised(report);
             return;
         }
-        java.util.Set<String> names = new java.util.HashSet<>();
-        for (Course course : courses) {
-            names.add(course.name);
-        }
+        List<Course> courses = report.courses();
         int lastSourceWeek = 1;
         for (Course course : courses) {
             lastSourceWeek = Math.max(lastSourceWeek, course.endWeek);
@@ -855,11 +1219,12 @@ public class SettingsActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(UiTokens.SPACE_XL - 2), dp(UiTokens.SPACE_XS),
                 dp(UiTokens.SPACE_XL - 2), 0);
-        String summary = "\u8BC6\u522B\u5230 " + names.size() + " \u95E8\u8BFE\u7A0B\uFF0C"
-                + "\u5171 " + courses.size() + " \u6761\u5B89\u6392";
+        String summary = "\u8BC6\u522B\u5230 " + report.courseCount() + " \u95E8\u8BFE\u7A0B\uFF0C"
+                + "\u5171 " + report.scheduleCount() + " \u6761\u5B89\u6392";
         content.addView(UiKit.title(this, summary));
         content.addView(hintLine(
                 "\u5BFC\u5165\u5C06\u8986\u76D6\u5F53\u524D\u8BFE\u8868", UiTokens.SPACE_XS + 1));
+        content.addView(issueSummary(report));
 
         TextView label = UiKit.text(this,
                 "\u8BFE\u8868\u7B2C 1 \u5468\u5BF9\u5E94\u672C\u5B66\u671F\uFF1A",
@@ -896,7 +1261,16 @@ public class SettingsActivity extends Activity {
                     try {
                         List<Course> shifted = TimetableImportParser.shiftWeeks(
                                 courses, sourceFirstWeek);
-                        repository.replaceCourses(shifted);
+                        if (!repository.replaceCourses(shifted)) {
+                            // The store refused the write. "课表已导入" is a claim
+                            // the app cannot back up, so it is not made.
+                            refresh();
+                            UiKit.message(this, "\u5BFC\u5165\u672A\u5B8C\u6210",
+                                    "\u8BFE\u8868\u5199\u5165\u5931\u8D25\uFF0C\u5BFC\u5165"
+                                            + "\u53EF\u80FD\u6CA1\u6709\u751F\u6548\uFF0C\u8BF7"
+                                            + "\u91CD\u65B0\u5BFC\u5165\u3002");
+                            return;
+                        }
                         refresh();
                         Toast.makeText(this, "\u8BFE\u8868\u5DF2\u5BFC\u5165",
                                 Toast.LENGTH_SHORT).show();
@@ -904,6 +1278,58 @@ public class SettingsActivity extends Activity {
                         showImportError(error);
                     }
                 }));
+    }
+
+    /**
+     * The line, or the block, that says whether the file was read in full.
+     *
+     * <p>Reasons and positions only, never the cell text: the point is to help the
+     * user find the spot in their spreadsheet, and a warning that quoted the cell
+     * would put a teacher's name on a screen that did not ask for it.</p>
+     */
+    private View issueSummary(TimetableImportParser.Report report) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+        if (!report.hasIssues()) {
+            block.addView(hintLine("\u6587\u4EF6\u5185\u5BB9\u5DF2\u5168\u90E8\u8BC6\u522B\u3002",
+                    UiTokens.SPACE_XS + 1));
+            return block;
+        }
+        block.addView(hintLine("\u53E6\u6709 " + report.issueCount()
+                + " \u5904\u5185\u5BB9\u672A\u80FD\u8BC6\u522B\uFF0C\u672C\u6B21\u5BFC\u5165"
+                + "\u53EF\u80FD\u4E0D\u5B8C\u6574\u3002", UiTokens.SPACE_XS + 1));
+        for (TimetableImportParser.Issue issue : report.issues()) {
+            block.addView(hintLine("\u00B7 " + issue.describe(), UiTokens.SPACE_XS));
+        }
+        return block;
+    }
+
+    /**
+     * The file produced no course at all.
+     *
+     * <p>A dialog rather than the toast this used to be: "没有识别到课程" on its own
+     * leaves the user with nothing to act on, and the reasons are the only thing
+     * that can tell them whether the file is the wrong kind, the wrong format, or
+     * damaged. Nothing is replaced, and no undo entry is written, because no
+     * import happened.</p>
+     */
+    private void showNothingRecognised(TimetableImportParser.Report report) {
+        StringBuilder message = new StringBuilder(
+                "\u8FD9\u4EFD\u6587\u4EF6\u91CC\u6CA1\u6709\u8BC6\u522B\u5230\u4EFB\u4F55"
+                        + "\u8BFE\u7A0B\uFF0C\u5F53\u524D\u8BFE\u8868\u672A\u505A\u4EFB\u4F55"
+                        + "\u6539\u52A8\u3002");
+        if (report.hasIssues()) {
+            message.append("\n\n\u672A\u80FD\u8BC6\u522B\u7684\u5185\u5BB9\u5171 ")
+                    .append(report.issueCount()).append(" \u5904\uFF1A");
+            for (TimetableImportParser.Issue issue : report.issues()) {
+                message.append("\n\u00B7 ").append(issue.describe());
+            }
+        } else {
+            message.append("\n\n\u6587\u4EF6\u91CC\u6CA1\u6709\u8BFE\u7A0B\u5185\u5BB9\uFF0C"
+                    + "\u8BF7\u786E\u8BA4\u5BFC\u51FA\u7684\u662F\u8BFE\u8868\u800C\u4E0D"
+                    + "\u662F\u5176\u4ED6\u8868\u683C\u3002");
+        }
+        UiKit.message(this, "\u6CA1\u6709\u8BC6\u522B\u5230\u8BFE\u7A0B", message.toString());
     }
 
     private void showImportError(Exception error) {

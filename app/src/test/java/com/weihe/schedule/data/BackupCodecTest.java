@@ -239,6 +239,47 @@ public class BackupCodecTest {
     }
 
     @Test
+    public void aDamagedCopyInTheStoreNeverReachesTheBackup() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester active = repository.getActiveSemester();
+        preferences.edit()
+                .putString("courses_backup", "<html>not a timetable</html>")
+                .apply();
+        assertTrue("the copy must exist, or the test proves nothing",
+                repository.damagedCopy().isExportable());
+
+        Map<Long, List<Course>> coursesBySemester = new LinkedHashMap<>();
+        coursesBySemester.put(Long.valueOf(active.id()), repository.getCourses());
+        String json = BackupCodec.write(BackupCodec.of(List.of(active), coursesBySemester,
+                repository.getBellSchedules(), active.id(), STAMP, VERSION_NAME));
+
+        assertFalse("the damaged copy is internal", json.contains("courses_backup"));
+        assertFalse("and none of its content may leak into a user's backup either",
+                json.contains("not a timetable"));
+    }
+
+    @Test
+    public void theBackupLeavesOutTheImportUndoSnapshot() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester active = repository.getActiveSemester();
+        repository.replaceCourses(List.of(course(1L, "\u5BFC\u5165\u7684\u8BFE")));
+        assertNotNull("the import must have written a snapshot to leave out",
+                preferences.getString("courses_previous:" + active.id(), null));
+
+        // Built the way the settings screen builds one: from what the repository
+        // hands out, not from a hand-made document.
+        Map<Long, List<Course>> coursesBySemester = new LinkedHashMap<>();
+        coursesBySemester.put(Long.valueOf(active.id()), repository.getCourses());
+        String json = BackupCodec.write(BackupCodec.of(List.of(active), coursesBySemester,
+                repository.getBellSchedules(), active.id(), STAMP, VERSION_NAME));
+
+        assertFalse("the undo snapshot is internal", json.contains("courses_previous"));
+        assertEquals(1, BackupCodec.parse(json).document().courseCount());
+    }
+
+    @Test
     public void quotesNewlinesBackslashesAndWideCharactersSurvive() {
         Course course = course(1L, "\u9AD8\u7B49\u6570\u5B66");
         course.teacher = "\u5F20\u201C\u5F15\u53F7\u201D\u8001\u5E08";

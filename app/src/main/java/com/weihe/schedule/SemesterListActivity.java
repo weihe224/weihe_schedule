@@ -18,10 +18,12 @@ import android.widget.Toast;
 import java.time.LocalDate;
 import java.util.List;
 import com.weihe.schedule.model.ScheduleUtils;
+import com.weihe.schedule.rule.SemesterNaming;
 import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.ui.Insets;
+import com.weihe.schedule.ui.Pickers;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
 
@@ -122,7 +124,7 @@ public class SemesterListActivity extends Activity {
         Semester active = repository.getActiveSemester();
         list.removeAllViews();
         summary.setText("\u5171 " + semesters.size() + " \u4E2A\u5B66\u671F \u00B7 "
-                + "\u5F53\u524D\uFF1A" + active.label());
+                + "\u6B63\u5728\u67E5\u770B\uFF1A" + active.label());
 
         // Newest first: the term being looked at is almost always the recent one.
         for (int i = semesters.size() - 1; i >= 0; i--) {
@@ -156,7 +158,7 @@ public class SemesterListActivity extends Activity {
                 new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         if (isActive) {
-            titleRow.addView(UiKit.badge(this, "\u5F53\u524D", Palette.PRIMARY,
+            titleRow.addView(UiKit.badge(this, "\u6B63\u5728\u67E5\u770B", Palette.PRIMARY,
                     Palette.ON_PRIMARY));
         }
         card.addView(titleRow);
@@ -220,12 +222,23 @@ public class SemesterListActivity extends Activity {
      */
     private void createNextSemester() {
         final List<Semester> semesters = repository.getSemesters();
-        final Semester newest = semesters.get(semesters.size() - 1);
+        // By start date, not by position and not by which term is on screen: the
+        // list is sorted today, but the term the user is reading is often an older
+        // one, and neither fact should decide what the next term is called.
+        final Semester newest = SemesterNaming.latestOf(semesters);
         final Semester active = repository.getActiveSemester();
 
-        final EditText dateInput = dateField(newest.nextStart().toString());
+                // Kept as a text-bearing field so the submit path below reads it exactly as
+        // it always did; what changed is that the text is now set by a calendar
+        // rather than typed. It still rounds to week 1's Monday after confirmation.
+        final EditText dateInput = dateBox(newest.nextStart());
         final EditText nameInput = textField(
                 "\u4F8B\uFF1A\u5927\u4E09\u4E0A\uFF08\u53EF\u7559\u7A7A\uFF09");
+        // Worked out once, here, so nothing that redraws the dialog can walk over
+        // what the user has typed into it. Empty when the newest term carries a
+        // name of its own, in which case the field is left as it always was.
+        nameInput.setText(SemesterNaming.defaultNameFor(semesters));
+        nameInput.setSelection(nameInput.getText().length());
         final int carried = repository.countCoursesOf(active);
         final UiKit.Check carryOver = UiKit.checkbox(this,
                 "\u628A\u201C" + active.label() + "\u201D\u7684 " + carried
@@ -237,6 +250,25 @@ public class SemesterListActivity extends Activity {
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.validated("\u521B\u5EFA",
                         () -> submitNewSemester(dateInput, nameInput, carryOver, active)));
+    }
+    /**
+     * The week-1 date, chosen from a calendar.
+     *
+     * <p>An {@link EditText} rather than a label so the submit path below reads it
+     * exactly as it always did. It simply cannot be typed into: tapping it opens a
+     * calendar on the date it already holds, and what gets stored is still rounded
+     * to that week's Monday by the same rule as before.</p>
+     */
+    private EditText dateBox(final LocalDate initial) {
+        final EditText field = dateField(Pickers.formatDate(initial));
+        field.setFocusable(false);
+        field.setClickable(true);
+        field.setOnClickListener(view -> {
+            LocalDate open = Pickers.dateOr(field.getText().toString(), initial);
+            Pickers.showDatePicker(this, open,
+                    day -> field.setText(Pickers.formatDate(day)));
+        });
+        return field;
     }
     private View createForm(final EditText dateInput, final EditText nameInput,
             final UiKit.Check carryOver, final Semester source, final int carried) {
@@ -355,10 +387,10 @@ public class SemesterListActivity extends Activity {
         }
         UiKit.dialog(this, "\u5220\u9664\u5B66\u671F", message, null, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
-                UiKit.Action.destructive("\u5220\u9664", () -> {
+                UiKit.Action.destructive("\u5220\u9664\u5B66\u671F", () -> {
                     boolean removed = repository.deleteSemester(semester);
                     if (removed) {
-                        Toast.makeText(this, "\u5DF2\u5220\u9664",
+                        Toast.makeText(this, "\u5B66\u671F\u5DF2\u5220\u9664",
                                 Toast.LENGTH_SHORT).show();
                         render();
                     }

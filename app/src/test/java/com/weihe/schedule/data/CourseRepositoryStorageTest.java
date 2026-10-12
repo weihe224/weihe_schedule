@@ -10,9 +10,13 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.Test;
+import com.weihe.schedule.importer.TimetableGrid;
+import com.weihe.schedule.importer.TimetableImportParser;
 import com.weihe.schedule.model.BellSchedule;
 import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
@@ -25,10 +29,10 @@ import com.weihe.schedule.model.Semester;
  * <p>Split from {@link CourseRepositoryTest} on purpose. That class covers what
  * the repository <em>decides</em> -- which schedule a course rings to, how
  * semesters are created and switched. This one covers what it <em>persists</em>:
- * deletion, damaged payloads, the one-off placeholder migration, and whether a
- * caller can reach into internal state through a returned collection. Keeping
- * them apart keeps both files readable, and it means none of the 34 existing
- * tests had to be touched.</p>
+ * deletion, damaged payloads, the one-off placeholder migration, the import undo
+ * snapshot and its lifecycle, and whether a caller can reach into internal state
+ * through a returned collection. Keeping them apart keeps both files readable, and
+ * it means none of the 34 existing tests had to be touched.</p>
  *
  * <p>Every test builds its own {@link FakePreferences}, so nothing depends on
  * execution order. The store is the real {@link CourseRepository} running its
@@ -429,6 +433,410 @@ public class CourseRepositoryStorageTest {
                 descriptionsOf(repositoryFor(preferences).getCourses()));
     }
 
+    // ------------------------------------------------------ 导入撤销快照
+
+    /**
+     * An import replaces the whole term, so the snapshot is the only way back.
+     *
+     * <p>The undo state lives in {@code courses_previous:<semesterId>} and is
+     * written in the same commit as the import, which is why these tests check the
+     * store's keys directly as well as the repository's own answers.</p>
+     */
+
+    @Test
+    public void importingReplacesTheTimetableAndUndoBringsItBack() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        List<String> before = descriptionsOf(repository.getCourses());
+        assertEquals("the sample timetable is the starting point", 9, before.size());
+
+        assertTrue(repository.replaceCourses(List.of(course("imported"))));
+        assertEquals(1, repository.getCourses().size());
+        assertTrue(repository.hasPreviousCourses());
+
+        assertTrue(repository.restorePreviousCourses());
+
+        // Compared as an unordered bag, the same way the deletion tests compare:
+        // the seeded timetable is handed back in creation order while a stored
+        // payload is sorted by start period, and the screens sort for themselves,
+        // so list order is not part of what "restored" means here.
+        assertEquals("every course must come back field for field",
+                sorted(before), sorted(descriptionsOf(repository.getCourses())));
+        assertFalse("the import has been undone, so it is no longer offered",
+                repository.hasPreviousCourses());
+    }
+
+    @Test
+    public void undoingRestoresTheExactPayloadThatWasStored() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester active = repository.getActiveSemester();
+        // A payload the reader repairs rather than one this code wrote: putting it
+        // back through the ordinary writer would produce a different string, so
+        // this is what proves the snapshot holds the raw text.
+        String stored = "[{\"id\":7,\"name\":\"A\",\"startPeriod\":3},{\"id\":8,\"name\":\"B\"}]";
+        storeCourses(preferences, stored);
+        repository.reload();
+        assertNotNull(repository.findCourse(7L));
+
+        assertTrue(repository.replaceCourses(List.of(course("imported"))));
+        assertTrue(repository.restorePreviousCourses());
+
+        assertEquals("undoing must put the store back byte for byte, not rebuild it",
+                stored, preferences.getString(coursesKeyOf(active), null));
+    }
+
+    @Test
+    public void onlyTheMostRecentImportCanBeUndone() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester active = repository.getActiveSemester();
+
+        assertTrue(repository.replaceCourses(List.of(course("first import"))));
+        String afterFirst = preferences.getString(coursesKeyOf(active), null);
+        assertTrue(repository.replaceCourses(List.of(course("second import"))));
+
+        assertTrue(repository.restorePreviousCourses());
+
+        assertEquals("undo must land on the state the second import replaced",
+                List.of("first import"), namesOfCourses(repository.getCourses()));
+        assertEquals(afterFirst, preferences.getString(coursesKeyOf(active), null));
+        assertFalse("there is only ever one step back", repository.hasPreviousCourses());
+    }
+
+    @Test
+    public void aSnapshotBelongsToTheSemesterThatTookTheImport() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester first = repository.getActiveSemester();
+        assertTrue(repository.replaceCourses(List.of(course("first term import"))));
+
+        Semester second = repository.addSemester(first.start().plusWeeks(20), "next");
+        repository.setActiveSemester(second);
+        repository.upsertCourse(course("typed by hand"));
+
+        assertFalse("another term's import is not this term's to undo",
+                repository.hasPreviousCourses());
+        List<String> before = descriptionsOf(repository.getCourses());
+        assertFalse("refusing must not touch the data",
+                repository.restorePreviousCourses());
+        assertEquals(before, descriptionsOf(repository.getCourses()));
+
+        repository.setActiveSemester(first);
+        assertTrue("the term that imported keeps its own undo",
+                repository.hasPreviousCourses());
+    }
+
+    @Test
+    public void aSemesterThatHadNoPayloadGetsItsKeyBackAbsent() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester first = repository.getActiveSemester();
+        // A second term has no payload of its own: not an empty timetable, but
+        // nothing at all, and undo has to put that state back.
+        Semester second = repository.addSemester(first.start().plusWeeks(20), "next");
+        repository.setActiveSemester(second);
+        assertNull(preferences.getString(coursesKeyOf(second), null));
+
+        assertTrue(repository.replaceCourses(List.of(course("imported"))));
+        assertTrue(repository.hasPreviousCourses());
+        assertTrue(repository.restorePreviousCourses());
+
+        assertNull("an absent key must come back absent, not as an empty array",
+                preferences.getString(coursesKeyOf(second), null));
+        assertTrue(repository.getCourses().isEmpty());
+        assertTrue("and a reopen must not seed samples into a term that never had any",
+                repositoryFor(preferences).getCourses().isEmpty());
+    }
+
+    @Test
+    public void undoingWithNoSnapshotChangesNothing() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        List<String> before = descriptionsOf(repository.getCourses());
+        assertFalse(repository.hasPreviousCourses());
+
+        assertFalse("there is nothing to undo, and that is not a success",
+                repository.restorePreviousCourses());
+
+        assertEquals(sorted(before), sorted(descriptionsOf(repository.getCourses())));
+        assertEquals(sorted(before),
+                sorted(descriptionsOf(repositoryFor(preferences).getCourses())));
+    }
+
+    @Test
+    public void aRefusedImportWriteIsNotReportedAsSuccess() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        int before = repository.getCourses().size();
+        preferences.failCommitNumber(1);
+
+        assertFalse("a refused commit must not be reported as a completed import",
+                repository.replaceCourses(List.of(course("imported"))));
+
+        assertFalse("and it must not leave an undo entry claiming one happened",
+                repository.hasPreviousCourses());
+        assertEquals(before, repository.getCourses().size());
+    }
+
+    @Test
+    public void aRefusedUndoWriteIsNotReportedAsSuccess() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        assertTrue(repository.replaceCourses(List.of(course("imported"))));
+        preferences.failCommitNumber(2);
+
+        assertFalse("a refused undo must not be reported as done",
+                repository.restorePreviousCourses());
+
+        assertEquals("the imported timetable is still the stored one",
+                1, repository.getCourses().size());
+        assertTrue("and the import is still offered, because it was never undone",
+                repository.hasPreviousCourses());
+    }
+
+    @Test
+    public void deletingASemesterForgetsItsSnapshot() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester first = repository.getActiveSemester();
+        Semester second = repository.addSemester(first.start().plusWeeks(20), "next");
+        repository.setActiveSemester(second);
+        assertTrue(repository.replaceCourses(List.of(course("imported"))));
+        assertNotNull(preferences.getString(previousKeyOf(second), null));
+
+        assertTrue(repository.deleteSemester(second));
+
+        assertNull("a deleted term must not leave a snapshot pointing at it",
+                preferences.getString(previousKeyOf(second), null));
+        assertFalse(repository.hasPreviousCourses());
+    }
+
+    @Test
+    public void copyingASemesterDoesNotCarryTheSourcesSnapshot() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester first = repository.getActiveSemester();
+        Semester second = repository.addSemester(first.start().plusWeeks(20), "next");
+        assertTrue(repository.replaceCourses(List.of(course("first term import"))));
+
+        repository.copyCourses(first, second);
+
+        assertNull("the source's undo state must not travel with the copy",
+                preferences.getString(previousKeyOf(second), null));
+        assertNotNull("the source keeps its own",
+                preferences.getString(previousKeyOf(first), null));
+    }
+
+    @Test
+    public void copyingOverASemesterForgetsTheImportItCouldHaveUndone() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester first = repository.getActiveSemester();
+        Semester second = repository.addSemester(first.start().plusWeeks(20), "next");
+        repository.setActiveSemester(second);
+        assertTrue(repository.replaceCourses(List.of(course("second term import"))));
+        assertTrue(repository.hasPreviousCourses());
+
+        repository.copyCourses(first, second);
+
+        assertFalse("the copy replaced the timetable the snapshot described",
+                repository.hasPreviousCourses());
+        assertNull(preferences.getString(previousKeyOf(second), null));
+    }
+
+    @Test
+    public void aBackupRestoreLeavesNoStaleUndoEntry() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester active = repository.getActiveSemester();
+        assertTrue(repository.replaceCourses(List.of(course("imported"))));
+        assertTrue("the import must be undoable first", repository.hasPreviousCourses());
+
+        Map<Long, List<Course>> coursesBySemester = new LinkedHashMap<>();
+        coursesBySemester.put(Long.valueOf(active.id()),
+                List.of(course("from the backup")));
+        BackupCodec.Document document = BackupCodec.of(List.of(active), coursesBySemester,
+                BellSchedules.presets(), active.id(), "2026-10-11T12:00:00+08:00", "1.0");
+
+        RestoreReport report = repository.restoreFrom(document);
+
+        assertTrue(report.toString(), report.isRestored());
+        assertFalse("a restore replaces the term, so the old undo entry is a lie",
+                repository.hasPreviousCourses());
+        assertNull(preferences.getString(previousKeyOf(active), null));
+        assertEquals(List.of("from the backup"), namesOfCourses(repository.getCourses()));
+    }
+
+    @Test
+    public void undoingTwiceRestoresOnceAndThenRefuses() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester active = repository.getActiveSemester();
+        String before = preferences.getString(coursesKeyOf(active), null);
+        assertTrue(repository.replaceCourses(List.of(course("imported"))));
+
+        assertTrue(repository.restorePreviousCourses());
+        assertFalse("the same snapshot must not be applied a second time",
+                repository.restorePreviousCourses());
+
+        assertEquals(before, preferences.getString(coursesKeyOf(active), null));
+        assertEquals(9, repository.getCourses().size());
+    }
+
+    // -------------------------------------------- 导入流程的数据安全保证
+
+    /**
+     * Reading and parsing a file must leave the store completely alone.
+     *
+     * <p>This is what makes cancelling the confirmation safe: up to the moment the
+     * user presses "覆盖导入", the import path has only read. The store is compared
+     * as a whole rather than field by field, so a stray write anywhere -- including
+     * to the undo snapshot an earlier import left behind -- shows up as a failure.</p>
+     */
+    @Test
+    public void parsingAFileWritesNothingAndLeavesTheUndoEntryAlone() throws Exception {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        assertTrue(repository.replaceCourses(List.of(course("imported"))));
+        assertTrue(repository.hasPreviousCourses());
+        Map<String, Object> before = preferences.snapshot();
+
+        TimetableGrid grid = new TimetableGrid(4, 2);
+        grid.put(0, 0, "\u8282\u6B21");
+        grid.put(0, 1, "\u661F\u671F\u4E00");
+        grid.put(1, 0, "1");
+        grid.put(2, 0, "2");
+        grid.put(1, 1, "X02018\u3010\u65B0\u8BFE\u3011\n2-5\u5468  \u5E08  \u5730");
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+        assertTrue("the file itself must be readable", report.isUsable());
+
+        assertEquals("parsing must not touch the store at all",
+                before, preferences.snapshot());
+        assertEquals("and the timetable is still the imported one",
+                1, repository.getCourses().size());
+        assertTrue("cancelling must not consume the snapshot",
+                repository.hasPreviousCourses());
+        assertTrue("nor damage it", repository.restorePreviousCourses());
+        assertEquals(9, repository.getCourses().size());
+    }
+
+    // ------------------------------------------------ 损坏数据副本的读取
+
+    /**
+     * The copy exists so it can leave the device; these tests are about reaching it
+     * without disturbing anything.
+     *
+     * <p>The store is compared as a whole wherever the claim is "nothing changed",
+     * so a stray write to any key -- the copy itself, the courses, the undo
+     * snapshot -- fails the test rather than passing unnoticed.</p>
+     */
+
+    @Test
+    public void aStoreWithNoDamagedCopyReportsNone() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        repository.getCourses();
+
+        DamagedCourseCopy copy = repository.damagedCopy();
+
+        assertEquals(DamagedCourseCopy.State.ABSENT, copy.state());
+        assertFalse(copy.exists());
+        assertFalse(copy.isExportable());
+        assertNull(copy.raw());
+    }
+
+    @Test
+    public void aStoredPayloadIsFoundAndReadBackWhole() {
+        FakePreferences preferences = new FakePreferences();
+        String payload = "[1,2,3]";
+        storeDamagedCopy(preferences, payload);
+
+        DamagedCourseCopy copy = repositoryFor(preferences).damagedCopy();
+
+        assertEquals(DamagedCourseCopy.State.PRESENT, copy.state());
+        assertTrue(copy.isExportable());
+        assertEquals(payload, copy.raw());
+        assertEquals(payload.length(), copy.length());
+    }
+
+    @Test
+    public void aPayloadIsFoundWithoutBeingParsed() {
+        FakePreferences preferences = new FakePreferences();
+        // Valid JSON, but not a course list: a reader would reject it. Whether it
+        // can be understood must not decide whether it is there.
+        String payload = "{\"not\":\"an array\"}";
+        storeDamagedCopy(preferences, payload);
+
+        DamagedCourseCopy copy = repositoryFor(preferences).damagedCopy();
+
+        assertEquals(DamagedCourseCopy.State.PRESENT, copy.state());
+        assertEquals(payload, copy.raw());
+    }
+
+    @Test
+    public void anEmptyStoredCopyIsReportedAsEmptyRatherThanAbsent() {
+        FakePreferences preferences = new FakePreferences();
+        preferences.edit().putString(KEY_COURSES_BACKUP, "").apply();
+
+        DamagedCourseCopy copy = repositoryFor(preferences).damagedCopy();
+
+        assertEquals(DamagedCourseCopy.State.EMPTY, copy.state());
+        assertTrue(copy.exists());
+        assertFalse(copy.isExportable());
+    }
+
+    @Test
+    public void aSlotHoldingSomethingOtherThanTextIsReportedAsUnreadable() {
+        FakePreferences preferences = new FakePreferences();
+        // Only reachable by hand-editing the store, but "there is none" would then
+        // be a wrong answer rather than a harmless one.
+        preferences.edit().putInt(KEY_COURSES_BACKUP, 3).apply();
+
+        DamagedCourseCopy copy = repositoryFor(preferences).damagedCopy();
+
+        assertEquals(DamagedCourseCopy.State.UNREADABLE, copy.state());
+        assertTrue(copy.exists());
+        assertFalse(copy.isExportable());
+        assertNull(copy.raw());
+    }
+
+    @Test
+    public void readingTheCopyChangesNothingInTheStore() {
+        FakePreferences preferences = new FakePreferences();
+        String payload = "[{\"id\":1,\"name\":\"A\"},42,{\"id\":2,\"name\":\"B\"}]";
+        storeCourses(preferences, payload);
+        CourseRepository repository = repositoryFor(preferences);
+        List<Course> readable = repository.getCourses();
+        assertEquals("the readable entries still load", 2, readable.size());
+        Map<String, Object> before = preferences.snapshot();
+
+        DamagedCourseCopy copy = repository.damagedCopy();
+        copy.state();
+        copy.raw();
+        copy.length();
+        copy.isExportable();
+
+        assertEquals("reading the copy must not touch the store",
+                before, preferences.snapshot());
+        assertEquals("and the copy itself is untouched",
+                payload, preferences.getString(KEY_COURSES_BACKUP, null));
+    }
+
+    @Test
+    public void thePayloadTheReaderCouldNotUseIsTheOneTheCopyHolds() {
+        FakePreferences preferences = new FakePreferences();
+        String payload = "[{\"id\":1,\"name\":\"A\"},null,{\"id\":2,\"name\":\"B\"}]";
+        storeCourses(preferences, payload);
+
+        // Reading the damaged store is what produces the copy in the first place.
+        assertEquals(2, repositoryFor(preferences).getCourses().size());
+
+        DamagedCourseCopy copy = repositoryFor(preferences).damagedCopy();
+        assertEquals("the copy is the payload itself, not a summary of it",
+                payload, copy.raw());
+    }
+
     // ------------------------------------------------------------------ 夹具
 
     private static CourseRepository repositoryFor(FakePreferences preferences) {
@@ -458,8 +866,28 @@ public class CourseRepositoryStorageTest {
     private static void storeCourses(FakePreferences preferences, String payload,
             Semester semester) {
         preferences.edit()
-                .putString("courses:" + semester.id(), payload)
+                .putString(coursesKeyOf(semester), payload)
                 .apply();
+    }
+
+    /**
+     * Files a payload straight into the damaged-copy slot.
+     *
+     * <p>Used where the subject is reading the slot rather than how it gets filled;
+     * the end-to-end path is covered by
+     * {@link #thePayloadTheReaderCouldNotUseIsTheOneTheCopyHolds}.</p>
+     */
+    private static void storeDamagedCopy(FakePreferences preferences, String payload) {
+        preferences.edit().putString(KEY_COURSES_BACKUP, payload).apply();
+    }
+
+    private static String coursesKeyOf(Semester semester) {
+        return "courses:" + semester.id();
+    }
+
+    /** The undo snapshot key of one semester. */
+    private static String previousKeyOf(Semester semester) {
+        return "courses_previous:" + semester.id();
     }
 
     private static Course course(String name) {

@@ -10,6 +10,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.List;
 
@@ -112,7 +113,12 @@ public class CourseDetailActivity extends Activity {
         }
         // The semester, not the day and periods: the hero card states those a few
         // pixels below, and the same line twice on one screen reads as a mistake.
-        subtitle.setText(detail.semesterLabel());
+        // The term, with its dates. The semester used to be a fact in the schedule
+        // card as well, which put the same name on the screen twice under two
+        // headings; it belongs here, once.
+        subtitle.setText(detail.semesterRange().isEmpty()
+                ? detail.semesterLabel()
+                : detail.semesterLabel() + "\uFF08" + detail.semesterRange() + "\uFF09");
         body.addView(heroCard(detail));
         body.addView(spaced(factsCard(detail)));
         body.addView(spaced(whereCard(detail)));
@@ -201,6 +207,13 @@ public class CourseDetailActivity extends Activity {
     }
 
     /** When the course runs, field by field. */
+    /**
+     * When the course runs, field by field.
+     *
+     * <p>The term is not repeated here: its name belongs on the app bar, where it
+     * already is, and a fact row saying the same thing under a second heading is
+     * the kind of line that makes a page look longer than it is.</p>
+     */
     private View factsCard(CourseDetail detail) {
         LinearLayout card = card();
         card.addView(section("\u4E0A\u8BFE\u5B89\u6392"));
@@ -212,9 +225,6 @@ public class CourseDetailActivity extends Activity {
         if (detail.timeKnown() && !detail.scheduleName().isEmpty()) {
             card.addView(fact("\u4F5C\u606F\u8868", detail.scheduleName()));
         }
-        card.addView(fact("\u6240\u5C5E\u5B66\u671F", detail.semesterLabel()
-                + (detail.semesterRange().isEmpty()
-                        ? "" : "\uFF08" + detail.semesterRange() + "\uFF09")));
         return card;
     }
 
@@ -228,6 +238,15 @@ public class CourseDetailActivity extends Activity {
     }
 
     /** The one thing this screen exists to lead to. */
+    /**
+     * What can be done with this course: change it, make another like it, or drop
+     * it.
+     *
+     * <p>Editing is the one this screen exists to lead to, so it is the only filled
+     * button. The other two share a quieter row: copying is an ordinary thing to
+     * want but does not carry the same weight, and deleting should not be the
+     * second-easiest thing to hit on the page.</p>
+     */
     private View actionsCard(CourseDetail detail) {
         LinearLayout card = card();
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -235,7 +254,65 @@ public class CourseDetailActivity extends Activity {
         TextView edit = UiKit.filledButton(this, "\u7F16\u8F91\u8BFE\u7A0B",
                 view -> openEditor());
         card.addView(edit, params);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(UiTokens.BUTTON_HEIGHT_COMPACT));
+        rowParams.topMargin = dp(UiTokens.SPACE_S);
+        row.setLayoutParams(rowParams);
+
+        row.addView(UiKit.outlinedButton(this, "\u590D\u5236\u8BFE\u7A0B",
+                view -> copyCourse()), new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        removeParams.leftMargin = dp(UiTokens.SPACE_S);
+        row.addView(UiKit.textButton(this, "\u5220\u9664\u8BFE\u7A0B", Palette.ERROR,
+                view -> confirmDelete()), removeParams);
+        card.addView(row);
         return card;
+    }
+
+    /**
+     * Opens the editor on a new record carrying this course's fields.
+     *
+     * <p>The id travels with the intent but the copy drops it, so saving writes a
+     * course that did not exist and leaves this one alone. Nothing else is changed
+     * on the way: a copy the user did not edit is the course they copied.</p>
+     */
+    private void copyCourse() {
+        Intent intent = new Intent(this, EditCourseActivity.class);
+        intent.putExtra(EditCourseActivity.EXTRA_COURSE_ID, courseId);
+        intent.putExtra(EditCourseActivity.EXTRA_COPY, true);
+        startActivity(intent);
+    }
+
+    /**
+     * Asks before deleting the course on screen.
+     *
+     * <p>Re-read rather than remembered: the entry can go stale between being drawn
+     * and being pressed, and a dialog naming a course that is already gone would be
+     * asking about nothing.</p>
+     */
+    private void confirmDelete() {
+        Course course = repository.findCourse(courseId);
+        if (course == null) {
+            render();
+            return;
+        }
+        UiKit.dialog(this, "\u5220\u9664\u8BFE\u7A0B",
+                "\u786E\u5B9A\u5220\u9664\u201C" + course.name
+                        + "\u201D\u5417\uFF1F\u5220\u9664\u540E\u65E0\u6CD5\u6062\u590D\u3002",
+                null, null,
+                UiKit.Action.of("\u53D6\u6D88", null),
+                UiKit.Action.destructive("\u5220\u9664\u8BFE\u7A0B", () -> {
+                    repository.deleteCourse(courseId);
+                    Toast.makeText(this, "\u8BFE\u7A0B\u5DF2\u5220\u9664",
+                            Toast.LENGTH_SHORT).show();
+                    finish();
+                }));
     }
 
     /** Opens the existing editor on this course; nothing about it changes here. */

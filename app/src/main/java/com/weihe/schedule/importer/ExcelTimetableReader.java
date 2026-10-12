@@ -17,6 +17,18 @@ public final class ExcelTimetableReader {
 
     public static List<Course> read(InputStream input)
             throws IOException, BiffException, TimetableImportException {
+        return readWithReport(input).courses();
+    }
+
+    /**
+     * Reads a workbook and reports what could not be turned into a course.
+     *
+     * <p>The grid is built once and handed to the parser, so this adds no work to
+     * an import -- it only stops the counts from being thrown away at the boundary
+     * between the workbook and the parser.</p>
+     */
+    public static TimetableImportParser.Report readWithReport(InputStream input)
+            throws IOException, BiffException, TimetableImportException {
         if (input == null) {
             throw new TimetableImportException(
                     "\u65E0\u6CD5\u6253\u5F00\u6240\u9009\u6587\u4EF6");
@@ -47,7 +59,7 @@ public final class ExcelTimetableReader {
                     grid.merge(topRow, leftColumn, bottomRow, rightColumn);
                 }
             }
-            return TimetableImportParser.parse(grid);
+            return TimetableImportParser.parseWithReport(grid);
         } finally {
             workbook.close();
         }

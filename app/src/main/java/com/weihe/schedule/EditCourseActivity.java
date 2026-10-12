@@ -2,13 +2,16 @@ package com.weihe.schedule;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
@@ -21,6 +24,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import com.weihe.schedule.model.BellSchedule;
@@ -29,7 +33,10 @@ import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseConflicts;
+import com.weihe.schedule.rule.CourseDraft;
 import com.weihe.schedule.rule.CourseFormValidator;
+import com.weihe.schedule.rule.WeekSelection;
+import com.weihe.schedule.rule.CourseSuggestions;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
@@ -38,6 +45,12 @@ import com.weihe.schedule.ui.UiTokens;
 public class EditCourseActivity extends Activity {
     public static final String EXTRA_COURSE_ID = "course_id";
     public static final String EXTRA_DAY = "day";
+    /**
+     * Set when this editor was opened to make a copy rather than to change the
+     * course it was given. The fields are carried over and the identity is not,
+     * so saving writes a new record and the original is untouched.
+     */
+    public static final String EXTRA_COPY = "copy";
 
     private static final int QUICK_WEEKS = 8;
     private static final int FIRST_HALF_END = Math.min(
@@ -47,12 +60,16 @@ public class EditCourseActivity extends Activity {
 
     private CourseRepository repository;
     private Course course;
-    private boolean existingCourse;
+    private boolean existingCourse;    /** Whether this editor is making a copy rather than changing a course. */    private boolean copying;
     private int selectedColor;
+    /** The form's uncommitted values, when this is a rebuild rather than a first visit. */
+    private CourseDraft draft;
 
     private EditText nameInput;
     private EditText teacherInput;
     private EditText locationInput;
+    private List<String> locationSuggestions = new ArrayList<>();
+    private List<String> teacherSuggestions = new ArrayList<>();
     private EditText startWeekInput;
     private EditText endWeekInput;
     private Spinner daySpinner;
@@ -68,15 +85,25 @@ public class EditCourseActivity extends Activity {
 
     private TextView allWeeksChip;
     private TextView firstHalfChip;
-    private TextView secondHalfChip;
+    private TextView secondHalfChip;    private TextView weekSummary;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         repository = new CourseRepository(this);
         long id = getIntent().getLongExtra(EXTRA_COURSE_ID, 0L);
-        course = id == 0L ? new Course() : repository.findCourse(id);
-        existingCourse = course != null && course.id != 0L;
+        Course source = id == 0L ? null : repository.findCourse(id);
+        copying = getIntent().getBooleanExtra(EXTRA_COPY, false) && source != null;
+        if (copying) {
+            // Same fields, no identity: the id is what makes a course the one it
+            // is, so dropping it is what turns "this course" into "another one
+            // like it", and the save below writes a new record.
+            course = source.copy();
+            course.id = 0L;
+        } else {
+            course = source == null ? new Course() : source;
+        }
+        existingCourse = !copying && course.id != 0L;
         if (course == null) {
             course = new Course();
         }
@@ -86,11 +113,30 @@ public class EditCourseActivity extends Activity {
             course.startWeek = 1;
             course.endWeek = ScheduleUtils.SEMESTER_WEEKS;
         }
-        selectedColor = course.color;
+        // Read once, before the form is built, from the courses the term already
+        // holds. Opening the editor must change nothing, so this only reads -- and it
+        // reads the active term list the repository returns, so no other term's names
+        // can reach these rows.
+        locationSuggestions = CourseSuggestions.locations(repository.getCourses());
+        teacherSuggestions = CourseSuggestions.teachers(repository.getCourses());
+
+        // Read before the form is built: the colour and the two radio-style rows are
+
+        // construction parameters, not things that can be poked in afterwards. The
+
+        // text fields and the plain spinners are applied by applyDraft() below.
+
+        draft = draftFrom(savedInstanceState);
+
+        selectedColor = draft != null && draft.hasColor() ? draft.color() : course.color;
         // The app bar is the page surface, so both system bars take that colour and
         // keep dark icons on it; see Insets for why this cannot live in the theme.
         Insets.applyBrandedSystemBars(this);
         setContentView(buildRoot());
+        // Last, so the form already holds what storage said and the draft only says
+        // what the user had changed on top of it. This writes into views and nothing
+        // else: no save, no delete, no repository call.
+        applyDraft();
     }
 
     private View buildRoot() {
@@ -152,7 +198,8 @@ public class EditCourseActivity extends Activity {
 
     private View createHeader() {
         return UiKit.detailAppBar(this,
-                existingCourse ? "\u7F16\u8F91\u8BFE\u7A0B" : "\u6DFB\u52A0\u8BFE\u7A0B",
+                existingCourse ? "\u7F16\u8F91\u8BFE\u7A0B"
+                : copying ? "\u6DFB\u52A0\u526F\u672C" : "\u6DFB\u52A0\u8BFE\u7A0B",
                 null, view -> finish());
     }
 
@@ -173,17 +220,92 @@ public class EditCourseActivity extends Activity {
         return wrapper;
     }
 
+    /**
+     * Shortcuts for one text field: tap one and it goes into that field.
+     *
+     * <p>The row belongs to the field above it and to no other. Tapping a venue
+     * writes the venue and nothing else -- not the name, not the day, not the
+     * weeks -- so the shortcut can never turn into an accidental edit of something
+     * the user did not touch. The field stays a text field: what is offered is a
+     * shortcut, not a set of allowed answers.</p>
+     *
+     * <p>Laid out three to a line, the way the week picker lays out its cells, so
+     * the row cannot grow sideways on a narrow phone. Cells share the width, and a
+     * short last line is padded with spacers so its chips are the same size as the
+     * ones above rather than stretching to fill.</p>
+     *
+     * <p>Nothing to offer means nothing is drawn: an empty band under a field
+     * would read as a part of the form that failed to load.</p>
+     */
+    private View suggestions(final EditText target, List<String> values, int topMargin) {
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        if (values.isEmpty()) {
+            grid.setVisibility(View.GONE);
+            return grid;
+        }
+        final int columns = 3;
+        LinearLayout line = null;
+        for (int index = 0; index < values.size(); index++) {
+            if (index % columns == 0) {
+                line = new LinearLayout(this);
+                line.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                lineParams.topMargin = index == 0 ? dp(topMargin) : dp(UiTokens.SPACE_S);
+                grid.addView(line, lineParams);
+            }
+            final String value = values.get(index);
+            TextView chip = UiKit.chip(this, value, false);
+            chip.setSingleLine(true);
+            chip.setEllipsize(TextUtils.TruncateAt.END);
+            chip.setOnClickListener(view -> fill(target, value));
+            LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(
+                    0, dp(UiTokens.CHIP_HEIGHT), 1f);
+            if (index % columns != 0) {
+                chipParams.leftMargin = dp(UiTokens.SPACE_S);
+            }
+            line.addView(chip, chipParams);
+        }
+        int remainder = values.size() % columns;
+        if (remainder != 0 && line != null) {
+            for (int slot = remainder; slot < columns; slot++) {
+                LinearLayout.LayoutParams spacerParams = new LinearLayout.LayoutParams(
+                        0, 1, 1f);
+                spacerParams.leftMargin = dp(UiTokens.SPACE_S);
+                line.addView(new View(this), spacerParams);
+            }
+        }
+        return grid;
+    }
+
+    /**
+     * Puts a suggested value into its field.
+     *
+     * <p>It replaces what was there, which is what a tap on a named shortcut is
+     * understood to mean. The caret moves to the end and the field takes focus, so
+     * a user who wants {@code 教学楼 A203 三层} can keep typing on top of the
+     * shortcut instead of having to tap the field first.</p>
+     */
+    private void fill(EditText target, String value) {
+        target.setText(value);
+        target.setSelection(target.getText().length());
+        target.requestFocus();
+    }
     private View createBasicSection() {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
         section.setPadding(dp(14), dp(13), dp(14), dp(14));
         section.setBackground(UiKit.outline(this,
                 Palette.SURFACE_CONTAINER, UiTokens.RADIUS_L, Palette.OUTLINE_VARIANT, 1));
-        section.addView(UiKit.text(this, "\u57FA\u672C\u4FE1\u606F",
+        section.addView(UiKit.text(this, "\u8BFE\u7A0B\u4FE1\u606F",
                 12, Palette.ON_SURFACE, true));
         section.addView(formField("\u8BFE\u7A0B\u540D\u79F0", nameInput, 11));
         section.addView(formField("\u4E0A\u8BFE\u5730\u70B9", locationInput, 11));
+        section.addView(suggestions(locationInput, locationSuggestions, 6));
         section.addView(formField("\u4EFB\u8BFE\u6559\u5E08", teacherInput, 11));
+        section.addView(suggestions(teacherInput, teacherSuggestions, 6));
         return section;
     }
 
@@ -195,6 +317,10 @@ public class EditCourseActivity extends Activity {
         input.setTextSize(UiTokens.Type.BODY_LARGE);
         input.setMinHeight(dp(46));
         input.setSingleLine(true);
+        // "Next" rather than a bare newline: the three text fields of a course are
+        // filled in one pass, so the keyboard should walk them instead of asking
+        // the user to reach for each one. The last field says "done".
+        input.setImeOptions(EditorInfo.IME_ACTION_NEXT);
         input.setPadding(dp(12), dp(8), dp(12), dp(8));
         input.setBackground(UiKit.fill(this, Palette.SURFACE_CONTAINER_LOW, UiTokens.RADIUS_M));
         return input;
@@ -340,6 +466,19 @@ public class EditCourseActivity extends Activity {
         };
         startWeekInput.addTextChangedListener(watcher);
         endWeekInput.addTextChangedListener(watcher);
+
+        // What the range and the parity add up to, on one line. The two controls
+        // above and beside this say which weeks are in range and which parity was
+        // picked; neither says how many weeks the course actually meets, and the
+        // combination can even come to none at all.
+        weekSummary = UiKit.text(this, "", UiTokens.Type.LABEL_LARGE,
+                Palette.ON_SURFACE_VARIANT, Typeface.NORMAL);
+        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        summaryParams.topMargin = dp(8);
+        wrapper.addView(weekSummary, summaryParams);
+
         updateWeekChipState();
 
         LinearLayout.LayoutParams wrapperParams = new LinearLayout.LayoutParams(
@@ -397,6 +536,36 @@ public class EditCourseActivity extends Activity {
         styleQuickChip(secondHalfChip,
                 isRange(start, end, SECOND_HALF_START,
                         ScheduleUtils.SEMESTER_WEEKS));
+
+        refreshWeekSummary();
+    }
+
+    /**
+     * Says what the selected weeks and parity come to.
+     *
+     * <p>Called from every control that can change either half, so the line can
+     * never describe a selection that is no longer on screen. A range that meets on
+     * no week at all is the one case worth colouring: it is a real configuration
+     * the form accepts, and saving it produces a course that never appears.</p>
+     */
+    private void refreshWeekSummary() {
+        if (weekSummary == null) {
+            return;
+        }
+        Integer start = CourseFormValidator.parseWeekOrNull(
+                startWeekInput.getText().toString());
+        Integer end = CourseFormValidator.parseWeekOrNull(
+                endWeekInput.getText().toString());
+        if (start == null || end == null) {
+            // Half-typed: the summary has nothing true to say, and guessing would
+            // describe a range the user has not chosen.
+            weekSummary.setText("");
+            return;
+        }
+        int parity = selectedParity();
+        weekSummary.setText(WeekSelection.summary(start, end, parity));
+        weekSummary.setTextColor(WeekSelection.meetsOnNoWeek(start, end, parity)
+                ? Palette.ERROR : Palette.ON_SURFACE_VARIANT);
     }
 
     private boolean isRange(Integer start, Integer end, int from, int to) {
@@ -413,6 +582,15 @@ public class EditCourseActivity extends Activity {
                 selected ? Palette.PRIMARY : Palette.SURFACE_CONTAINER_HIGH, UiTokens.RADIUS_S));
     }
 
+    /**
+     * The every/odd/even row.
+     *
+     * <p>Suppressed for the same reason as the week swipe in {@code MainActivity}:
+     * the touch listener replaces no click and returns false, so the row keeps
+     * handling its own taps. It exists only to notice that the parity changed, so
+     * the week summary above can be brought up to date.</p>
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
     private View createParitySection() {
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.VERTICAL);
@@ -423,9 +601,16 @@ public class EditCourseActivity extends Activity {
                 12, Palette.ON_SURFACE, true));
         // Drawn here rather than with RadioButton: three platform buttons next to
         // this app's own typography read as a different application.
-        parityChoice = UiKit.radioRow(this,
-                new CharSequence[] {"\u6BCF\u5468", "\u5355\u5468", "\u53CC\u5468"},
-                parityIndex(course.parity));
+        parityChoice = UiKit.radioRow(this, PARITY_LABELS, parityIndexFor(draft));
+        // The radio row has no change callback, so the summary is refreshed by
+        // watching the touch instead. Returning false leaves the row to handle the
+        // event itself: this observes the tap, it does not take it.
+        parityChoice.view().setOnTouchListener((view, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                view.post(this::refreshWeekSummary);
+            }
+            return false;
+        });
         LinearLayout.LayoutParams groupParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -500,7 +685,12 @@ public class EditCourseActivity extends Activity {
             scheduleValues[i + 1] = schedules.get(i).name();
         }
 
-        scheduleSpinner = spinner(scheduleOptions, indexOfSchedule(course.scheduleName));
+        // Positions are checked against this spinner's own list, which is read
+        // from storage and may have changed while the state was away.
+        int restoredSchedule = draft == null ? CourseDraft.NO_INDEX
+                : CourseDraft.usableIndex(draft.scheduleIndex(), scheduleOptions.length);
+        scheduleSpinner = spinner(scheduleOptions, restoredSchedule != CourseDraft.NO_INDEX
+                ? restoredSchedule : indexOfSchedule(course.scheduleName));
         scheduleSpinner.setContentDescription("\u9009\u62E9\u4F5C\u606F\u8868");
         scheduleSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -793,13 +983,146 @@ public class EditCourseActivity extends Activity {
                         + "\u201D\u5417\uFF1F\u5220\u9664\u540E\u65E0\u6CD5\u6062\u590D\u3002",
                 null, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
-                UiKit.Action.destructive("\u5220\u9664", () -> {
+                UiKit.Action.destructive("\u5220\u9664\u8BFE\u7A0B", () -> {
                     repository.deleteCourse(course.id);
                     setResult(RESULT_OK);
                     finish();
                 }));
     }
 
+    // ------------------------------------------------- unsaved form state
+
+    /** Keys for the form's uncommitted values, kept between rebuilds. */
+    private static final String STATE_NAME = "draft_name";
+    private static final String STATE_TEACHER = "draft_teacher";
+    private static final String STATE_LOCATION = "draft_location";
+    private static final String STATE_START_WEEK = "draft_start_week";
+    private static final String STATE_END_WEEK = "draft_end_week";
+    private static final String STATE_DAY = "draft_day";
+    private static final String STATE_START_PERIOD = "draft_start_period";
+    private static final String STATE_END_PERIOD = "draft_end_period";
+    private static final String STATE_PARITY = "draft_parity";
+    private static final String STATE_SCHEDULE = "draft_schedule";
+    private static final String STATE_COLOR = "draft_color";
+
+    /** Every week / odd week / even week, in the order parityIndex() expects. */
+    private static final CharSequence[] PARITY_LABELS = {
+        "\u6BCF\u5468", "\u5355\u5468", "\u53CC\u5468"
+    };
+
+    /**
+     * Captures the form as it stands, including what could not be saved yet.
+     *
+     * <p>Read from the views, not from {@link #course}. The course object still
+     * holds what storage said, because the edits are not applied to it until the
+     * user saves; a week field caught mid-keystroke holds text that has no place on
+     * the model at all. The views are the only record of either.</p>
+     */
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(STATE_NAME, nameInput.getText().toString());
+        outState.putString(STATE_TEACHER, teacherInput.getText().toString());
+        outState.putString(STATE_LOCATION, locationInput.getText().toString());
+        // Raw text. The field may hold "" or "1a" at this moment, and neither is a
+        // number this could store instead.
+        outState.putString(STATE_START_WEEK, startWeekInput.getText().toString());
+        outState.putString(STATE_END_WEEK, endWeekInput.getText().toString());
+        outState.putInt(STATE_DAY, daySpinner.getSelectedItemPosition());
+        outState.putInt(STATE_START_PERIOD,
+                startPeriodSpinner.getSelectedItemPosition());
+        outState.putInt(STATE_END_PERIOD, endPeriodSpinner.getSelectedItemPosition());
+        outState.putInt(STATE_PARITY, parityChoice == null ? CourseDraft.NO_INDEX
+                : parityChoice.selected());
+        outState.putInt(STATE_SCHEDULE, scheduleSpinner.getSelectedItemPosition());
+        outState.putInt(STATE_COLOR, selectedColor);
+    }
+
+    /**
+     * The state, or null on a first visit.
+     *
+     * <p>A missing key reads back as null, which is exactly "not carried" for the
+     * texts: a field the user emptied was saved as {@code ""} and comes back empty,
+     * while a field that was never saved keeps whatever initialisation gave it.
+     * The two are different states and must not collapse into one.</p>
+     */
+    private static CourseDraft draftFrom(Bundle state) {
+        if (state == null) {
+            return null;
+        }
+        return new CourseDraft(
+                state.getString(STATE_NAME),
+                state.getString(STATE_TEACHER),
+                state.getString(STATE_LOCATION),
+                state.getString(STATE_START_WEEK),
+                state.getString(STATE_END_WEEK),
+                state.getInt(STATE_DAY, CourseDraft.NO_INDEX),
+                state.getInt(STATE_START_PERIOD, CourseDraft.NO_INDEX),
+                state.getInt(STATE_END_PERIOD, CourseDraft.NO_INDEX),
+                state.getInt(STATE_PARITY, CourseDraft.NO_INDEX),
+                state.getInt(STATE_SCHEDULE, CourseDraft.NO_INDEX),
+                state.getInt(STATE_COLOR, CourseDraft.NO_COLOR));
+    }
+
+    /** The parity row's starting position: the draft's, or the course's. */
+    private int parityIndexFor(CourseDraft state) {
+        int restored = state == null ? CourseDraft.NO_INDEX
+                : CourseDraft.usableIndex(state.parityIndex(), PARITY_LABELS.length);
+        return restored != CourseDraft.NO_INDEX ? restored : parityIndex(course.parity);
+    }
+
+    /**
+     * Lays the saved form back over the freshly initialised one.
+     *
+     * <p>Does nothing without a state bundle, which is the point of the whole
+     * exercise: a first visit keeps the values it was initialised with, from a
+     * stored course or from a new one, and a rebuild gets the user's typing
+     * back.</p>
+     *
+     * <p>Positions are checked against the control they are going into rather than
+     * trusted, so a state written against a bell-schedule list that has since
+     * changed cannot select past the end of the current one.</p>
+     */
+    private void applyDraft() {
+        if (draft == null) {
+            return;
+        }
+        if (draft.name() != null) {
+            nameInput.setText(draft.name());
+        }
+        if (draft.teacher() != null) {
+            teacherInput.setText(draft.teacher());
+        }
+        if (draft.location() != null) {
+            locationInput.setText(draft.location());
+        }
+        if (draft.startWeek() != null) {
+            startWeekInput.setText(draft.startWeek());
+        }
+        if (draft.endWeek() != null) {
+            endWeekInput.setText(draft.endWeek());
+        }
+        int day = CourseDraft.usableIndex(draft.dayIndex(), daySpinner.getCount());
+        if (day != CourseDraft.NO_INDEX) {
+            daySpinner.setSelection(day);
+        }
+        int startPeriod = CourseDraft.usableIndex(draft.startPeriodIndex(),
+                startPeriodSpinner.getCount());
+        if (startPeriod != CourseDraft.NO_INDEX) {
+            startPeriodSpinner.setSelection(startPeriod);
+        }
+        int endPeriod = CourseDraft.usableIndex(draft.endPeriodIndex(),
+                endPeriodSpinner.getCount());
+        if (endPeriod != CourseDraft.NO_INDEX) {
+            endPeriodSpinner.setSelection(endPeriod);
+        }
+        // The week chips, the schedule preview and the schedule chip are all
+        // derived from the fields above, so they are recomputed rather than
+        // restored: setting the text already redrew the chips through their
+        // watcher, and these two cover the spinners and the preview text.
+        updateWeekChipState();
+        updateSchedulePreview();
+    }
     private int dp(float value) {
         return UiKit.dp(this, value);
     }

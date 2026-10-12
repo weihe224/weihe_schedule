@@ -72,7 +72,13 @@ public final class FakePreferences implements SharedPreferences {
     @Override
     public String getString(String key, String defaultValue) {
         Object value = values.get(key);
-        return value instanceof String ? (String) value : defaultValue;
+        if (value == null) {
+            return defaultValue;
+        }
+        // The platform casts, so a key holding a number throws here as well. Being
+        // forgiving would hide the one case the code under test has to handle: a
+        // slot that holds something other than text.
+        return (String) value;
     }
 
     @Override

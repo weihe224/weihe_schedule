@@ -51,6 +51,17 @@ public class CourseRepository {
      */
     private static final String KEY_RESTORE_PENDING = "restore_pending";
 
+    /**
+     * The courses a semester held before its most recent import.
+     *
+     * <p>Written in the same commit as the import itself, so the two can never
+     * disagree about whether an import happened: a store that refused the write
+     * holds neither, and an import therefore cannot become irreversible because
+     * its snapshot did not make it. One entry per semester, replaced by each
+     * import, so only the most recent one can be undone.</p>
+     */
+    private static final String KEY_COURSES_PREVIOUS = "courses_previous";
+
     private final SharedPreferences preferences;
     /**
      * Snapshot of the last read, dropped by every write.
@@ -225,6 +236,16 @@ public class CourseRepository {
                 .renamed(name);
         semesters.add(created);
         saveSemesters(semesters);
+        // The start date is stored twice on purpose -- in the record above, and
+        // under the key the week maths counts from. Writing only the record left the
+        // other key absent, and the first read of it fell back to a default worked
+        // out from today and saved that, so a term created for next February
+        // reported this term's August instead. Every other write path stores both
+        // (see setSemesterStart, and the restore, which writes the key for every
+        // term in the backup); this was the one that did not.
+        preferences.edit()
+                .putString(startKeyFor(created.id()), monday.toString())
+                .apply();
         return created;
     }
 
@@ -250,7 +271,16 @@ public class CourseRepository {
             copy.id = CourseList.nextId(incoming, preferred++);
             incoming.add(copy);
         }
-        writeCourses(coursesKeyFor(target.id()), incoming);
+        // One commit: the copied courses, and the removal of whatever the target
+        // could still undo. A copy replaces the target's whole timetable, so a
+        // snapshot taken before the target's own last import no longer describes
+        // a state the user can go back to -- offering it would silently throw the
+        // copy away. The source's own snapshot is deliberately left where it is:
+        // it belongs to the term that took the import.
+        preferences.edit()
+                .putString(coursesKeyFor(target.id()), coursesJsonOf(incoming))
+                .remove(previousCoursesKeyFor(target.id()))
+                .apply();
         if (target.id() == semesterId) {
             // The active semester's snapshot is now wrong.
             cachedCourses = null;
@@ -303,6 +333,9 @@ public class CourseRepository {
         preferences.edit()
                 .remove(coursesKeyFor(semester.id()))
                 .remove(startKeyFor(semester.id()))
+                // The snapshot described this term's own last import; with the
+                // term gone there is nothing left for it to undo.
+                .remove(previousCoursesKeyFor(semester.id()))
                 .apply();
         saveSemesters(semesters);
 
@@ -421,6 +454,11 @@ public class CourseRepository {
         return KEY_START + SUFFIX_SEPARATOR + id;
     }
 
+    /** The pre-import snapshot key of one semester. */
+    private static String previousCoursesKeyFor(long id) {
+        return KEY_COURSES_PREVIOUS + SUFFIX_SEPARATOR + id;
+    }
+
     /**
      * Reads every stored course.
      *
@@ -498,11 +536,7 @@ public class CourseRepository {
 
     /** Writes a course list straight to a semester's key. */
     private void writeCourses(String key, List<Course> courses) {
-        List<Object> array = MiniJson.array();
-        for (Course course : courses) {
-            array.add(toJson(course));
-        }
-        preferences.edit().putString(key, MiniJson.write(array)).apply();
+        preferences.edit().putString(key, coursesJsonOf(courses)).apply();
     }
 
     /** Parses one stored payload, applying the same repair rules everywhere. */
@@ -552,6 +586,30 @@ public class CourseRepository {
     }
 
     /**
+     * The raw payload kept aside when a stored course list could not be read.
+     *
+     * <p>Exists so the copy can leave the device: until now it was written and
+     * never read, which made the safety net unreachable without pulling the
+     * preferences file off the device by hand.</p>
+     *
+     * <p>The copy is read as text, never as courses. Whether one is there is
+     * answered by whether the slot holds something -- parsing it would answer
+     * "nothing here" for every payload this slot ever holds, since a payload only
+     * lands here because it could not be parsed. Reading changes nothing: the slot
+     * is neither cleared nor rewritten, and no course key is touched.</p>
+     */
+    public DamagedCourseCopy damagedCopy() {
+        try {
+            return DamagedCourseCopy.of(
+                    preferences.getString(KEY_COURSES_BACKUP, null));
+        } catch (ClassCastException notText) {
+            // Something other than text is filed under that key. Reporting "there
+            // is none" would be untrue, and handing back a guess would be worse.
+            return DamagedCourseCopy.unreadable();
+        }
+    }
+
+    /**
      * Drops every in-memory snapshot so the next read comes from storage.
      *
      * <p>Each Activity builds its own repository, and each repository caches. The
@@ -570,6 +628,14 @@ public class CourseRepository {
         cachedCourses = null;
         cachedSchedules = null;
         cachedSemesters = null;
+        // The active semester can move on another screen too, and every key this
+        // instance reads is built from its own idea of which one that is. Without
+        // re-adopting it here, "reload" meant "re-read the term this screen was
+        // opened on" rather than "re-read what storage says": coming back from the
+        // semester screen after a switch left the home screen reading the term it
+        // had been showing, so a term with nothing in it drew an empty list -- the
+        // home said no courses while the overview, a newer instance, showed them.
+        adoptSemester(activeSemester());
     }
 
     public Course findCourse(long id) {
@@ -589,8 +655,27 @@ public class CourseRepository {
         saveCourses(courses);
     }
 
-    /** Replaces the stored timetable with imported courses. */
-    public void replaceCourses(List<Course> imported) {
+    /**
+     * Replaces the stored timetable with imported courses, keeping what was
+     * there before so the import can be undone.
+     *
+     * <p>Both payloads go into a single {@link SharedPreferences.Editor}: the
+     * imported list, and the payload it replaces. One commit is what makes the
+     * safety net trustworthy -- an editor applies all-or-nothing, so an import
+     * can never land without the snapshot that undoes it, and a refused write
+     * cannot leave an irreversible overwrite behind.</p>
+     *
+     * <p>The previous payload is kept as the <em>raw stored string</em>, not as a
+     * re-serialised course list. Undoing then puts the store back byte for byte,
+     * including anything the ordinary reader would have repaired or skipped.</p>
+     *
+     * @return {@code true} when the store accepted the write. {@code false} when
+     *         it refused, and the caller must then not report the import as
+     *         successful. A refusal is not proof that nothing changed -- the
+     *         platform updates its in-memory map before the disk write that may
+     *         fail -- so callers should re-read rather than assume either state
+     */
+    public boolean replaceCourses(List<Course> imported) {
         List<Course> courses = new ArrayList<>();
         long preferred = System.currentTimeMillis();
         for (Course source : imported) {
@@ -603,7 +688,119 @@ public class CourseRepository {
             course.scheduleName = "";
             courses.add(course);
         }
-        saveCourses(courses);
+        boolean written = preferences.edit()
+                .putString(coursesKey(), coursesJsonOf(courses))
+                .putString(previousCoursesKeyFor(semesterId),
+                        previousEnvelope(preferences.getString(coursesKey(), null)))
+                .commit();
+        // The cache is dropped either way: a refused commit may still have
+        // reached this process's in-memory map, so the snapshot it holds is no
+        // longer something to hand out.
+        cachedCourses = null;
+        return written;
+    }
+
+    /**
+     * Whether the active semester has an import that can still be undone.
+     *
+     * <p>True only while the snapshot its last import wrote is still there. The
+     * settings screen reads this to decide whether to offer the entry at all,
+     * so a term that never imported anything -- or whose import has already been
+     * undone -- does not advertise one.</p>
+     */
+    public boolean hasPreviousCourses() {
+        return readPrevious(semesterId) != null;
+    }
+
+    /**
+     * Puts the active semester's courses back the way they were before its last
+     * import, and forgets that import.
+     *
+     * <p>The payload and the removal of the snapshot are one commit, so the same
+     * import cannot be undone twice: the second call finds nothing and changes
+     * nothing. A semester with no snapshot is refused outright rather than read
+     * as "restore an empty timetable", which would silently wipe a term whose
+     * courses were typed by hand.</p>
+     *
+     * <p>The cache is dropped whether or not the write was accepted, so the
+     * screens re-read instead of serving a snapshot that may no longer match the
+     * store.</p>
+     *
+     * @return {@code true} when the store accepted the write; {@code false} when
+     *         there was nothing to undo, or the store refused it. As with
+     *         {@link #replaceCourses}, a refusal is not proof that nothing
+     *         changed
+     */
+    public boolean restorePreviousCourses() {
+        PreviousCourses previous = readPrevious(semesterId);
+        if (previous == null) {
+            return false;
+        }
+        SharedPreferences.Editor editor = preferences.edit()
+                .remove(previousCoursesKeyFor(semesterId));
+        if (previous.present) {
+            editor.putString(coursesKey(), previous.raw);
+        } else {
+            // The term had no payload at all before the import, and putting an
+            // empty array back would be a different state: "no courses yet" and
+            // "a timetable that was deliberately emptied" do not read alike.
+            editor.remove(coursesKey());
+        }
+        boolean written = editor.commit();
+        // reload() rather than dropping only the course cache: this is the same
+        // "the store changed under you" situation a restore is in, and the next
+        // screen to read should come back to storage for all of it.
+        reload();
+        return written;
+    }
+
+    /**
+     * One semester's pre-import state: the payload it held, or the fact that it
+     * held none.
+     *
+     * <p>Absence needs recording because it has no representation of its own --
+     * {@code putString} with a null value removes the key -- and undoing has to
+     * put back the state that was there, not a lookalike.</p>
+     */
+    private static final class PreviousCourses {
+        private final boolean present;
+        private final String raw;
+
+        PreviousCourses(boolean present, String raw) {
+            this.present = present;
+            this.raw = raw;
+        }
+    }
+
+    /** The stored form of a pre-import payload. */
+    private static String previousEnvelope(String payload) {
+        Map<String, Object> envelope = MiniJson.object();
+        envelope.put("present", Boolean.valueOf(payload != null));
+        if (payload != null) {
+            envelope.put("raw", payload);
+        }
+        return MiniJson.write(envelope);
+    }
+
+    /**
+     * The pre-import state recorded for a semester.
+     *
+     * @return {@code null} when no snapshot is stored, or the stored one cannot
+     *         be read -- an unreadable snapshot is treated as none rather than
+     *         acted on
+     */
+    private PreviousCourses readPrevious(long id) {
+        Object parsed = MiniJson.parse(
+                preferences.getString(previousCoursesKeyFor(id), null));
+        if (!(parsed instanceof Map)) {
+            return null;
+        }
+        Map<?, ?> envelope = (Map<?, ?>) parsed;
+        if (!Boolean.TRUE.equals(envelope.get("present"))) {
+            return new PreviousCourses(false, null);
+        }
+        Object raw = envelope.get("raw");
+        return raw instanceof String ? new PreviousCourses(true, (String) raw) : null;
     }
 
     /**
@@ -1008,7 +1205,7 @@ public class CourseRepository {
         return stored;
     }
 
-    private Map<String, Object> toJson(Course course) {
+    private static Map<String, Object> toJson(Course course) {
         Map<String, Object> object = MiniJson.object();
         object.put("id", Long.valueOf(course.id));
         object.put("name", course.name);
@@ -1309,13 +1506,20 @@ public class CourseRepository {
      * and {@code semester_start} keys are read-only history, and a future version
      * may add keys this one knows nothing about -- clearing the file would throw
      * all of that away.</p>
+     *
+     * <p>{@code courses_previous} is on the list because a restore replaces every
+     * term's timetable: an undo entry left over from before it would take the user
+     * back to courses the backup has just replaced, which is exactly the wrong
+     * direction. Being scoped also puts those entries in the rollback material, so
+     * a restore that fails to verify hands them back along with everything else.</p>
      */
     private static boolean isScopedKey(String key) {
         return KEY_SEMESTERS.equals(key)
                 || KEY_ACTIVE_SEMESTER.equals(key)
                 || KEY_BELL_SCHEDULES.equals(key)
                 || key.startsWith(KEY_COURSES + SUFFIX_SEPARATOR)
-                || key.startsWith(KEY_START + SUFFIX_SEPARATOR);
+                || key.startsWith(KEY_START + SUFFIX_SEPARATOR)
+                || key.startsWith(KEY_COURSES_PREVIOUS + SUFFIX_SEPARATOR);
     }
 
     /**
@@ -1448,24 +1652,18 @@ public class CourseRepository {
         return text instanceof String ? (String) text : null;
     }
 
-    /** One semester's courses in the stored shape. */
+    /**
+     * A course list in the stored shape.
+     *
+     * <p>The single definition of that shape: the ordinary save, the copy into
+     * another semester and the restore all come through here, and every one of
+     * them has to agree with {@link #toJson} field for field or the same course
+     * would be stored two different ways.</p>
+     */
     private static String coursesJsonOf(List<Course> courses) {
         List<Object> array = MiniJson.array();
         for (Course course : courses) {
-            Map<String, Object> object = MiniJson.object();
-            object.put("id", Long.valueOf(course.id));
-            object.put("name", course.name);
-            object.put("teacher", course.teacher);
-            object.put("location", course.location);
-            object.put("day", Integer.valueOf(course.dayOfWeek));
-            object.put("startPeriod", Integer.valueOf(course.startPeriod));
-            object.put("endPeriod", Integer.valueOf(course.endPeriod));
-            object.put("startWeek", Integer.valueOf(course.startWeek));
-            object.put("endWeek", Integer.valueOf(course.endWeek));
-            object.put("parity", Integer.valueOf(course.parity));
-            object.put("color", Long.valueOf(course.color & 0xFFFFFFFFL));
-            object.put("scheduleName", course.scheduleName);
-            array.add(object);
+            array.add(toJson(course));
         }
         return MiniJson.write(array);
     }

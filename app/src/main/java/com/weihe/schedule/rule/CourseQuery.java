@@ -3,6 +3,7 @@ package com.weihe.schedule.rule;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 
@@ -16,8 +17,8 @@ import com.weihe.schedule.model.ScheduleUtils;
  * live here instead.</p>
  *
  * <p>Like {@link CourseConflicts}, this class deliberately touches no Android
- * API, so it runs under a plain JVM unit test. Neither method modifies the list
- * it was given.</p>
+ * API, so it runs under a plain JVM unit test. No method here modifies the list
+ * it was given, or any course in it.</p>
  */
 public final class CourseQuery {
 
@@ -28,6 +29,17 @@ public final class CourseQuery {
     private static final Comparator<Course> BY_DAY_THEN_PERIOD =
             Comparator.comparingInt((Course course) -> course.dayOfWeek)
                     .thenComparing(BY_START_THEN_END);
+
+    /**
+     * The order search results come back in: the week's own, then the id.
+     *
+     * <p>The id is what makes it a total order. Two courses can share a weekday
+     * and a period -- the semester view draws them side by side -- and without a
+     * final tiebreak their relative order would depend on the list they arrived
+     * in, so the same search could return them the other way round.</p>
+     */
+    private static final Comparator<Course> BY_DAY_THEN_PERIOD_THEN_ID =
+            BY_DAY_THEN_PERIOD.thenComparingLong(course -> course.id);
 
     private CourseQuery() {
     }
@@ -75,6 +87,58 @@ public final class CourseQuery {
         List<Course> result = new ArrayList<>(courses);
         result.sort(BY_DAY_THEN_PERIOD);
         return result;
+    }
+
+    /**
+     * The courses whose name, teacher or venue contains {@code keyword}.
+     *
+     * <p>Matching is a plain case-insensitive substring test, and that is the whole
+     * of it. A Chinese course name has no case and no word boundaries, so "高数"
+     * has to find "高等数学" without the app carrying a pinyin table or a fuzzy
+     * matcher; and the three fields are the ones a person actually remembers about
+     * a class. A term's courses are what the caller passes in, so a search can only
+     * ever see one semester -- the isolation is the caller's choice of list, not a
+     * filter applied here.</p>
+     *
+     * <p>The keyword is trimmed, so a name pasted with a stray space still matches,
+     * and lower-cased with {@link Locale#ROOT} rather than the default locale,
+     * because the Turkish locale lower-cases "I" to a dotless "ı" and would make
+     * the same search behave differently on a different phone.</p>
+     *
+     * <p>An empty or blank keyword matches <em>nothing</em> rather than everything.
+     * "No keyword" is not a search for the whole term: the screen has a state for
+     * it, and returning forty courses would be answering a question nobody asked.</p>
+     *
+     * <p>Neither the list nor the courses in it are modified -- the result holds the
+     * same objects in a new list -- and the order is the timetable's own, with the
+     * id as the final tiebreak so two courses in one slot always come back the same
+     * way round.</p>
+     */
+    public static List<Course> search(List<Course> courses, String keyword) {
+        List<Course> result = new ArrayList<>();
+        String needle = normalise(keyword);
+        if (courses == null || needle.isEmpty()) {
+            return result;
+        }
+        for (Course course : courses) {
+            if (contains(course.name, needle)
+                    || contains(course.teacher, needle)
+                    || contains(course.location, needle)) {
+                result.add(course);
+            }
+        }
+        result.sort(BY_DAY_THEN_PERIOD_THEN_ID);
+        return result;
+    }
+
+    /** Lower case with the surrounding space removed; empty when there is nothing to look for. */
+    private static String normalise(String text) {
+        return text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** Whether one field holds the needle; a missing field holds nothing. */
+    private static boolean contains(String field, String needle) {
+        return field != null && field.toLowerCase(Locale.ROOT).contains(needle);
     }
 
     /**

@@ -242,10 +242,10 @@ public class ScheduleListActivity extends Activity {
         }
         UiKit.dialog(this, "\u5220\u9664\u4F5C\u606F\u8868", message, null, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
-                UiKit.Action.destructive("\u5220\u9664", () -> {
+                UiKit.Action.destructive("\u5220\u9664\u4F5C\u606F\u8868", () -> {
                     if (repository.deleteBellSchedule(schedule.name())) {
                         render();
-                        Toast.makeText(this, "\u5DF2\u5220\u9664", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "\u4F5C\u606F\u8868\u5DF2\u5220\u9664", Toast.LENGTH_SHORT).show();
                     }
                 }));
     }

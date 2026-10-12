@@ -261,6 +261,29 @@ public class ExcelTimetableReaderTest {
         }
     }
 
+    // -------------------------------------------------------------- report
+
+    @Test
+    public void theReportFromAWorkbookAgreesWithWhatReadReturns() throws Exception {
+        Xls xls = new Xls();
+        xls.label(0, 1, "\u8282\u6B21");
+        xls.label(1, 1, "\u661F\u671F\u4E00");
+        xls.periods(1, 2);
+        xls.courseCell(1, 2, "A");
+        xls.courseCell(1, 3, "B");
+
+        byte[] bytes = xls.build();
+        List<Course> direct = ExcelTimetableReader.read(
+                new ByteArrayInputStream(bytes));
+        TimetableImportParser.Report report = ExcelTimetableReader.readWithReport(
+                new ByteArrayInputStream(bytes));
+
+        assertEquals(direct.size(), report.scheduleCount());
+        assertEquals(2, report.courseCount());
+        assertEquals("the school's own two-space layout must read clean",
+                0, report.issueCount());
+    }
+
     // -------------------------------------------------------------- helpers
 
     /** {@code name@day-period} for every course, so the whole layout is asserted. */

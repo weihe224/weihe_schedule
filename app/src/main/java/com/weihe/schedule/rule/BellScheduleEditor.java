@@ -121,10 +121,30 @@ public final class BellScheduleEditor {
         return textAt((period - 1) * 2 + 1);
     }
 
+    /**
+     * The end this period would have if it lasted
+     * {@link BellSchedule#PERIOD_MINUTES} minutes, or empty when the start cannot be
+     * read.
+     *
+     * <p>A suggestion, not a rule. The app has always allowed a period to be any
+     * length -- its own tests describe forty-five minute periods, and it reports an
+     * end that falls before its start rather than deriving one -- so forty minutes is
+     * what the screen writes into the end field when a start changes, and the field
+     * stays editable for the schedules where that is not the length.</p>
+     */
+    public String suggestedEndText(int period) {
+        Integer start = BellSchedule.parseLoose(startText(period));
+        return start == null ? "" : BellSchedule.label(BellSchedule.endOf(start));
+    }
     public void setStartText(int period, String value) {
         texts[(period - 1) * 2] = value == null ? "" : value;
     }
 
+    /**
+     * Kept so the stored shape of a period is unchanged, but no longer what an end
+     * comes from: {@link #endText(int)} derives it. Only read when a start cannot be
+     * parsed, which is the one case where there is nothing to derive from.
+     */
     public void setEndText(int period, String value) {
         texts[(period - 1) * 2 + 1] = value == null ? "" : value;
     }

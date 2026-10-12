@@ -23,6 +23,29 @@ public final class BellSchedule {
     public static final int PERIODS = ScheduleUtils.PERIODS_PER_DAY;
 
     /**
+     * How long one period lasts.
+     *
+     * <p>Fixed, and the reason the editor no longer asks for an end time: a period
+     * that begins at 08:15 ends at 08:55, so the end is a consequence of the start
+     * rather than a second thing to keep in step with it. Breaks between periods are
+     * not part of this -- they live in the starts, which stay exactly as they are.</p>
+     */
+    public static final int PERIOD_MINUTES = 40;
+
+    /**
+     * When a period beginning at {@code startMinutes} ends.
+     *
+     * <p>Held to {@link #MAX_MINUTE}, the same bound {@link #label(int)} writes
+     * within: a period starting at 23:40 ends at {@code 24:20} rather than
+     * {@code 00:20}, because an evening period belongs to the day whose timetable it
+     * is. That is the rule the app already reads stored times by, so the arithmetic
+     * here does not introduce a second one.</p>
+     */
+    public static int endOf(int startMinutes) {
+        return Math.min(MAX_MINUTE, startMinutes + PERIOD_MINUTES);
+    }
+
+    /**
      * The last minute a period may be labelled with: 29:59.
      *
      * <p>{@link #label(int)} writes an evening period that runs past midnight as

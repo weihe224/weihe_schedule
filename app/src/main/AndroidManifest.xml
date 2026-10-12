@@ -14,6 +14,14 @@
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+        Needed to be told that the device has finished booting. A reboot clears
+        every alarm in the system, so without this the reminder plan would simply
+        be gone until the app was next opened. Ordinary permission, granted at
+        install; no runtime prompt.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -45,6 +53,11 @@
             android:exported="false"
             android:screenOrientation="portrait" />
         <activity
+            android:name=".CourseSearchActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
             android:name=".BackupPreviewActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
@@ -73,5 +86,34 @@
         <receiver
             android:name=".reminder.ReminderReceiver"
             android:exported="false" />
+        <!--
+            Rebuilds the plan when something outside the app invalidates it. Every
+            action below is on the platform's list of broadcasts a manifest-declared
+            receiver may still get after Android 8.0's background limits:
+
+              BOOT_COMPLETED        a reboot clears every alarm there is
+              TIME_SET              the clock moved, so every instant moved with it
+              TIMEZONE_CHANGED      the same, through the zone the instants were made in
+              MY_PACKAGE_REPLACED   sent only to this app, so not implicit at all
+
+            ACTION_DATE_CHANGED is deliberately absent: it is NOT on that list, so a
+            receiver here would never be called. Midnight rollover is already covered,
+            because each alarm that fires re-plans and every screen syncs on resume.
+
+            exported="false" is the tighter setting, not a restriction that would
+            mute it: the platform documents that a non-exported receiver still
+            receives system broadcasts, and all four actions are protected
+            broadcasts no other app could send anyway.
+        -->
+        <receiver
+            android:name=".reminder.ReminderRestoreReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

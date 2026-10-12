@@ -35,6 +35,7 @@ import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseConflicts;
 import com.weihe.schedule.rule.CourseQuery;
+import com.weihe.schedule.rule.TodayTarget;
 import com.weihe.schedule.data.RestoreReport;
 import com.weihe.schedule.reminder.ReminderNotifications;
 import com.weihe.schedule.reminder.ReminderScheduler;
@@ -75,13 +76,13 @@ public class MainActivity extends Activity {
     private LinearLayout courseContainer;
     private TextView weekDates;
     private TextView weekLabel;
+    private TextView weekParity;
     private TextView parityPill;
-    private View todayButton;
     private TextView semesterSubtitle;
     private TextView semesterChip;
     private TextView dayTitle;
     private TextView dayCountPill;
-    private TextView todayLabel;
+    private View todayChip;
     private View backToThisWeek;
 
     @Override
@@ -208,47 +209,29 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Two buttons in the bottom right corner: the timetable overview, and a way
-     * back to today.
+     * The one floating button: the timetable overview.
      *
-     * <p>Both used to live in the header. They are here because they act on the
-     * page rather than on the app -- and because the header is now the title, the
-     * semester and settings, with nothing else competing.</p>
+     * <p>There used to be two, and the second was a calendar that jumped back to
+     * today. It is gone, for three reasons. Its glyph was the same calendar as the
+     * brand mark in the bar above it, so the screen showed one picture meaning two
+     * things. It sat over the bottom of the course list. And it duplicated a
+     * control the date header now carries, where "back to today" can sit beside the
+     * date it returns to instead of in a corner away from it. Nothing it did has
+     * been lost: the day header calls the same method.</p>
      *
-     * <p>The overview keeps the filled brand button and the today button is drawn
-     * on a plain surface. Stacking two filled buttons in one corner makes both of
-     * them claim to be the main action, and two teal discs are more brand colour
-     * than the timetable underneath them.</p>
-     *
-     * <p>The today button is hidden while the screen is already showing today:
-     * a control that would do nothing is noise, and hiding it also makes the
-     * corner quieter on the common case.</p>
+     * <p>The overview stays floating because it is the way to the whole term from
+     * any week, and it is the only control on the screen that is about the
+     * timetable rather than about the day being shown.</p>
      */
     private View createFloatingActions() {
-        LinearLayout stack = new LinearLayout(this);
-        stack.setOrientation(LinearLayout.VERTICAL);
-        stack.setGravity(Gravity.END);
-
-        todayButton = UiKit.fabTonal(this, R.drawable.ic_today,
-                "\u56DE\u5230\u4ECA\u5929", view -> goToToday());
-        todayButton.setContentDescription("\u56DE\u5230\u4ECA\u5929");
-        stack.addView(todayButton, new LinearLayout.LayoutParams(
-                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE)));
-
         ImageButton overview = UiKit.fab(this, R.drawable.ic_grid,
                 "\u8BFE\u8868\u603B\u89C8", view -> openOverview());
-        LinearLayout.LayoutParams overviewParams = new LinearLayout.LayoutParams(
-                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE));
-        overviewParams.topMargin = dp(UiTokens.SPACE_M);
-        stack.addView(overview, overviewParams);
-
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE),
                 Gravity.END | Gravity.BOTTOM);
         params.setMargins(0, 0, dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_L));
-        stack.setLayoutParams(params);
-        return stack;
+        overview.setLayoutParams(params);
+        return overview;
     }
 
     /**
@@ -259,10 +242,15 @@ public class MainActivity extends Activity {
      */
     private void goToToday() {
         LocalDate today = LocalDate.now();
-        motionDirection = selectedWeek != currentWeek ? Integer.signum(currentWeek - selectedWeek)
-                : Integer.signum(today.getDayOfWeek().getValue() - selectedDay);
-        selectedWeek = currentWeek;
-        selectedDay = today.getDayOfWeek().getValue();
+        // Worked out here rather than read from currentWeek, so the target cannot
+        // depend on that field having been refreshed since the date last changed.
+        int targetWeek = TodayTarget.week(semesterStart, today);
+        int targetDay = TodayTarget.day(today);
+        motionDirection = selectedWeek != targetWeek
+                ? Integer.signum(targetWeek - selectedWeek)
+                : Integer.signum(targetDay - selectedDay);
+        selectedWeek = targetWeek;
+        selectedDay = targetDay;
         refreshAll();
         UiKit.swapIn(courseContainer, motionDirection);
     }
@@ -275,8 +263,8 @@ public class MainActivity extends Activity {
      * state the return button is for.</p>
      */
     private boolean isShowingToday() {
-        return selectedWeek == currentWeek
-                && selectedDay == LocalDate.now().getDayOfWeek().getValue();
+        return TodayTarget.isShowing(selectedWeek, selectedDay, semesterStart,
+                LocalDate.now());
     }
 
     /**
@@ -287,10 +275,10 @@ public class MainActivity extends Activity {
      * {@link #refreshAll()} the day-change path silently skipped it.</p>
      */
     private void syncReturnControls() {
-        if (todayButton != null) {
-            // Hidden while the screen already shows today: a button that would do
-            // nothing is noise.
-            todayButton.setVisibility(isShowingToday() ? View.GONE : View.VISIBLE);
+        if (todayChip != null) {
+            // Hidden while the screen already shows today: a control that would do
+            // nothing is noise, and the day header is already reading "today".
+            todayChip.setVisibility(isShowingToday() ? View.GONE : View.VISIBLE);
         }
         if (backToThisWeek != null) {
             backToThisWeek.setVisibility(
@@ -328,6 +316,11 @@ public class MainActivity extends Activity {
         titleParams.leftMargin = dp(UiTokens.SPACE_M);
         titleRow.addView(title, titleParams);
 
+        // The search entry sits beside the settings icon: one tap from the home
+        // screen, and no new row, chip or bar for the timetable to make room for.
+        titleRow.addView(headerAction(R.drawable.ic_search,
+                "\u641C\u7D22\u8BFE\u7A0B",
+                view -> startActivity(new Intent(this, CourseSearchActivity.class))));
         titleRow.addView(headerAction(R.drawable.ic_settings, "\u8BBE\u7F6E",
                 view -> startActivity(new Intent(this, SettingsActivity.class))));
         header.addView(titleRow);
@@ -441,7 +434,13 @@ public class MainActivity extends Activity {
         weekLabel = UiKit.text(this, "", UiTokens.Type.HEADLINE_SMALL,
                 Palette.ON_SURFACE, Typeface.BOLD);
         row.addView(weekLabel);
-
+        weekParity = UiKit.text(this, "", UiTokens.Type.LABEL_LARGE,
+                Palette.ON_SURFACE_VARIANT, Typeface.NORMAL);
+        LinearLayout.LayoutParams parityParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        parityParams.leftMargin = dp(UiTokens.SPACE_XS);
+        row.addView(weekParity, parityParams);
         android.widget.ImageView chevron = UiKit.inlineIcon(this,
                 R.drawable.ic_chevron_right, Palette.ON_SURFACE_VARIANT);
         LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(
@@ -584,79 +583,77 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * One surface card holding everything about the week on screen: which week,
-     * which dates, its parity, and the arrows and "back to this week" control
-     * that move between weeks.
+     * The week on screen, as one compact row.
+     *
+     * <p>It used to be a card of four elements: the week and its chevron, a parity
+     * pill, a divider, and a row carrying today's full date beside the arrows. Two
+     * facts came out of it twice over -- the parity was in the date line and again
+     * in the pill, and today's date appeared here, in the day strip, and once more
+     * in the day header -- and a card plus a divider was spent saying them. Each
+     * fact is now in one place: the week and its parity in the headline, the dates
+     * under it, and the arrows on the same line as the week they move.</p>
+     *
+     * <p>The slot on the right carries the week's state and never both halves of
+     * it: "this is the week the calendar is in", or the way back to it. The way
+     * back to <em>today</em> is not here -- it belongs beside the date it returns
+     * to, which is the day header.</p>
      */
     private View createWeekCard() {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M),
                 dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_M));
         UiKit.styleAsCard(this, card, UiTokens.RADIUS_L, UiTokens.ELEVATION_LOW);
 
-        LinearLayout topRow = new LinearLayout(this);
-        topRow.setOrientation(LinearLayout.HORIZONTAL);
-        topRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        LinearLayout weekBlock = new LinearLayout(this);
-        weekBlock.setOrientation(LinearLayout.VERTICAL);
-        weekBlock.addView(createWeekControl(),
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.addView(createWeekControl());
         weekDates = UiKit.text(this, "", UiTokens.Type.LABEL_LARGE,
                 Palette.ON_SURFACE_VARIANT, Typeface.NORMAL);
         LinearLayout.LayoutParams datesParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         datesParams.topMargin = dp(UiTokens.SPACE_XS);
-        weekBlock.addView(weekDates, datesParams);
-        topRow.addView(weekBlock, new LinearLayout.LayoutParams(
+        block.addView(weekDates, datesParams);
+        card.addView(block, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        parityPill = UiKit.pill(this, "", UiTokens.Type.LABEL_MEDIUM,
-                Palette.SURFACE_CONTAINER_LOW, Palette.ON_SURFACE_VARIANT, true,
+        parityPill = UiKit.pill(this, "\u672C\u5468", UiTokens.Type.LABEL_MEDIUM,
+                Palette.ACCENT_CONTAINER, Palette.ON_ACCENT_CONTAINER, true,
                 UiTokens.RADIUS_FULL);
-        topRow.addView(parityPill);
-        card.addView(topRow);
-
-        card.addView(UiKit.divider(this, UiTokens.SPACE_M, UiTokens.SPACE_XS));
-        card.addView(createWeekNavRow());
-        return card;
-    }
-
-    /** Previous / next week, plus a way back to the current one. */
-    private View createWeekNavRow() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-
-        todayLabel = UiKit.text(this, "", UiTokens.Type.LABEL_LARGE,
-                Palette.ON_SURFACE_VARIANT, Typeface.BOLD);
-        todayLabel.setMaxLines(1);
-        todayLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        row.addView(todayLabel, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams pillParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        pillParams.leftMargin = dp(UiTokens.SPACE_S);
+        card.addView(parityPill, pillParams);
 
         backToThisWeek = navChip("\u56DE\u5230\u672C\u5468", view -> {
             motionDirection = Integer.signum(currentWeek - selectedWeek);
             selectedWeek = currentWeek;
-            selectedDay = LocalDate.now().getDayOfWeek().getValue();
+            // The weekday deliberately stays where it is. This chip says "this
+            // week", and the weekday being looked at is the one worth seeing in
+            // it: week 12's Wednesday becomes week 6's Wednesday, which is the
+            // comparison the chip is for. It used to move the day to today as
+            // well, which made it the same action as the "back to today" button
+            // under a different name, and left no way to reach the current
+            // week's same weekday at all.
             refreshAll();
             UiKit.swapIn(courseContainer, motionDirection);
         });
         LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT));
-        backParams.rightMargin = dp(UiTokens.SPACE_S);
-        row.addView(backToThisWeek, backParams);
+        backParams.leftMargin = dp(UiTokens.SPACE_S);
+        card.addView(backToThisWeek, backParams);
 
-        row.addView(stepButton(R.drawable.ic_chevron_left, "\u4E0A\u4E00\u5468",
+        card.addView(stepButton(R.drawable.ic_chevron_left, "\u4E0A\u4E00\u5468",
                 view -> stepWeek(-1)));
-        row.addView(stepButton(R.drawable.ic_chevron_right, "\u4E0B\u4E00\u5468",
+        card.addView(stepButton(R.drawable.ic_chevron_right, "\u4E0B\u4E00\u5468",
                 view -> stepWeek(1)));
-        return row;
+        return card;
     }
+
+    /** Previous / next week, plus a way back to the current one. */
 
     /** A round icon button for stepping one week, matching the chip height. */
     private View stepButton(int icon, String description,
@@ -722,6 +719,15 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         pillParams.leftMargin = dp(UiTokens.SPACE_S);
         dayHeader.addView(dayCountPill, pillParams);
+        // The way back to today, beside the date it returns to rather than in a
+        // corner: the header is where the screen says which day it is showing, so
+        // it is where "not this one" can be undone. Hidden while this is today.
+        todayChip = navChip("\u56DE\u5230\u4ECA\u5929", view -> goToToday());
+        todayChip.setContentDescription("\u56DE\u5230\u4ECA\u5929");
+        LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT));
+        todayParams.leftMargin = dp(UiTokens.SPACE_S);
+        dayHeader.addView(todayChip, todayParams);
         LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -789,6 +795,25 @@ public class MainActivity extends Activity {
         startActivity(intent);
     }
 
+    /** The stored term whose dates contain {@code date}, or null when none does. */
+    private Semester semesterHolding(LocalDate date) {
+        for (Semester semester : repository.getSemesters()) {
+            if (!date.isBefore(semester.start()) && !date.isAfter(semester.lastDay())) {
+                return semester;
+            }
+        }
+        return null;
+    }
+
+    /** Makes {@code semester} the term every screen shows. */
+    private void switchTo(Semester semester) {
+        repository.setActiveSemester(semester);
+        // Every label on this page is derived from the active term, so the whole
+        // page is rebuilt rather than patched.
+        refreshAll();
+        Toast.makeText(this, "\u5DF2\u5207\u6362\u5230 " + semester.label(),
+                Toast.LENGTH_SHORT).show();
+    }
     /** Picks which term every screen shows; see {@link SemesterListActivity}. */
     private void openSemesters() {
         startActivity(new Intent(this, SemesterListActivity.class));
@@ -804,42 +829,51 @@ public class MainActivity extends Activity {
         selectedWeek = Math.max(1, Math.min(ScheduleUtils.SEMESTER_WEEKS, selectedWeek));
         selectedDay = Math.max(1, Math.min(7, selectedDay));
 
+        // One slot, one fact. On the current week it says so; otherwise the chip
+        // beside it offers the way back. Showing both would be two names for the
+        // same thing, which is what the old card did.
         boolean showingCurrentWeek = selectedWeek == currentWeek;
-        parityPill.setText(showingCurrentWeek
-                ? "\u672C\u5468" : ScheduleUtils.parityName(selectedWeek));
-        // The pill sits on a light card, so its two states are the light-surface
-        // pair: the accent container when this is the week the calendar is in, a
-        // quiet grey when it is not. The accent is the same orange as the icon's
-        // one highlighted tile, which is why "this is the week you are in" is the
-        // only thing in the app allowed to use it.
-        parityPill.setTextColor(showingCurrentWeek
-                ? Palette.ON_ACCENT_CONTAINER : Palette.ON_SURFACE_VARIANT);
-        parityPill.setBackground(showingCurrentWeek
-                ? UiKit.fill(this, Palette.ACCENT_CONTAINER, UiTokens.RADIUS_FULL)
-                : UiKit.fill(this, Palette.SURFACE_CONTAINER_LOW,
-                        UiTokens.RADIUS_FULL));
+        parityPill.setText("\u672C\u5468");
+        parityPill.setVisibility(showingCurrentWeek ? View.VISIBLE : View.GONE);
+        // The accent is the one highlighted tile in the app's own icon, which is
+        // why "this is the week you are in" is the only thing allowed to use it.
+        parityPill.setTextColor(Palette.ON_ACCENT_CONTAINER);
+        parityPill.setBackground(UiKit.fill(this, Palette.ACCENT_CONTAINER,
+                UiTokens.RADIUS_FULL));
+
+        // The term's own facts belong on the term's row: whether the calendar is
+        // inside this term at all, and the way to the term it is inside. Both were
+        // scattered before -- "finished" sat in the week card, where it read as a
+        // remark about the week on screen.
+        boolean inSession = !today.isBefore(active.start())
+                && !today.isAfter(active.lastDay());
+        // Only a term the calendar has already left has finished. A term that has
+        // not begun yet keeps its start date, which is the useful fact about it --
+        // calling that one "finished" would be plainly wrong.
+        boolean finished = today.isAfter(active.lastDay());
         semesterSubtitle.setText(active.label() + " \u00B7 "
-                + ScheduleUtils.formatDate(semesterStart) + " \u5F00\u5B66");
+                + (finished ? "\u5DF2\u7ED3\u675F"
+                        : ScheduleUtils.formatDate(semesterStart) + " \u5F00\u5B66"));
         if (semesterChip != null) {
-            // Only a term that is not the one the calendar is in right now can be
-            // mistaken for the current timetable, so only then does the way out
-            // have to be visible. The surrounding row already says "switch"; this
-            // chip is the louder, "get back" case.
-            boolean inSession = !today.isBefore(active.start())
-                    && !today.isAfter(active.lastDay());
-            semesterChip.setText("\u67E5\u770B\u5F53\u524D\u5B66\u671F");
-            semesterChip.setVisibility(inSession ? View.GONE : View.VISIBLE);
+            // The chip says "view the current term", so that is what it does. It
+            // used to be a label inside a row whose only action was opening the term
+            // list: the one control promising to take you back to the term the
+            // calendar is in instead asked you to go and find it. When no stored
+            // term holds today there is nothing to go back to, and it stays hidden
+            // rather than promising something it cannot do.
+            Semester currentTerm = semesterHolding(today);
+            // Named for the term the calendar is in, not for the one on screen: the
+            // list marks the term being viewed, and two different things called
+            // "current" is how a badge and a button came to look like the same
+            // control saying two things.
+            semesterChip.setText("\u56DE\u5230\u672C\u5B66\u671F");
+            semesterChip.setVisibility(currentTerm != null && !inSession
+                    ? View.VISIBLE : View.GONE);
+            if (currentTerm != null) {
+                UiKit.pressable(semesterChip, view -> switchTo(currentTerm));
+            }
         }
         syncReturnControls();
-        if (todayLabel != null) {
-            boolean inSession = !today.isBefore(active.start())
-                    && !today.isAfter(active.lastDay());
-            todayLabel.setText(inSession
-                    ? "\u4ECA\u5929 " + ScheduleUtils.formatFullDate(today)
-                            + " \u00B7 "
-                            + ScheduleUtils.dayName(today.getDayOfWeek().getValue())
-                    : active.label() + " \u5DF2\u7ED3\u675F");
-        }
 
         renderWeekPicker();
         renderDayStrip();
@@ -852,8 +886,10 @@ public class MainActivity extends Activity {
             return;
         }
         weekLabel.setText("\u7B2C" + selectedWeek + "\u5468");
-        weekDates.setText(ScheduleUtils.weekRange(semesterStart, selectedWeek)
-                + "  \u00B7  " + ScheduleUtils.parityName(selectedWeek));
+        // The dates are the dates. The parity is a property of the week, so it sits
+        // with the week number instead of being repeated on this line.
+        weekDates.setText(ScheduleUtils.weekRange(semesterStart, selectedWeek));
+        weekParity.setText("\u00B7 " + ScheduleUtils.parityName(selectedWeek));
         weekLabel.setContentDescription("\u9009\u62E9\u5468\u6B21\uFF0C\u5F53\u524D\u7B2C"
                 + selectedWeek + "\u5468");
     }
@@ -967,18 +1003,25 @@ public class MainActivity extends Activity {
     private void renderCourses() {
         LocalDate date = ScheduleUtils.dateOf(semesterStart, selectedWeek, selectedDay);
         boolean isToday = date.equals(LocalDate.now());
-        dayTitle.setText(ScheduleUtils.dayName(selectedDay)
-                + (isToday ? " \u00B7 \u4ECA\u5929" : "")
-                + " \u00B7 " + ScheduleUtils.formatDate(date));
+        // Today leads with the fact that it is today, because that is the state the
+        // user needs to recognise; any other date leads with its own name, because
+        // the state is "not today" and the name is what was asked for.
+        dayTitle.setText(isToday
+                ? "\u4ECA\u5929 \u00B7 " + ScheduleUtils.formatDate(date) + " "
+                        + ScheduleUtils.dayName(selectedDay)
+                : ScheduleUtils.dayName(selectedDay) + " \u00B7 "
+                        + ScheduleUtils.formatDate(date));
         courseContainer.removeAllViews();
 
-        List<Course> visible = CourseQuery.onDay(
-                repository.getCourses(), selectedWeek, selectedDay);
+        // Read once: the same list answers "what is on today" and "does this term
+        // have anything at all", and the empty state needs both.
+        List<Course> all = repository.getCourses();
+        List<Course> visible = CourseQuery.onDay(all, selectedWeek, selectedDay);
         dayCountPill.setText(visible.isEmpty() ? "\u65E0\u8BFE"
                 : visible.size() + " \u95E8\u8BFE");
 
         if (visible.isEmpty()) {
-            View empty = createEmptyState();
+            View empty = createEmptyState(all.isEmpty());
             courseContainer.addView(empty);
             UiKit.swapIn(empty, motionDirection);
             return;
@@ -1200,7 +1243,22 @@ public class MainActivity extends Activity {
         return badge;
     }
 
-    private View createEmptyState() {
+    /**
+     * Nothing to show for the selected day.
+     *
+     * <p>Two different situations arrive here as the same empty list: a term with
+     * courses on other days, and a term with no courses at all. "Nothing on today"
+     * told to someone who has never imported anything describes the wrong problem
+     * and points at the wrong next step, so the two say different things and offer
+     * different first moves.</p>
+     */
+    private View createEmptyState(boolean termIsEmpty) {
+        if (termIsEmpty) {
+            return UiKit.emptyState(this, R.drawable.ic_add,
+                    "\u8FD9\u4E2A\u5B66\u671F\u8FD8\u6CA1\u6709\u8BFE\u7A0B",
+                    "\u5728\u8BBE\u7F6E\u91CC\u5BFC\u5165\u8BFE\u8868\uFF0C"
+                            + "\u6216\u5230\u8BFE\u8868\u603B\u89C8\u91CC\u70B9 + \u6DFB\u52A0");
+        }
         return UiKit.emptyState(this, R.drawable.ic_today,
                 "\u8FD9\u5929\u6CA1\u6709\u5B89\u6392",
                 "\u5230\u8BFE\u8868\u603B\u89C8\u91CC\u70B9\u53F3\u4E0B\u89D2 + \u6DFB\u52A0"
@@ -1366,7 +1424,7 @@ public class MainActivity extends Activity {
                         + "\u201D\u5417\uFF1F\u5220\u9664\u540E\u65E0\u6CD5\u6062\u590D\u3002",
                 null, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
-                UiKit.Action.destructive("\u5220\u9664", () -> {
+                UiKit.Action.destructive("\u5220\u9664\u8BFE\u7A0B", () -> {
                     repository.deleteCourse(course.id);
                     refreshAll();
                     Toast.makeText(this, "\u8BFE\u7A0B\u5DF2\u5220\u9664",

@@ -1,6 +1,7 @@
 package com.weihe.schedule.importer;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -450,7 +451,252 @@ public class TimetableImportParserTest {
         }
     }
 
+    // ------------------------------------------------------ 导入结果统计
+
+    /**
+     * What the report counts, and what it deliberately does not.
+     *
+     * <p>The line between the two is the whole point of these tests: a blank cell
+     * or the covered half of a merge is the layout working as designed, while a
+     * line the parser could not read is content the user has lost. Counting the
+     * first kind would make every ordinary export look damaged.</p>
+     */
+
+    @Test
+    public void aFullyValidFileReportsEveryCourseAndNoIssues() throws Exception {
+        TimetableGrid grid = timetable(3, "\u661F\u671F\u4E00", "\u661F\u671F\u4E8C");
+        grid.put(2, 1, cell("A"));
+        grid.put(3, 2, "X02018\u3010B\u3011\n"
+                + "2-5\u5468  \u5E08  \u5730\n"
+                + "6-9\u5468  \u5E08  \u5730");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(2, report.courseCount());
+        assertEquals(3, report.scheduleCount());
+        assertEquals(0, report.issueCount());
+        assertTrue(report.issues().isEmpty());
+        assertFalse(report.hasIssues());
+        assertTrue(report.isUsable());
+    }
+
+    @Test
+    public void blankCellsAndCoveredMergeHalvesAreNotCountedAsProblems() throws Exception {
+        TimetableGrid grid = timetable(4, "\u661F\u671F\u4E00",
+                "\u661F\u671F\u4E8C", "\u661F\u671F\u4E09");
+        grid.put(2, 1, cell("A"));
+        grid.merge(2, 1, 3, 1);
+        // Text left behind in the covered half of a merge: neither a second course
+        // nor a problem.
+        grid.put(3, 1, cell("COVERED"));
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(1, report.courseCount());
+        assertEquals(1, report.scheduleCount());
+        assertEquals("blank cells and merge covers are the layout, not damage",
+                0, report.issueCount());
+    }
+
+    @Test
+    public void aDetailLineAboveAnyHeaderIsReportedAsUnattributed() throws Exception {
+        TimetableGrid grid = timetable(2, "\u661F\u671F\u4E00");
+        grid.put(2, 1, "2-5\u5468  \u5E08  \u5730");
+        grid.put(3, 1, cell("A"));
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(1, report.courseCount());
+        assertEquals(1, report.countOf(TimetableImportParser.Reason.UNATTRIBUTED_LINE));
+        assertEquals(0, report.countOf(TimetableImportParser.Reason.UNRECOGNISED_DETAIL));
+        TimetableImportParser.Issue issue = report.issues().get(0);
+        assertEquals(TimetableImportParser.Reason.UNATTRIBUTED_LINE, issue.reason());
+        assertEquals("the grid row is reported as a spreadsheet numbers it",
+                3, issue.row());
+        assertEquals(1, issue.day());
+        assertEquals(1, issue.line());
+    }
+
+    @Test
+    public void aLineUnderAHeaderThatIsNotADetailIsReported() throws Exception {
+        TimetableGrid grid = timetable(1, "\u661F\u671F\u4E00");
+        grid.put(2, 1, "X02018\u3010A\u3011\n\u8FD9\u662F\u4E00\u884C\u8BF4\u660E");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(0, report.scheduleCount());
+        assertEquals(1, report.countOf(TimetableImportParser.Reason.UNRECOGNISED_DETAIL));
+        assertFalse(report.isUsable());
+    }
+
+    @Test
+    public void aSingleSpaceSeparatedDetailIsReportedRatherThanGuessed() throws Exception {
+        TimetableGrid grid = timetable(1, "\u661F\u671F\u4E00");
+        grid.put(2, 1, "\u3010\u6D4B\u8BD5\u8BFE\u3011\n"
+                + "1-16\u5468 \u5F20\u8001\u5E08 \u6559\u5B66\u697C A101");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        // A single space is genuinely ambiguous here: it is the separator between
+        // fields, and it is also a character inside a venue name ("教学楼 A101").
+        // So the line is reported, not split on a guess that would invent a teacher.
+        assertEquals(0, report.scheduleCount());
+        assertEquals(1, report.countOf(TimetableImportParser.Reason.UNRECOGNISED_DETAIL));
+        assertEquals(1, report.issueCount());
+    }
+
+    @Test
+    public void aWeekRangePastTheSemesterIsCountedAsUnreadableWeeks() throws Exception {
+        TimetableGrid grid = timetable(1, "\u661F\u671F\u4E00");
+        grid.put(2, 1, "X02018\u3010A\u3011\n1-19\u5468  \u5E08  \u5730");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(0, report.scheduleCount());
+        assertEquals(1, report.countOf(TimetableImportParser.Reason.UNREADABLE_WEEKS));
+    }
+
+    @Test
+    public void eachKindOfProblemIsCountedSeparately() throws Exception {
+        TimetableGrid grid = timetable(3, "\u661F\u671F\u4E00");
+        grid.put(2, 1, "2-5\u5468  \u5E08  \u5730");
+        grid.put(3, 1, "X02018\u3010A\u3011\n\u8BF4\u660E\u6587\u5B57");
+        grid.put(4, 1, "X02018\u3010B\u3011\n1-19\u5468  \u5E08  \u5730");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(3, report.issueCount());
+        assertEquals(1, report.countOf(TimetableImportParser.Reason.UNATTRIBUTED_LINE));
+        assertEquals(1, report.countOf(TimetableImportParser.Reason.UNRECOGNISED_DETAIL));
+        assertEquals(1, report.countOf(TimetableImportParser.Reason.UNREADABLE_WEEKS));
+        assertEquals(0, report.countOf(TimetableImportParser.Reason.INCOMPLETE_FIELDS));
+        assertEquals(0, report.scheduleCount());
+    }
+
+    @Test
+    public void oneFieldWhereTwoWereExpectedIsReportedButTheCourseIsStillImported()
+            throws Exception {
+        TimetableGrid grid = timetable(1, "\u661F\u671F\u4E00");
+        grid.put(2, 1, "X02018\u3010A\u3011\n"
+                + "1-16\u5468  \u5F20\u8001\u5E08 \u6559\u5B66\u697C A101");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(1, report.scheduleCount());
+        assertEquals("\u5F20\u8001\u5E08 \u6559\u5B66\u697C A101",
+                report.courses().get(0).teacher);
+        assertEquals("", report.courses().get(0).location);
+        assertEquals(1, report.countOf(TimetableImportParser.Reason.INCOMPLETE_FIELDS));
+    }
+
+    @Test
+    public void aTeacherWithoutAVenueIsNotReportedAsAProblem() throws Exception {
+        TimetableGrid grid = timetable(1, "\u661F\u671F\u4E00");
+        grid.put(2, 1, "X02018\u3010A\u3011\n2-5\u5468  \u82CF\u8001\u5E08");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(1, report.scheduleCount());
+        assertEquals("a course with no venue is ordinary, not a problem",
+                0, report.issueCount());
+    }
+
+    @Test
+    public void theExamplesAreCappedWhileTheCountKeepsGrowing() throws Exception {
+        TimetableGrid grid = timetable(15, "\u661F\u671F\u4E00");
+        for (int period = 1; period <= 15; period++) {
+            grid.put(period + 1, 1, "X02018\u3010A\u3011\n\u8FD9\u4E00\u884C\u4E0D\u662F\u8BE6\u60C5");
+        }
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(15, report.issueCount());
+        assertEquals(15, report.countOf(TimetableImportParser.Reason.UNRECOGNISED_DETAIL));
+        assertEquals(TimetableImportParser.MAX_ISSUES, report.issues().size());
+    }
+
+    @Test
+    public void theExamplesShowEveryKindBeforeRepeatingOneKind() throws Exception {
+        TimetableGrid grid = timetable(15, "\u661F\u671F\u4E00");
+        for (int period = 1; period <= 14; period++) {
+            grid.put(period + 1, 1, "X02018\u3010A\u3011\n\u8FD9\u4E00\u884C\u4E0D\u662F\u8BE6\u60C5");
+        }
+        // A second kind of problem, met only after fourteen of the first.
+        grid.put(16, 1, "2-5\u5468  \u5E08  \u5730");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(15, report.issueCount());
+        java.util.Set<TimetableImportParser.Reason> kinds = new java.util.HashSet<>();
+        for (TimetableImportParser.Issue issue : report.issues()) {
+            kinds.add(issue.reason());
+        }
+        assertTrue("both kinds must be quoted, not fourteen of one: " + report.issues(),
+                kinds.contains(TimetableImportParser.Reason.UNRECOGNISED_DETAIL));
+        assertTrue(kinds.contains(TimetableImportParser.Reason.UNATTRIBUTED_LINE));
+    }
+
+    @Test
+    public void aFileWithNothingRecognisableComesBackAsAReportNotAnException()
+            throws Exception {
+        TimetableGrid grid = timetable(2, "\u661F\u671F\u4E00", "\u661F\u671F\u4E8C");
+        grid.put(2, 1, "X02018\u3010A\u3011\n\u4E71\u5199\u7684\u5185\u5BB9");
+        grid.put(3, 2, "\u53E6\u4E00\u6BB5\u4E71\u5199\u7684\u5185\u5BB9");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        assertFalse(report.isUsable());
+        assertEquals(0, report.scheduleCount());
+        assertEquals(0, report.courseCount());
+        assertTrue(report.hasIssues());
+        assertEquals(2, report.issueCount());
+    }
+
+    @Test
+    public void anIssueDescribesWhereItCameFrom() throws Exception {
+        TimetableGrid grid = timetable(2, "\u661F\u671F\u4E09");
+        grid.put(3, 1, "X02018\u3010A\u3011\n\u4E71\u5199");
+
+        TimetableImportParser.Report report = TimetableImportParser.parseWithReport(grid);
+
+        TimetableImportParser.Issue issue = report.issues().get(0);
+        assertEquals(4, issue.row());
+        assertEquals(3, issue.day());
+        assertEquals(2, issue.line());
+        assertTrue(issue.describe().contains("\u7B2C 4 \u884C"));
+        // The same short weekday the rest of the app shows, from ScheduleUtils.
+        assertTrue(issue.describe().contains("\u5468\u4E09"));
+        assertTrue(issue.describe().contains(
+                TimetableImportParser.text(issue.reason())));
+    }
+
+    @Test
+    public void theReportCarriesExactlyWhatParseReturns() throws Exception {
+        TimetableGrid grid = grid();
+        grid.put(2, 1, "X02018\u3010\u68C0\u6D4B\u6280\u672F\u3011\n"
+                + "2-5\u5468\u5355\u53CC\u5468  \u82CF\u8001\u5E08  F202\n"
+                + "6-9\u5468\u5355\u53CC\u5468  \u51CC\u8001\u5E08  F203");
+        grid.merge(2, 1, 4, 1);
+
+        List<Course> direct = TimetableImportParser.parse(grid);
+        List<Course> fromReport =
+                TimetableImportParser.parseWithReport(grid).courses();
+
+        assertEquals(direct.size(), fromReport.size());
+        for (int i = 0; i < direct.size(); i++) {
+            assertEquals(describe(direct.get(i)), describe(fromReport.get(i)));
+        }
+    }
+
     // -------------------------------------------------------------- 夹具
+
+    /** Every persisted field of a course, so "the same" means all of it. */
+    private static String describe(Course course) {
+        return course.name + "|" + course.teacher + "|" + course.location + "|"
+                + course.dayOfWeek + "|" + course.startPeriod + "|" + course.endPeriod
+                + "|" + course.startWeek + "|" + course.endWeek + "|" + course.parity
+                + "|" + course.color;
+    }
 
     /**
      * 表头在第 1 行、第 0 列是节次号 1..periods、其余每列一个星期的网格。
