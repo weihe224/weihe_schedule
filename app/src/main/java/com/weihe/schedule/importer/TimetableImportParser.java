@@ -77,11 +77,20 @@ public final class TimetableImportParser {
         }
 
         List<PeriodRow> periodRows = new ArrayList<>();
+        Collector tooLong = new Collector();
         for (int row = headerRow + 1; row < grid.rowCount(); row++) {
             Integer period = parsePositiveInt(grid.cell(row, 0).trim());
-            if (period != null && period <= ScheduleUtils.PERIODS_PER_DAY) {
-                periodRows.add(new PeriodRow(row, period));
+            if (period == null) {
+                continue;
             }
+            if (period.intValue() > ScheduleUtils.MAX_PERIODS) {
+                // Named, not dropped. The row has a period number, so the file does
+                // describe a period the app cannot hold -- which is a fact about the
+                // file worth telling the user, not a blank line to skip past.
+                tooLong.note(Reason.PERIOD_OUT_OF_RANGE, row, 0, 1);
+                continue;
+            }
+            periodRows.add(new PeriodRow(row, period.intValue()));
         }
         if (periodRows.isEmpty()) {
             throw new TimetableImportException("\u672A\u627E\u5230\u8282\u6B21\u884C");
@@ -109,7 +118,20 @@ public final class TimetableImportParser {
                         periodRow.period, Math.max(periodRow.period, endPeriod));
             }
         }
-        return new Report(courses, collector);
+        return new Report(courses, collectorMergedWith(collector, tooLong));
+    }
+
+    /**
+     * The cell scan's collector with the period-number scan's findings folded in.
+     *
+     * <p>Separate only because the period scan has to finish before the cell scan
+     * can run -- the rows it accepts decide what {@code lastPeriod} is. Keeping one
+     * collector and passing it in would mean the period scan ran against a collector
+     * the cell scan had not been given yet.</p>
+     */
+    private static Collector collectorMergedWith(Collector main, Collector extra) {
+        main.merge(extra);
+        return main;
     }
 
     /**
@@ -129,7 +151,17 @@ public final class TimetableImportParser {
         /** A detail line whose week expression cannot be read. */
         UNREADABLE_WEEKS,
         /** A detail line that yielded one field where teacher and venue were expected. */
-        INCOMPLETE_FIELDS
+        INCOMPLETE_FIELDS,
+        /**
+         * A row whose period number is past the app's ceiling.
+         *
+         * <p>Reported rather than skipped. The old behaviour was to ignore any row
+         * numbered above the default fifteen, which made a file with a sixteenth
+         * period look like an ordinary fifteen-period file whose last row happened
+         * to be empty -- the one outcome an import must never produce, because the
+         * user cannot tell it from success.</p>
+         */
+        PERIOD_OUT_OF_RANGE
     }
 
     /**
@@ -222,6 +254,22 @@ public final class TimetableImportParser {
                 examples.add(issue);
             }
             return examples;
+        }
+
+        /**
+         * Folds another collector's findings into this one.
+         *
+         * <p>Used for the period-number scan, which runs before the cell scan and
+         * keeps its own tally. Re-noting through {@link #note} rather than copying
+         * the lists keeps the "first of each kind" ordering and the example cap
+         * working across both sources, which copying would bypass.</p>
+         */
+        void merge(Collector other) {
+            for (Map.Entry<Reason, Integer> entry : other.counts.entrySet()) {
+                for (int i = 0; i < entry.getValue().intValue(); i++) {
+                    note(entry.getKey(), 0, 0, 0);
+                }
+            }
         }
     }
 
@@ -321,64 +369,13 @@ public final class TimetableImportParser {
             case INCOMPLETE_FIELDS:
                 return "\u6559\u5E08\u4E0E\u5730\u70B9\u6CA1\u6709\u5206\u5F00\uFF0C"
                         + "\u5730\u70B9\u672A\u80FD\u8BC6\u522B";
+            case PERIOD_OUT_OF_RANGE:
+                return "\u8282\u6B21\u8D85\u51FA\u4E86\u5E94\u7528\u652F\u6301\u7684 "
+                        + ScheduleUtils.MAX_PERIODS + " \u8282\uFF0C\u8BE5\u884C\u672A"
+                        + "\u5BFC\u5165";
             default:
                 return reason.name();
         }
-    }
-
-    /**
-     * Maps the week numbers in an exported timetable onto the semester calendar.
-     *
-     * <p>{@code sourceFirstWeek} is the semester week represented by week 1 in
-     * the file. Odd/even rules are relative to the source timetable, so an odd
-     * offset flips them after the mapping.</p>
-     */
-    public static List<Course> shiftWeeks(List<Course> courses,
-            int sourceFirstWeek) throws TimetableImportException {
-        if (sourceFirstWeek < 1
-                || sourceFirstWeek > ScheduleUtils.SEMESTER_WEEKS) {
-            throw new TimetableImportException(
-                    "\u8D77\u59CB\u5468\u5FC5\u987B\u5728 1 \u5230 "
-                            + ScheduleUtils.SEMESTER_WEEKS + " \u4E4B\u95F4");
-        }
-        int offset = sourceFirstWeek - 1;
-        List<Course> shifted = new ArrayList<>();
-        for (Course source : courses) {
-            if (source.startWeek < 1 || source.endWeek < source.startWeek) {
-                throw new TimetableImportException(
-                        "\u8BFE\u7A0B\u201C" + source.name
-                                + "\u201D\u7684\u5468\u6B21\u8303\u56F4\u65E0\u6548");
-            }
-            long mappedEnd = (long) source.endWeek + offset;
-            if (mappedEnd > ScheduleUtils.SEMESTER_WEEKS) {
-                int latestStart = Math.max(1,
-                        ScheduleUtils.SEMESTER_WEEKS - source.endWeek + 1);
-                throw new TimetableImportException(
-                        "\u6587\u4EF6\u4E2D\u5305\u542B\u7B2C" + source.endWeek
-                                + "\u5468\u8BFE\u7A0B\uFF0C\u8BE5\u8D77\u59CB\u5468\u4F1A\u8D85\u51FA\u7B2C"
-                                + ScheduleUtils.SEMESTER_WEEKS
-                                + "\u5468\u3002\u8BF7\u9009\u62E9\u4E0D\u665A\u4E8E\u7B2C"
-                                + latestStart + "\u5468\u5F00\u59CB");
-            }
-            Course course = source.copy();
-            course.startWeek += offset;
-            course.endWeek = (int) mappedEnd;
-            if ((offset & 1) == 1) {
-                course.parity = flipParity(course.parity);
-            }
-            shifted.add(course);
-        }
-        return shifted;
-    }
-
-    private static int flipParity(int parity) {
-        if (parity == Course.PARITY_ODD) {
-            return Course.PARITY_EVEN;
-        }
-        if (parity == Course.PARITY_EVEN) {
-            return Course.PARITY_ODD;
-        }
-        return Course.PARITY_ALL;
     }
 
     private static int periodForRow(List<PeriodRow> rows, int targetRow) {

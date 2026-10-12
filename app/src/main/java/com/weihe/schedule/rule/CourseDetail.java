@@ -91,13 +91,33 @@ public final class CourseDetail {
      */
     public static CourseDetail of(Course course, Semester semester,
             List<BellSchedule> schedules) {
+        return of(course, semester, schedules, null);
+    }
+
+    /**
+     * The same, under the default schedule the user has chosen.
+     *
+     * <p>The extra argument exists because this class is framework-free and cannot
+     * reach the store that holds the choice. Without it the screen would resolve a
+     * venue-less course against the legacy fallback while the timetable card beside
+     * it resolved the same course against the user's choice -- the detail page and
+     * the timetable disagreeing about what time a lesson starts, which is the one
+     * outcome this feature exists to prevent.</p>
+     *
+     * @param defaultId the user's default schedule id, or {@code null} for "the
+     *                  legacy fallback", which is what a caller with no store to
+     *                  read has always had
+     */
+    public static CourseDetail of(Course course, Semester semester,
+            List<BellSchedule> schedules, String defaultId) {
         if (course == null) {
             return missing();
         }
         ReminderPlan.Skipped problem = ReminderPlan.problemWith(course, schedules);
         boolean timeKnown = problem == null;
         BellSchedule schedule = timeKnown
-                ? BellSchedules.resolve(schedules, course.scheduleName, course.location)
+                ? BellSchedules.resolve(schedules, course.scheduleName, course.location,
+                        defaultId)
                 : null;
         return new CourseDetail(true, course.id,
                 filled(course.name, UNNAMED),

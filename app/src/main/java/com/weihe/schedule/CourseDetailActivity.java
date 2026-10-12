@@ -103,7 +103,8 @@ public class CourseDetailActivity extends Activity {
         Course course = courseId == 0L ? null : repository.findCourse(courseId);
         Semester semester = repository.getActiveSemester();
         List<BellSchedule> schedules = repository.getBellSchedules();
-        CourseDetail detail = CourseDetail.of(course, semester, schedules);
+        CourseDetail detail = CourseDetail.of(course, semester, schedules,
+                repository.getDefaultScheduleId());
 
         body.removeAllViews();
         if (!detail.isPresent()) {

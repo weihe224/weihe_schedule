@@ -2,11 +2,12 @@ package com.weihe.schedule.ui;
 
 import android.content.Context;
 import android.graphics.Typeface;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.time.LocalDate;
@@ -156,13 +157,17 @@ public final class Pickers {
     // ============================================================== time picker
 
     /**
-     * Asks for a time: an hour column, a minute column, and the choice so far.
+     * Asks for a time: an hour wheel, a minute wheel, and the choice so far.
      *
-     * <p>Two lists rather than a clock face. A dial is large, and it hides the
-     * minutes behind a second gesture; a column of hours and a column of minutes
+     * <p>Two wheels rather than a clock face. A dial is large, and it hides the
+     * minutes behind a second gesture; a wheel of hours and a wheel of minutes
      * shows every value the app can store at once, in a panel the height of a
-     * confirmation. Both columns scroll to whatever the field already holds, so the
-     * picker opens on the current time rather than at midnight.</p>
+     * confirmation. Both open on whatever the field already holds, so the picker
+     * starts at the current time rather than at midnight.</p>
+     *
+     * <p>Each wheel owns its own scroll offset and reports the value under its
+     * centre line, so dragging one cannot move the other. The readout follows the
+     * value of both, but only the confirmed pair is handed back.</p>
      */
     public static void showTimePicker(Context context, int hour, int minute,
             Consumer<String> onPicked) {
@@ -175,33 +180,37 @@ public final class Pickers {
         content.addView(readout);
         content.addView(hint(context, "24 \u5C0F\u65F6\u5236"));
 
-        ScrollView hours = column(context, 0, 23, hour, value -> {
+        final WheelColumnView hours = new WheelColumnView(context, 0, 23, hour);
+        hours.setContentDescription("\u5C0F\u65F6");
+        final WheelColumnView minutes = new WheelColumnView(context, 0, 59, minute);
+        minutes.setContentDescription("\u5206\u949F");
+        hours.setOnValueChanged(value -> {
             chosen[0] = value;
             readout.setText(formatTime(chosen[0], chosen[1]));
         });
-        ScrollView minutes = column(context, 0, 59, minute, value -> {
+        minutes.setOnValueChanged(value -> {
             chosen[1] = value;
             readout.setText(formatTime(chosen[0], chosen[1]));
         });
 
         LinearLayout columns = new LinearLayout(context);
         columns.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams columnParams = new LinearLayout.LayoutParams(
-                0, UiKit.dp(context, COLUMN_HEIGHT_DP), 1f);
-        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(
-                0, UiKit.dp(context, COLUMN_HEIGHT_DP), 1f);
-        secondParams.leftMargin = UiKit.dp(context, UiTokens.SPACE_M);
-        columns.addView(hours, columnParams);
-        columns.addView(minutes, secondParams);
+        int columnHeight = UiKit.dp(context, WHEEL_HEIGHT_DP);
+        columns.addView(hours, new LinearLayout.LayoutParams(
+                0, columnHeight, 1f));
+        LinearLayout.LayoutParams minuteParams = new LinearLayout.LayoutParams(
+                0, columnHeight, 1f);
+        minuteParams.leftMargin = UiKit.dp(context, UiTokens.SPACE_M);
+        columns.addView(minutes, minuteParams);
         LinearLayout.LayoutParams columnsParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        columnsParams.topMargin = UiKit.dp(context, UiTokens.SPACE_M);
+                ViewGroup.LayoutParams.MATCH_PARENT, columnHeight);
+        columnsParams.topMargin = UiKit.dp(context, UiTokens.SPACE_S);
         content.addView(columns, columnsParams);
 
         UiKit.dialog(context, "\u9009\u62E9\u65F6\u95F4", null, content, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.of("\u786E\u5B9A", () -> onPicked.accept(
-                        formatTime(chosen[0], chosen[1])))).show();
+                        formatTime(hours.getValue(), minutes.getValue())))).show();
     }
 
     // ============================================================== date picker
@@ -366,70 +375,14 @@ public final class Pickers {
     }
 
     /**
-     * One scrolling column of numbers, the chosen one marked.
+     * The value being chosen, shown large and updated as the wheels move.
      *
-     * <p>Scrolled to the current value when it opens, so the picker starts where the
-     * field already is. The mark is a filled pill rather than a colour change, so it
-     * stays readable against both the panel and the rows around it.</p>
+     * <p>Kept above the wheels rather than beside them: it is the one place the
+     * hour and the minute are legible as a single time, which no column of two-digit
+     * numbers can show on its own.</p>
      */
-    private static ScrollView column(Context context, int from, int to, int current,
-            Consumer<Integer> onPick) {
-        final ScrollView scroll = new ScrollView(context);
-        scroll.setBackground(UiKit.fill(context, Palette.SURFACE_CONTAINER_LOW,
-                UiTokens.RADIUS_S));
-        LinearLayout list = new LinearLayout(context);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(UiKit.dp(context, UiTokens.SPACE_XS),
-                UiKit.dp(context, UiTokens.SPACE_XS),
-                UiKit.dp(context, UiTokens.SPACE_XS),
-                UiKit.dp(context, UiTokens.SPACE_XS));
-        final int[] selected = {current};
-        final List<TextView> rows = new ArrayList<>();
-        for (int value = from; value <= to; value++) {
-            final int held = value;
-            TextView row = UiKit.text(context, two(value), UiTokens.Type.BODY_LARGE,
-                    value == current ? Palette.ON_PRIMARY : Palette.ON_SURFACE,
-                    value == current ? Typeface.BOLD : Typeface.NORMAL);
-            row.setGravity(Gravity.CENTER);
-            row.setMinimumHeight(UiKit.dp(context, ROW_HEIGHT_DP));
-            if (value == current) {
-                row.setBackground(UiKit.fill(context, Palette.PRIMARY, UiTokens.RADIUS_S));
-            }
-            UiKit.ripple(row, UiTokens.RADIUS_S, false);
-            row.setOnClickListener(view -> {
-                for (int i = 0; i < rows.size(); i++) {
-                    TextView other = rows.get(i);
-                    boolean on = (from + i) == held;
-                    other.setTextColor(on ? Palette.ON_PRIMARY : Palette.ON_SURFACE);
-                    other.setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
-                    other.setBackground(on
-                            ? UiKit.fill(context, Palette.PRIMARY, UiTokens.RADIUS_S)
-                            : null);
-                }
-                selected[0] = held;
-                onPick.accept(held);
-            });
-            rows.add(row);
-            list.addView(row, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
-        scroll.addView(list);
-        scroll.post(() -> {
-            View target = rows.get(Math.max(0, Math.min(rows.size() - 1,
-                    selected[0] - from)));
-            // A third down the column rather than at its edge, so the values on
-            // either side of the current one are visible: the column reads as a
-            // list with a position, not as a single number.
-            scroll.scrollTo(0, Math.max(0,
-                    target.getTop() - UiKit.dp(context, COLUMN_HEIGHT_DP) / 3));
-        });
-        return scroll;
-    }
-
-    /** The value being chosen, shown large and updated as the columns move. */
     private static TextView readout(Context context, String text) {
-        TextView readout = UiKit.text(context, text, UiTokens.Type.HEADLINE_SMALL,
+        TextView readout = UiKit.text(context, text, UiTokens.Type.TITLE_LARGE,
                 Palette.PRIMARY, Typeface.BOLD);
         readout.setGravity(Gravity.CENTER);
         return readout;
@@ -468,9 +421,13 @@ public final class Pickers {
 
     /** Tall enough to be an easy target without towering over the row. */
     private static final int FIELD_HEIGHT_DP = 42;
-    /** How much of a number column is on screen at once. */
-    private static final int COLUMN_HEIGHT_DP = 168;
-    private static final int ROW_HEIGHT_DP = 40;
+    /**
+     * How much of a wheel is on screen at once: five rows of 44dp, the middle one
+     * of which is the selection. Given to the columns rather than derived by them,
+     * so the two wheels are the same height and their centre lines agree -- a pair
+     * that disagree by a pixel would put the hour and the minute on different lines.
+     */
+    private static final int WHEEL_HEIGHT_DP = 44 * 5;
     /** A day cell is as wide as the panel allows and this tall. */
     private static final int DAY_CELL_DP = 44;
 
@@ -478,6 +435,26 @@ public final class Pickers {
     public static LinearLayout.LayoutParams weighted(float weight) {
         return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT,
                 weight);
+    }
+
+    /**
+     * A watcher that only cares what the text became.
+     *
+     * <p>Every caller in this app reacts in {@code afterTextChanged} and ignores the
+     * other two callbacks, so repeating the empty pair at each call site is three
+     * methods of noise around one line of intent. Subclass this and override the
+     * callback that matters.</p>
+     */
+    public abstract static class SimpleTextWatcher implements TextWatcher {
+        @Override
+        public final void beforeTextChanged(CharSequence s, int start, int count,
+                int after) {
+        }
+
+        @Override
+        public final void onTextChanged(CharSequence s, int start, int before,
+                int count) {
+        }
     }
 
     private static String two(int value) {

@@ -79,11 +79,17 @@ public class WeekGridRowsTest {
     @Test
     public void theRowCountNeverExceedsThePeriodCap() {
         // A course that claims more periods than a day has must not push the
-        // grid past the table it draws.
+        // grid past the table it draws. The cap is the app's ceiling rather than
+        // the default fifteen, because the grid has to draw whatever a schedule
+        // can hold -- a day of twenty periods is a real timetable now.
         int rows = WeekGridActivity.lastPeriodInUse(Arrays.asList(courseEndingAt(15)));
-        assertTrue(rows <= ScheduleUtils.PERIODS_PER_DAY);
+        assertTrue(rows <= ScheduleUtils.MAX_PERIODS);
         assertTrue(WeekGridActivity.lastPeriodInUse(
-                Arrays.asList(courseEndingAt(99))) <= ScheduleUtils.PERIODS_PER_DAY);
+                Arrays.asList(courseEndingAt(99))) <= ScheduleUtils.MAX_PERIODS);
+        assertEquals("a course ending at the ceiling is drawn in full",
+                ScheduleUtils.MAX_PERIODS,
+                WeekGridActivity.lastPeriodInUse(
+                        Arrays.asList(courseEndingAt(ScheduleUtils.MAX_PERIODS))));
     }
 
     /**
@@ -120,9 +126,9 @@ public class WeekGridRowsTest {
     public void theDayColumnHeightIsBoundedLikeTheRowCount() {
         assertEquals(1, WeekGridActivity.dayColumnRows(0));
         assertEquals(1, WeekGridActivity.dayColumnRows(-4));
-        assertEquals(ScheduleUtils.PERIODS_PER_DAY,
-                WeekGridActivity.dayColumnRows(ScheduleUtils.PERIODS_PER_DAY));
-        assertEquals(ScheduleUtils.PERIODS_PER_DAY,
+        assertEquals(ScheduleUtils.MAX_PERIODS,
+                WeekGridActivity.dayColumnRows(ScheduleUtils.MAX_PERIODS));
+        assertEquals(ScheduleUtils.MAX_PERIODS,
                 WeekGridActivity.dayColumnRows(99));
     }
 }

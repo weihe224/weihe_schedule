@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.Test;
+import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
 
 /**
@@ -61,5 +62,54 @@ public class SemesterJsonTest {
     public void writingNothingProducesAnEmptyStore() {
         assertEquals("[]", SemesterJson.write(null));
         assertEquals("[]", SemesterJson.write(new java.util.ArrayList<Semester>()));
+    }
+
+    // ---------------------------------------------------------- term length
+
+    @Test
+    public void aNonDefaultLengthSurvivesARoundTrip() {
+        Semester shortTerm = Semester.of(3L, LocalDate.of(2026, 8, 31)).withWeeks(16);
+
+        List<Semester> read = SemesterJson.parse(SemesterJson.write(
+                java.util.Arrays.asList(shortTerm)));
+
+        assertEquals(1, read.size());
+        assertEquals(3L, read.get(0).id());
+        assertEquals(16, read.get(0).weeks());
+        // The derived end follows the stored length rather than the old constant.
+        assertEquals(LocalDate.of(2026, 8, 31).plusWeeks(16).minusDays(1),
+                read.get(0).lastDay());
+    }
+
+    @Test
+    public void theDefaultLengthIsNotWrittenOut() {
+        // A term that never had a length chosen stores the shape an older build
+        // wrote, so an older build reads exactly what it always read.
+        String raw = SemesterJson.write(java.util.Arrays.asList(
+                Semester.of(3L, LocalDate.of(2026, 8, 31))));
+
+        assertTrue("no weeks key should appear for the default", !raw.contains("weeks"));
+    }
+
+    @Test
+    public void aPayloadWithoutTheLengthReadsAsTheDefault() {
+        // The compatibility contract: every semester stored before this key
+        // existed must still read, and must read as eighteen weeks.
+        List<Semester> read = SemesterJson.parse(
+                "[{\"id\":9,\"start\":\"2026-08-31\",\"name\":\"\"}]");
+
+        assertEquals(1, read.size());
+        assertEquals(ScheduleUtils.SEMESTER_WEEKS, read.get(0).weeks());
+    }
+
+    @Test
+    public void aLengthOutsideTheAllowedRangeIsRepaired() {
+        assertEquals(ScheduleUtils.SEMESTER_WEEKS, SemesterJson.parse(
+                "[{\"id\":9,\"start\":\"2026-08-31\",\"weeks\":0}]").get(0).weeks());
+        assertEquals(ScheduleUtils.SEMESTER_WEEKS, SemesterJson.parse(
+                "[{\"id\":9,\"start\":\"2026-08-31\",\"weeks\":400}]").get(0).weeks());
+        assertEquals(ScheduleUtils.SEMESTER_WEEKS, SemesterJson.parse(
+                "[{\"id\":9,\"start\":\"2026-08-31\",\"weeks\":\"many\"}]")
+                .get(0).weeks());
     }
 }

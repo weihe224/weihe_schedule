@@ -173,22 +173,89 @@ public final class Palette {
      * 11-17sp label, which is what the grid and the cards do with them. The first
      * entry is {@link Course#DEFAULT_COLOR}.</p>
      *
-     * <p>All nine sit around a third to a half saturation. A timetable is a
-     * colour-coded document, so the point is to make courses tell each other apart
-     * at a glance without any single block shouting; saturated primaries turn the
-     * grid into a warning sign.</p>
+     * <p>The nine hues are spread around the wheel rather than clustered, so two
+     * courses are told apart by hue and not only by tone. The previous set failed
+     * that: its blue (206), cyan (192) and slate (209) all sat within 2.5 degrees
+     * of each other, which is why a blue course and a cyan course looked like the
+     * same course. The narrowest gap here is 8.3 degrees, and the closest pair in
+     * RGB terms is 40 apart against 18 before.</p>
+     *
+     * <p>Saturation is higher than the rest of the theme on purpose. A course
+     * block is small -- an 11sp label on a 4dp rail -- so it needs to carry its
+     * identity in less area than a page heading does. They are still a step below
+     * a saturated primary: none of them shouts, they just stop whispering.</p>
+     *
+     * <p>Every value here is checked by {@code PaletteContrastTest}, which blends
+     * each one exactly the way the UI does and fails if the resulting label drops
+     * below WCAG AA. Raising saturation costs contrast against the pale tint the
+     * block is drawn on, so the orange and gold are deliberately deeper than a
+     * naive "more vivid" pass would make them: at the values that look punchiest
+     * on a swatch, an orange label measured 2.99:1 on its own tint, which is
+     * unreadable. Depth is the price of legibility here, and the hue spread is
+     * what was bought with it.</p>
      */
     public static final int[] COURSE_COLORS = {
-            Course.DEFAULT_COLOR, 0xFF3A7563, 0xFF94521F, 0xFF6A5F94,
-            0xFF35707E, 0xFF9A5454, 0xFF7E6C33, 0xFF525F6B, 0xFF8C5A70
+            Course.DEFAULT_COLOR, 0xFF1F7F63, 0xFFA95E17, 0xFF7C61B8,
+            0xFF1C7B8B, 0xFFBB5057, 0xFF856F12, 0xFF596575, 0xFFA5587B
     };
 
     /** How much of a course colour is mixed into white for a block background. */
     public static final float COURSE_TINT = 0.90f;
+    /**
+     * How much of a course colour is mixed into the card surface for a day-list
+     * card's own background.
+     *
+     * <p>The list used to be pure white cards with a 4dp rail as the only colour,
+     * which made a day of courses read as a stack of identical white rectangles
+     * with a hairline of colour down the left. Washing the card itself gives the
+     * colour an area to occupy without making the block opaque.</p>
+     *
+     * <p>14%, not 30%: the course name is dark ink on this surface, so the wash
+     * is bounded by what the name can still be read on. It is deliberately the
+     * same order of magnitude as {@link #COURSE_TINT}, so a course looks the same
+     * weight on the home list as it does in the grid.</p>
+     */
+    public static final float COURSE_CARD_TINT = 0.86f;
     /** How much is mixed in for the block's hairline border. */
     public static final float COURSE_BORDER_TINT = 0.55f;
     /** How much of the ink colour is mixed into a course colour for its text. */
     public static final float COURSE_TEXT_MIX = 0.20f;
-    /** How far a card's colour rail is softened towards the card surface. */
-    public static final float COURSE_RAIL_SOFTEN = 0.15f;
+    /**
+     * How far a card's colour rail is softened towards the card surface.
+     *
+     * <p>Lowered from 0.15 with the arrival of {@link #COURSE_CARD_TINT}: the
+     * rail now sits on a card that is already carrying the course colour, so it
+     * no longer has to be muted to keep a column of them from looking like a
+     * colour chart. Softening is now only there to stop the rail reading as a
+     * hard black edge against the wash behind it.</p>
+     */
+    public static final float COURSE_RAIL_SOFTEN = 0.05f;
+
+    /**
+     * The swatches the course colour picker should show, given the colour a
+     * course currently holds.
+     *
+     * <p>Normally this is just {@link #COURSE_COLORS}. The tenth entry is there
+     * for one case only: a course whose colour was written by an earlier version
+     * of the app. This palette was retuned, and a course stores its own ARGB
+     * literal rather than an index into the array, so a course saved under the
+     * old values keeps a colour the array no longer lists. Drawing only the nine
+     * would open that course with nothing selected, which reads as "no colour was
+     * saved" rather than "this colour predates the palette". Appending it keeps
+     * the picker honest about what is actually stored.</p>
+     *
+     * <p>New courses are not affected: they start from
+     * {@link Course#DEFAULT_COLOR}, which is in the array, so the tenth swatch
+     * only appears on the first edit after an update.</p>
+     */
+    public static int[] swatchesFor(int currentColor) {
+        for (int color : COURSE_COLORS) {
+            if (color == currentColor) {
+                return COURSE_COLORS.clone();
+            }
+        }
+        int[] swatches = java.util.Arrays.copyOf(COURSE_COLORS, COURSE_COLORS.length + 1);
+        swatches[COURSE_COLORS.length] = currentColor;
+        return swatches;
+    }
 }

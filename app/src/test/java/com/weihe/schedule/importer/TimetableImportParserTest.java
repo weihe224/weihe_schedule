@@ -75,47 +75,50 @@ public class TimetableImportParserTest {
     }
 
     @Test
-    public void shiftWeeksKeepsTheOriginalWhenTheFirstWeekIsOne() throws Exception {
-        Course source = course(2, 5, Course.PARITY_ALL);
+    public void theFirstWeekOfTheFileIsTheFirstWeekOfTheTerm() throws Exception {
+        TimetableGrid grid = grid();
+        grid.put(2, 1, "X10001\u3010\u9AD8\u7B49\u6570\u5B66\u3011\n"
+                + "1\u5468  \u9648\u8001\u5E08  A101");
 
-        List<Course> shifted = TimetableImportParser.shiftWeeks(
-                java.util.List.of(source), 1);
+        List<Course> courses = TimetableImportParser.parse(grid);
 
-        assertEquals(1, shifted.size());
-        assertNotEquals(source, shifted.get(0));
-        assertEquals(2, shifted.get(0).startWeek);
-        assertEquals(5, shifted.get(0).endWeek);
-        assertEquals(Course.PARITY_ALL, shifted.get(0).parity);
+        // The import no longer rewrites weeks at all: what the file says is what
+        // the term gets. Week 1 in the file stays week 1 in the term, which is
+        // the whole point of removing the offset helper.
+        assertEquals(1, courses.get(0).startWeek);
+        assertEquals(1, courses.get(0).endWeek);
     }
 
     @Test
-    public void shiftWeeksMovesTheRangeAndFlipsOddEvenParity() throws Exception {
-        Course source = course(2, 5, Course.PARITY_ALL);
-        Course odd = course(6, 9, Course.PARITY_ODD);
+    public void aSecondWeekInTheFileStaysTheSecondWeekInTheTerm()
+            throws Exception {
+        TimetableGrid grid = grid();
+        grid.put(2, 1, "X10002\u3010\u5927\u5B66\u7269\u7406\u3011\n"
+                + "2\u5468  \u674E\u8001\u5E08  B202");
 
-        List<Course> shifted = TimetableImportParser.shiftWeeks(
-                java.util.List.of(source, odd), 2);
+        List<Course> courses = TimetableImportParser.parse(grid);
 
-        assertEquals(3, shifted.get(0).startWeek);
-        assertEquals(6, shifted.get(0).endWeek);
-        assertEquals(7, shifted.get(1).startWeek);
-        assertEquals(10, shifted.get(1).endWeek);
-        assertEquals(Course.PARITY_EVEN, shifted.get(1).parity);
-        assertEquals(2, source.startWeek);
-        assertEquals(Course.PARITY_ODD, odd.parity);
+        assertEquals(2, courses.get(0).startWeek);
+        assertEquals(2, courses.get(0).endWeek);
+        // Odd/even is a property of the file's own week numbers, so leaving the
+        // range alone is what keeps the parity meaning the same thing.
+        assertEquals(Course.PARITY_ALL, courses.get(0).parity);
     }
 
     @Test
-    public void shiftWeeksRejectsAWeekRangeThatWouldOverflow() {
-        Course source = course(12, 17, Course.PARITY_ALL);
+    public void aWeekRangeBeyondTheSemesterIsDroppedWhileParsing() throws Exception {
+        TimetableGrid grid = grid();
+        grid.put(2, 1, "X10003\u3010\u8D85\u8303\u56F4\u8BFE\u7A0B\u3011\n"
+                + "1-30\u5468  \u738B\u8001\u5E08  C303");
 
-        try {
-            TimetableImportParser.shiftWeeks(java.util.List.of(source), 3);
-            fail("expected overflow to be rejected");
-        } catch (TimetableImportException expected) {
-            assertEquals(true, expected.getMessage().contains(
-                    "\u7B2C17\u5468"));
-        }
+        // The range check belongs to the parser, not to a shift helper: a file
+        // that names week 30 cannot be placed in an 18-week term whichever date
+        // the user picks, so it is reported as unreadable rather than clamped.
+        TimetableImportParser.Report report =
+                TimetableImportParser.parseWithReport(grid);
+
+        assertEquals(0, report.courseCount());
+        assertEquals(true, report.hasIssues());
     }
 
     // ------------------------------------------------------ 行列映射（防转置）

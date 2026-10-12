@@ -126,8 +126,15 @@ public final class UiTokens {
      * room that neither line is cramped on a small phone.
      */
     public static final int DAY_CELL_HEIGHT = 56;
-    /** Width of the colour rail down the left edge of a course card. */
-    public static final int COURSE_RAIL_WIDTH = 4;
+    /**
+     * Width of the colour rail down the left edge of a course card.
+     *
+     * <p>5dp rather than 4. At 4dp on a phone the rail is a hairline that the eye
+     * can miss when scrolling, and it is the primary thing telling one course
+     * from another in the day list. It is still narrow enough that it reads as
+     * the card's edge rather than as a separate graphic.</p>
+     */
+    public static final int COURSE_RAIL_WIDTH = 5;
     /** Height of the top app bar. */
     public static final int TOP_BAR_HEIGHT = 64;
     /** Size of a floating action button. */

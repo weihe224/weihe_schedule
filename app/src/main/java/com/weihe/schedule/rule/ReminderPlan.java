@@ -237,10 +237,29 @@ public final class ReminderPlan {
      * a refusal rather than a reason to fall back to built-in times.</p>
      */
     public static BellSchedule scheduleFor(Course course, List<BellSchedule> schedules) {
+        return scheduleFor(course, schedules, null);
+    }
+
+    /**
+     * The same, under the default schedule the user has chosen.
+     *
+     * <p>Threaded through rather than read here, because this is the framework-free
+     * layer and the choice lives in the store. A caller with no store to read keeps
+     * the legacy fallback, which is what it had before the choice existed --
+     * whereas a caller that does read the store, the reminder scheduler and the
+     * alarm receiver, passes it so the alarm agrees with the card the user is
+     * looking at.</p>
+     *
+     * @param defaultId the user's default schedule id, or {@code null} for the
+     *                  legacy fallback
+     */
+    public static BellSchedule scheduleFor(Course course, List<BellSchedule> schedules,
+            String defaultId) {
         if (course == null || schedules == null || schedules.isEmpty()) {
             return null;
         }
-        return BellSchedules.resolve(schedules, course.scheduleName, course.location);
+        return BellSchedules.resolve(schedules, course.scheduleName, course.location,
+                defaultId);
     }
 
     /**
@@ -251,10 +270,16 @@ public final class ReminderPlan {
      */
     public static LocalDateTime startOf(Course course, List<BellSchedule> schedules,
             LocalDate day) {
+        return startOf(course, schedules, day, null);
+    }
+
+    /** {@link #startOf(Course, List, LocalDate)} under the user's default. */
+    public static LocalDateTime startOf(Course course, List<BellSchedule> schedules,
+            LocalDate day, String defaultId) {
         if (day == null || problemWith(course, schedules) != null) {
             return null;
         }
-        BellSchedule schedule = scheduleFor(course, schedules);
+        BellSchedule schedule = scheduleFor(course, schedules, defaultId);
         // A minute past 24:00 is allowed by the model (a late lab), and adding it
         // to midnight carries into the next day, which is what it means.
         return day.atStartOfDay().plusMinutes(schedule.startMinute(course.startPeriod));
@@ -287,10 +312,22 @@ public final class ReminderPlan {
         return null;
     }
 
+    /**
+     * Whether the course's period numbers are self-consistent.
+     *
+     * <p>Only the numbers themselves -- at least one, ending no earlier than it
+     * starts, and inside the app's own ceiling. Whether the applying schedule
+     * reaches the last one is asked separately by {@link #problemWith}, against
+     * that schedule's own {@link BellSchedule#periodCount()}, because that is the
+     * only place the real day length is known. Checking the default fifteen here
+     * instead used to make the schedule-aware test unreachable: a course on period
+     * 18 of a twenty-period table was refused before anything looked at the table
+     * it belonged to.</p>
+     */
     private static boolean hasUsablePeriods(Course course) {
         return course.startPeriod >= 1
                 && course.endPeriod >= course.startPeriod
-                && course.endPeriod <= ScheduleUtils.PERIODS_PER_DAY;
+                && course.endPeriod <= ScheduleUtils.MAX_PERIODS;
     }
 
     // ---------------------------------------------------------- calculation
@@ -309,6 +346,13 @@ public final class ReminderPlan {
     public static Plan onDate(List<Course> courses, Semester semester,
             List<BellSchedule> schedules, LocalDate day, int leadMinutes,
             LocalDateTime now) {
+        return onDate(courses, semester, schedules, day, leadMinutes, now, null);
+    }
+
+    /** {@link #onDate} under the user's default schedule. */
+    public static Plan onDate(List<Course> courses, Semester semester,
+            List<BellSchedule> schedules, LocalDate day, int leadMinutes,
+            LocalDateTime now, String defaultId) {
         List<Reminder> reminders = new ArrayList<>();
         List<SkippedCourse> skipped = new ArrayList<>();
         if (day == null || now == null) {
@@ -342,7 +386,7 @@ public final class ReminderPlan {
                 skipped.add(new SkippedCourse(course, day, problem));
                 continue;
             }
-            LocalDateTime startAt = startOf(course, schedules, day);
+            LocalDateTime startAt = startOf(course, schedules, day, defaultId);
             LocalDateTime triggerAt = startAt.minusMinutes(leadMinutes);
             if (!triggerAt.isAfter(now)) {
                 // Covers both "already gone" and "the lead window has opened but
@@ -352,7 +396,8 @@ public final class ReminderPlan {
                 continue;
             }
             reminders.add(new Reminder(course.id, course.name, course.teacher,
-                    course.location, scheduleFor(course, schedules).name(), course.color,
+                    course.location,
+                    scheduleFor(course, schedules, defaultId).name(), course.color,
                     day, startAt, triggerAt, leadMinutes));
         }
         reminders.sort(BY_TRIGGER);
@@ -372,6 +417,14 @@ public final class ReminderPlan {
     public static Plan upcoming(List<Course> courses, Semester semester,
             List<BellSchedule> schedules, LocalDate from, int days, int leadMinutes,
             LocalDateTime now, int maxReminders) {
+        return upcoming(courses, semester, schedules, from, days, leadMinutes, now,
+                maxReminders, null);
+    }
+
+    /** {@link #upcoming} under the user's default schedule. */
+    public static Plan upcoming(List<Course> courses, Semester semester,
+            List<BellSchedule> schedules, LocalDate from, int days, int leadMinutes,
+            LocalDateTime now, int maxReminders, String defaultId) {
         List<Reminder> reminders = new ArrayList<>();
         List<SkippedCourse> skipped = new ArrayList<>();
         if (from == null || now == null || days <= 0) {
@@ -393,7 +446,8 @@ public final class ReminderPlan {
                 anyDayOutside = true;
                 continue;
             }
-            Plan dayPlan = onDate(courses, semester, schedules, day, leadMinutes, now);
+            Plan dayPlan = onDate(courses, semester, schedules, day, leadMinutes, now,
+                    defaultId);
             reminders.addAll(dayPlan.reminders());
             skipped.addAll(dayPlan.skipped());
         }
@@ -430,6 +484,14 @@ public final class ReminderPlan {
      */
     public static Reminder forCourseOnDay(List<Course> courses, Semester semester,
             List<BellSchedule> schedules, long courseId, LocalDate day, int leadMinutes) {
+        return forCourseOnDay(courses, semester, schedules, courseId, day, leadMinutes,
+                null);
+    }
+
+    /** {@link #forCourseOnDay} under the user's default schedule. */
+    public static Reminder forCourseOnDay(List<Course> courses, Semester semester,
+            List<BellSchedule> schedules, long courseId, LocalDate day, int leadMinutes,
+            String defaultId) {
         if (courses == null || semester == null || day == null
                 || !supportsLeadMinutes(leadMinutes)
                 || !isWithinSemester(semester.start(), day)) {
@@ -444,10 +506,10 @@ public final class ReminderPlan {
             if (problemWith(course, schedules) != null) {
                 return null;
             }
-            LocalDateTime startAt = startOf(course, schedules, day);
+            LocalDateTime startAt = startOf(course, schedules, day, defaultId);
             return new Reminder(course.id, course.name, course.teacher, course.location,
-                    scheduleFor(course, schedules).name(), course.color, day, startAt,
-                    startAt.minusMinutes(leadMinutes), leadMinutes);
+                    scheduleFor(course, schedules, defaultId).name(), course.color, day,
+                    startAt, startAt.minusMinutes(leadMinutes), leadMinutes);
         }
         return null;
     }

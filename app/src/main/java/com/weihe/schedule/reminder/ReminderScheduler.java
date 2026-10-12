@@ -141,7 +141,8 @@ public final class ReminderScheduler {
         int lead = ReminderSettings.leadMinutes(context);
         return ReminderPlan.upcoming(courses, semester, schedules,
                 LocalDate.now(), DAYS_AHEAD, lead, now,
-                ReminderPlan.DEFAULT_MAX_REMINDERS).reminders();
+                ReminderPlan.DEFAULT_MAX_REMINDERS,
+                repository.getDefaultScheduleId()).reminders();
     }
 
     private static void register(Context context, List<ReminderSchedule.Entry> entries) {

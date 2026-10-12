@@ -80,6 +80,11 @@ public class BellScheduleEditorTest {
 
     @Test
     public void everyTimeFormatPeopleTypeIsAccepted() {
+        // Starts are still typed by hand, so every spelling people use has to read
+        // back. The ends beside them used to be typed too; they are computed from the
+        // schedule's length now, so the values here are the ones the length produces
+        // -- what is being checked is that the formats survive the round trip, not
+        // where the ends came from.
         BellScheduleEditor editor = editor();
         editor.setStartText(1, "8.00");
         editor.setEndText(1, "8.45");
@@ -115,10 +120,14 @@ public class BellScheduleEditorTest {
         assertTrue(editor.problems().toString(), editor.problems().isEmpty());
         BellSchedule built = editor.build();
         assertEquals(480, built.startMinute(1));
-        assertEquals(580, built.endMinute(2));
+        assertEquals("08:55 plus the schedule's forty minutes", 575,
+                built.endMinute(2));
         assertEquals(600, built.startMinute(3));
-        assertEquals(1440, built.startMinute(14));
-        assertEquals(25 * 60 + 35, built.endMinute(15));
+        assertEquals("a start on the far side of midnight still reads", 1440,
+                built.startMinute(14));
+        // 24:50 is 1490, and the schedule's forty minutes carry it to 1530 -- still
+        // inside the day the model can label, so no clamping happens here.
+        assertEquals(25 * 60 + 30, built.endMinute(15));
     }
 
     @Test

@@ -57,14 +57,33 @@ public final class UiKit {
     /**
      * The colour of a course card's left rail.
      *
-     * <p>Softer than the block colour the grid uses. The rail is 4dp of solid
-     * colour on a white card, and at full strength a column of them turns the day
-     * list into a colour chart; the grid keeps the unmixed colour because there it
-     * has to carry the whole block. Both stay recognisably the same course.</p>
+     * <p>Close to the course's own colour rather than a muted version of it. The
+     * rail is what identifies the course at a glance in the day list, and at
+     * 15% towards white it was doing that job badly; the card behind it now
+     * carries a wash of the same colour, so the rail reads as the edge of the
+     * course rather than as a separate stripe and does not need muting.</p>
      */
     public static int courseRail(int courseColor) {
         return Colors.blend(courseColor, Palette.SURFACE_CONTAINER,
                 Palette.COURSE_RAIL_SOFTEN);
+    }
+
+    /**
+     * The card background for a course in the day list.
+     *
+     * <p>A wash of the course colour rather than the plain card surface. This is
+     * the difference between "a white card that happens to have a blue line on
+     * it" and "the blue course", which is what makes a day scannable.</p>
+     *
+     * <p>Kept light on purpose. The course name is dark ink drawn directly on
+     * this, so the wash is bounded by legibility, and the callers still draw the
+     * name in {@link #courseInk} rather than in white: a saturated fill would
+     * mean white text, which is the opposite of the quiet light theme the rest
+     * of the app is built on.</p>
+     */
+    public static int courseCard(int courseColor) {
+        return Colors.blend(courseColor, Palette.SURFACE_CONTAINER,
+                Palette.COURSE_CARD_TINT);
     }
 
     // -------------------------------------------------------------------- shape
@@ -154,6 +173,21 @@ public final class UiKit {
             float elevationDp) {
         view.setBackground(outline(context, Palette.SURFACE_CONTAINER, radiusDp,
                 Palette.OUTLINE_VARIANT, UiTokens.STROKE_HAIRLINE));
+        elevate(view, radiusDp, elevationDp);
+    }
+
+    /**
+     * The same card, on a tinted surface.
+     *
+     * <p>The border is the tint's own colour rather than the neutral hairline, so
+     * a washed card is bounded by a slightly deeper version of itself instead of
+     * by a grey line that fights the wash. The stroke stays a hairline: the point
+     * is to close the card, not to outline it.</p>
+     */
+    public static void styleAsCourseCard(Context context, View view, float radiusDp,
+            float elevationDp, int courseColor) {
+        view.setBackground(outline(context, courseCard(courseColor), radiusDp,
+                courseBorder(courseColor), UiTokens.STROKE_HAIRLINE));
         elevate(view, radiusDp, elevationDp);
     }
 

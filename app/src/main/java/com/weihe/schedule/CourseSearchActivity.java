@@ -297,7 +297,8 @@ public class CourseSearchActivity extends Activity {
     private CourseDetail detailOf(Course course) {
         Semester semester = repository.getActiveSemester();
         List<BellSchedule> schedules = repository.getBellSchedules();
-        return CourseDetail.of(course, semester, schedules);
+        return CourseDetail.of(course, semester, schedules,
+                repository.getDefaultScheduleId());
     }
 
     /** {@code \u5468\u4E00 \u00B7 \u7B2C 1-2 \u8282 \u00B7 08:15 - 09:35}, the time left out when unknown. */

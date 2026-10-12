@@ -51,8 +51,25 @@ import com.weihe.schedule.model.Semester;
  *                                   "endWeek": ..., "parity": ..., "color": ...,
  *                                   "scheduleName": ... } ] } ],
  *   "schedules": [ { "name": ..., "keywords": [ ... ],
- *                    "starts": [ ... 15 ... ], "ends": [ ... 15 ... ] } ] }
+ *                    "id": ...,                // absent in old backups
+ *                    "durationMinutes": ...,   // absent in old backups = 40
+ *                    "starts": [ ... ], "ends": [ ... ] } ],
+ *   "defaultScheduleId": ... }   // absent in old backups
  * }</pre>
+ *
+ * <p>The length of {@code starts} and {@code ends} is the number of periods; it is
+ * not a fixed fifteen. {@code durationMinutes} was added with the settable period
+ * length and is optional on read, so a backup made before it loads on exactly the
+ * forty-minute clock it was written on.</p>
+ *
+ * <p>{@code id} on a schedule and the top-level {@code defaultScheduleId} were added
+ * with the settable default timetable, and both are optional on read. They are
+ * written together -- an id no schedule carries would be a pointer to nothing -- and
+ * a file that names a default which its own schedule list does not contain is read
+ * with the default cleared rather than refused, because the rest of the file is
+ * still a complete set of work. A backup made before defaults existed simply has no
+ * {@code defaultScheduleId}, and the restoring build adopts the same fallback the
+ * exporting build used.</p>
  *
  * <p>The course field names and their meanings are the ones the store already
  * uses ({@code CourseRepository.toJson}), including {@code color} written as an
@@ -104,12 +121,14 @@ public final class BackupCodec {
         private final List<Semester> semesters;
         private final Map<Long, List<Course>> coursesBySemester;
         private final List<BellSchedule> schedules;
+        private final String defaultScheduleId;
         private final List<String> notes;
 
         private Document(int formatVersion, String exportedAt, String appVersionName,
                 long activeSemesterId, List<Semester> semesters,
                 Map<Long, List<Course>> coursesBySemester,
-                List<BellSchedule> schedules, List<String> notes) {
+                List<BellSchedule> schedules, String defaultScheduleId,
+                List<String> notes) {
             this.formatVersion = formatVersion;
             this.exportedAt = exportedAt;
             this.appVersionName = appVersionName;
@@ -117,6 +136,7 @@ public final class BackupCodec {
             this.semesters = semesters;
             this.coursesBySemester = coursesBySemester;
             this.schedules = schedules;
+            this.defaultScheduleId = defaultScheduleId;
             this.notes = notes;
         }
 
@@ -156,6 +176,19 @@ public final class BackupCodec {
 
         public List<BellSchedule> schedules() {
             return Collections.unmodifiableList(schedules);
+        }
+
+        /**
+         * The schedule the file's author had chosen as the default, or null.
+         *
+         * <p>Null means the file does not say -- either it was written before the
+         * choice existed, or it named a schedule its own list does not contain and
+         * the reader dropped it. Both cases are handled the same way on restore:
+         * the fallback the exporting build used is adopted, so the courses keep the
+         * clock they were on.</p>
+         */
+        public String defaultScheduleId() {
+            return defaultScheduleId;
         }
 
         /** The courses of one semester; empty when the document has none. */
@@ -236,6 +269,30 @@ public final class BackupCodec {
             long activeSemesterId,
             String exportedAt,
             String appVersionName) {
+        return of(semesters, coursesBySemester, schedules, activeSemesterId,
+                exportedAt, appVersionName, null);
+    }
+
+    /**
+     * The same, carrying the chosen default timetable.
+     *
+     * <p>The extra field is a separate overload rather than a replaced signature:
+     * every existing caller keeps compiling and keeps writing exactly the document
+     * it wrote before, and only the export path -- which is the one place that
+     * knows the current default -- passes it.</p>
+     *
+     * <p>The id is dropped when it does not name one of {@code schedules}. A backup
+     * that pointed at a schedule it does not carry would fail to restore with a
+     * default the reader had to invent, and writing such a pointer is a bug in the
+     * caller rather than something a file should record.</p>
+     */
+    public static Document of(List<Semester> semesters,
+            Map<Long, List<Course>> coursesBySemester,
+            List<BellSchedule> schedules,
+            long activeSemesterId,
+            String exportedAt,
+            String appVersionName,
+            String defaultScheduleId) {
         List<Semester> semesterCopies = new ArrayList<>();
         Map<Long, List<Course>> courseCopies = new LinkedHashMap<>();
         if (semesters != null) {
@@ -260,7 +317,22 @@ public final class BackupCodec {
         }
         return new Document(FORMAT_VERSION, nullToEmpty(exportedAt),
                 nullToEmpty(appVersionName), activeSemesterId, semesterCopies,
-                courseCopies, scheduleCopies, new ArrayList<String>());
+                courseCopies, scheduleCopies, idIn(defaultScheduleId, scheduleCopies),
+                new ArrayList<String>());
+    }
+
+    /** The id when a schedule carries it, otherwise null; see {@link #of}. */
+    private static String idIn(String defaultScheduleId, List<BellSchedule> schedules) {
+        if (defaultScheduleId == null || defaultScheduleId.trim().isEmpty()) {
+            return null;
+        }
+        String wanted = defaultScheduleId.trim();
+        for (BellSchedule schedule : schedules) {
+            if (wanted.equals(schedule.id())) {
+                return wanted;
+            }
+        }
+        return null;
     }
 
     private static List<Course> copyCourses(List<Course> source) {
@@ -317,6 +389,12 @@ public final class BackupCodec {
             schedules.add(scheduleToJson(schedule));
         }
         root.put("schedules", schedules);
+        // Omitted rather than written blank: a blank id would read back as "an id
+        // was assigned" and match nothing, where an absent key is the one signal
+        // the reader treats as "this file predates the choice".
+        if (document.defaultScheduleId() != null) {
+            root.put("defaultScheduleId", document.defaultScheduleId());
+        }
         return MiniJson.write(root);
     }
 
@@ -342,9 +420,17 @@ public final class BackupCodec {
     private static Map<String, Object> scheduleToJson(BellSchedule schedule) {
         Map<String, Object> object = MiniJson.object();
         object.put("name", schedule.name());
+        // Written only when the schedule has one -- same reason as the top-level
+        // default: a blank id is indistinguishable from an assigned one that names
+        // nothing. A schedule without an id simply gets one on the next read.
+        if (schedule.id() != null) {
+            object.put("id", schedule.id());
+        }
         List<Object> keywords = MiniJson.array();
         keywords.addAll(schedule.locationKeywords());
         object.put("keywords", keywords);
+        object.put("durationMinutes",
+                Integer.valueOf(schedule.durationMinutes()));
         List<Object> starts = MiniJson.array();
         List<Object> ends = MiniJson.array();
         for (int period = 1; period <= schedule.periodCount(); period++) {
@@ -446,10 +532,48 @@ public final class BackupCodec {
                     + "\u70B9\u81EA\u52A8\u5339\u914D");
         }
 
+        String defaultScheduleId = readDefaultScheduleId(root, schedules, notes);
+
         Document document = new Document(version, asString(root.get("exportedAt")),
                 asString(root.get("appVersionName")), activeSemesterId, semesters,
-                coursesBySemester, schedules, notes);
+                coursesBySemester, schedules, defaultScheduleId, notes);
         return new Result(document, new ArrayList<String>());
+    }
+
+    /**
+     * The file's chosen default, or null when it does not say or cannot be honoured.
+     *
+     * <p>A file that names a schedule it does not carry is not refused: the pointer
+     * is a preference, not a piece of data, and the courses behind it are still
+     * there. Clearing it here means the restore step falls back to the same
+     * timetable the exporting build used, and the user keeps their work with one
+     * setting to re-pick rather than a file that will not open.</p>
+     */
+    private static String readDefaultScheduleId(Map<String, Object> root,
+            List<BellSchedule> schedules, List<String> notes) {
+        Object raw = root.get("defaultScheduleId");
+        if (raw == null) {
+            return null;
+        }
+        if (!(raw instanceof String)) {
+            notes.add("\u5907\u4EFD\u4E2D\u7684\u9ED8\u8BA4\u4F5C\u606F\u8868\u6807\u8BC6"
+                    + "\u4E0D\u5408\u6CD5\uFF0C\u5C06\u6539\u7528\u6309\u5730\u70B9\u5339"
+                    + "\u914D\u7684\u9ED8\u8BA4\u8868");
+            return null;
+        }
+        String wanted = ((String) raw).trim();
+        if (wanted.isEmpty()) {
+            return null;
+        }
+        for (BellSchedule schedule : schedules) {
+            if (wanted.equals(schedule.id())) {
+                return wanted;
+            }
+        }
+        notes.add("\u5907\u4EFD\u4E2D\u7684\u9ED8\u8BA4\u4F5C\u606F\u8868\u4E0D\u5728"
+                + "\u4F5C\u606F\u8868\u5217\u8868\u4E2D\uFF0C\u6062\u590D\u540E\u5C06"
+                + "\u91CD\u65B0\u9009\u62E9");
+        return null;
     }
 
     /**
@@ -576,18 +700,22 @@ public final class BackupCodec {
                 return fieldProblem(semesterNumber, where, "\u661F\u671F",
                         "day", "1 \u5230 7");
             }
+            // Bounded by the app's ceiling rather than by the default fifteen: a
+            // backup of a course on period 18 is a valid file once a schedule can
+            // have more than fifteen periods, and refusing it would make the backup
+            // unreadable by the very build that wrote it.
             Integer startPeriod = rangeOf(item, "startPeriod", 1,
-                    ScheduleUtils.PERIODS_PER_DAY);
+                    ScheduleUtils.MAX_PERIODS);
             if (startPeriod == null) {
                 return fieldProblem(semesterNumber, where, "\u5F00\u59CB\u8282\u6B21",
-                        "startPeriod", "1 \u5230 " + ScheduleUtils.PERIODS_PER_DAY);
+                        "startPeriod", "1 \u5230 " + ScheduleUtils.MAX_PERIODS);
             }
             Integer endPeriod = rangeOf(item, "endPeriod", 1,
-                    ScheduleUtils.PERIODS_PER_DAY);
+                    ScheduleUtils.MAX_PERIODS);
             if (endPeriod == null || endPeriod.intValue() < startPeriod.intValue()) {
                 return fieldProblem(semesterNumber, where, "\u7ED3\u675F\u8282\u6B21",
                         "endPeriod", startPeriod + " \u5230 "
-                                + ScheduleUtils.PERIODS_PER_DAY);
+                                + ScheduleUtils.MAX_PERIODS);
             }
             Integer startWeek = rangeOf(item, "startWeek", 1,
                     ScheduleUtils.SEMESTER_WEEKS);
@@ -711,12 +839,31 @@ public final class BackupCodec {
                 return "\u4F5C\u606F\u8868\u300C" + name + "\u300D\u7684\u5F00\u59CB\u4E0E"
                         + "\u7ED3\u675F\u65F6\u95F4\u6570\u91CF\u4E0D\u4E00\u81F4";
             }
-            if (starts.length != BellSchedule.PERIODS) {
-                return "\u4F5C\u606F\u8868\u300C" + name + "\u300D\u5E94\u5F53\u5305\u542B "
-                        + BellSchedule.PERIODS + " \u8282\uFF0C\u5B9E\u9645\u4E3A "
-                        + starts.length + " \u8282";
+            // The count is whatever the backup holds, bounded by the app's ceiling
+            // rather than by the default fifteen. A backup of a twenty-period day
+            // used to be rejected outright as malformed, which turned a valid file
+            // into an unreadable one -- the opposite of what a backup is for. A
+            // backup from a future build with more periods than this app supports is
+            // still refused, and says so.
+            if (starts.length < BellSchedule.MIN_PERIODS) {
+                return "\u4F5C\u606F\u8868\u300C" + name + "\u300D\u81F3\u5C11\u9700\u8981 "
+                        + BellSchedule.MIN_PERIODS + " \u8282";
             }
-            out.add(new BellSchedule(name, starts, ends, keywords));
+            if (starts.length > ScheduleUtils.MAX_PERIODS) {
+                return "\u4F5C\u606F\u8868\u300C" + name + "\u300D\u5305\u542B "
+                        + starts.length + " \u8282\uFF0C\u8D85\u51FA\u672C\u7248\u652F\u6301"
+                        + "\u7684 " + ScheduleUtils.MAX_PERIODS + " \u8282";
+            }
+            // Absent in every backup made before the length was settable, and forty
+            // is what those tables were saved with.
+            int durationMinutes = MiniJson.optInt(item, "durationMinutes",
+                    BellSchedule.DEFAULT_PERIOD_MINUTES);
+            // Absent in every backup made before ids existed; null here means the
+            // next read invents one, and the default pointer is resolved against
+            // whatever ids the document ends up with.
+            String id = MiniJson.optString(item, "id", "").trim();
+            out.add(new BellSchedule(id.isEmpty() ? null : id, name, starts, ends,
+                    keywords, durationMinutes));
         }
         return null;
     }

@@ -1,6 +1,7 @@
 package com.weihe.schedule.model;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
@@ -303,5 +304,115 @@ public class BellSchedulesTest {
         assertEquals(BellSchedules.BC_NAME, BellSchedules.resolve(
                 BellSchedules.presets(), BellSchedules.BC_NAME,
                 "\u6559\u5B66\u697C D305").name());
+    }
+
+    // ------------------------------------------------- the stored default
+
+    @Test
+    public void theShippedSchedulesCarryStableIds() {
+        // The ids are fixed strings rather than generated, because an install with no
+        // ids has to be given the same ones on every device for the adopted default
+        // to mean anything before it is written.
+        for (BellSchedule preset : BellSchedules.presets()) {
+            assertNotNull(preset.name() + " must carry an id", preset.id());
+        }
+        assertEquals(BellSchedules.STANDARD_ID, BellSchedules.standard().id());
+        assertEquals(BellSchedules.BC_ID, BellSchedules.bcBuilding().id());
+        assertEquals(BellSchedules.DE_ID, BellSchedules.deBuilding().id());
+    }
+
+    @Test
+    public void anExplicitDefaultReplacesTheLegacyFallback() {
+        List<BellSchedule> presets = BellSchedules.presets();
+        BellSchedule de = BellSchedules.byName(presets, BellSchedules.DE_NAME);
+
+        // Unmatched venue, default moved to D/E: it must now resolve there, which is
+        // the whole point of the setting.
+        assertEquals(BellSchedules.DE_NAME, BellSchedules.resolve(presets, "",
+                "\u4E1C\u64CD\u573A", de.id()).name());
+
+        // But every venue that does match still wins over it.
+        assertEquals(BellSchedules.STANDARD_NAME, BellSchedules.resolve(presets, "",
+                "\u6559\u5B66\u697C A203", de.id()).name());
+        assertEquals(BellSchedules.BC_NAME, BellSchedules.resolve(presets, "",
+                "\u6559\u5B66\u697C C203", de.id()).name());
+    }
+
+    @Test
+    public void theLegacyDefaultIsTheGroupTheOldFallbackUsed() {
+        // B/C is what an unmatched venue ran to before the setting existed.
+        BellSchedule bc = BellSchedules.byName(BellSchedules.presets(),
+                BellSchedules.BC_NAME);
+        assertEquals(bc.id(), BellSchedules.legacyDefaultId(BellSchedules.presets()));
+
+        // A list with no B/C group -- all renamed -- falls back to the first entry
+        // rather than to nothing.
+        List<BellSchedule> renamed = new ArrayList<>(Arrays.asList(
+                BellSchedules.standard().withId("one"),
+                BellSchedules.deBuilding().withId("two")));
+        assertEquals("one", BellSchedules.legacyDefaultId(renamed));
+        assertNull(BellSchedules.legacyDefaultId(new ArrayList<BellSchedule>()));
+    }
+
+    @Test
+    public void assigningMissingIdsIsDeterministicAndLeavesThePresentOnesAlone() {
+        List<BellSchedule> schedules = new ArrayList<>(Arrays.asList(
+                BellSchedules.standard(),
+                new BellSchedule(LAB, new int[] {500}, new int[] {540},
+                        Arrays.asList("\u5B9E\u9A8C\u697C")),
+                new BellSchedule(LAB + "2", new int[] {500}, new int[] {540},
+                        Arrays.asList("\u5B9E\u9A8C\u697C"))));
+
+        assertTrue("two entries were missing an id",
+                BellSchedules.assignMissingIds(schedules));
+        assertEquals("the one that had an id keeps it exactly",
+                BellSchedules.STANDARD_ID, schedules.get(0).id());
+        for (BellSchedule schedule : schedules) {
+            assertNotNull(schedule.id());
+        }
+        // Distinct, because two schedules addressed by one id could not both be
+        // pointed at.
+        assertTrue(!schedules.get(1).id().equals(schedules.get(2).id()));
+
+        // And a second pass changes nothing -- which is what stops a re-read from
+        // silently repointing the default.
+        List<String> ids = new ArrayList<>();
+        for (BellSchedule schedule : schedules) {
+            ids.add(schedule.id());
+        }
+        assertFalse("a list with ids needs no second pass",
+                BellSchedules.assignMissingIds(schedules));
+        for (int i = 0; i < schedules.size(); i++) {
+            assertEquals(ids.get(i), schedules.get(i).id());
+        }
+    }
+
+    @Test
+    public void defaultOfMatchesByIdAndNotByNameOrPosition() {
+        List<BellSchedule> presets = BellSchedules.presets();
+        BellSchedule bc = BellSchedules.byName(presets, BellSchedules.BC_NAME);
+
+        assertEquals(BellSchedules.BC_NAME,
+                BellSchedules.defaultOf(presets, bc.id()).name());
+        assertNull("a name is not an id",
+                BellSchedules.defaultOf(presets, BellSchedules.BC_NAME));
+        assertNull(BellSchedules.defaultOf(presets, null));
+        assertNull(BellSchedules.defaultOf(presets, "   "));
+        assertNull(BellSchedules.defaultOf(presets, "no-such-id"));
+        assertNull(BellSchedules.defaultOf(null, bc.id()));
+    }
+
+    @Test
+    public void copyingAScheduleCarriesItsId() {
+        BellSchedule original = BellSchedules.bcBuilding();
+
+        assertEquals(original.id(), original.renamed("\u65B0\u540D\u5B57").id());
+        assertEquals(original.id(),
+                original.withTimes(new int[] {500}, new int[] {540}).id());
+        assertEquals(original.id(), original.withDuration(50).id());
+        assertNull("withId(null) is the way to shed an id",
+                original.withId(null).id());
+        assertEquals("and withId gives it back",
+                "restored", original.withId(null).withId("restored").id());
     }
 }

@@ -133,15 +133,32 @@ public class BellScheduleEndTest {
     }
 
     @Test
-    public void aFortyFiveMinutePeriodIsStillRepresentable() {
-        // The length the editor's own fixtures use. Nothing about the suggestion may
-        // take it away: the field keeps whatever the user sets, and the check that
-        // rejects an inverted end still applies.
+    public void aFortyFiveMinutePeriodComesFromTheScheduleLength() {
+        // The length is a property of the schedule now, not of any one row: an end
+        // is its start plus this schedule's length, so the way to get a forty-five
+        // minute period is to set the length to forty-five. The end field no longer
+        // keeps a value typed into it -- that is the point of the feature, because a
+        // table whose rows each disagreed with the stated length had no single
+        // length at all.
+        BellScheduleEditor editor = editorWith(STARTS);
+        editor.setDurationText("45");
+        assertEquals("45", editor.durationText());
+        assertEquals(45, editor.build().endMinute(1) - editor.build().startMinute(1));
+        assertEquals("the suggestion follows the length", "09:00",
+                editor.suggestedEndText(1));
+    }
+
+    @Test
+    public void aTypedEndIsReplacedByTheComputedOne() {
+        // Typing into the end field used to be how a length was expressed. It is
+        // not any more: the field is an input no longer, and the computed end wins
+        // so that one schedule has one length rather than fifteen.
         BellScheduleEditor editor = editorWith(STARTS);
         editor.setEndText(1, "09:00");
-        assertEquals("09:00", editor.endText(1));
-        assertEquals(45, editor.build().endMinute(1) - editor.build().startMinute(1));
-        assertEquals("the suggestion is still forty", "08:55", editor.suggestedEndText(1));
+
+        assertEquals("08:15", editor.startText(1));
+        assertEquals(40, editor.build().endMinute(1) - editor.build().startMinute(1));
+        assertEquals("08:55", BellSchedule.label(editor.build().endMinute(1)));
     }
 
     @Test

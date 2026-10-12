@@ -12,11 +12,16 @@ public class Course implements Serializable {
      * persistence layer so the model stays the single owner of its own default;
      * {@link com.weihe.schedule.design.Palette#COURSE_COLORS} reuses it as the first selectable colour.
      *
-     * <p>A muted slate blue: the default has to be the quietest option in the
-     * picker, because most courses keep it and most cards are therefore drawn in
-     * it.</p>
+     * <p>A clear mid blue. It has to be the most common colour on screen --
+     * most courses keep the default -- so it is the one that carries the app's
+     * normal look, and it is the anchor the other eight are spread around.</p>
+     *
+     * <p>Not a stored-format concern: a course stores its own ARGB, so changing
+     * this literal does not repaint anything that already exists. It only
+     * decides what a course created from now on looks like, and what an import
+     * falls back to when a file names no colour.</p>
      */
-    public static final int DEFAULT_COLOR = 0xFF3C6A8E;
+    public static final int DEFAULT_COLOR = 0xFF2878B5;
 
     public long id;
     public String name = "";

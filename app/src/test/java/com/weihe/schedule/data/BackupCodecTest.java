@@ -476,13 +476,52 @@ public class BackupCodecTest {
     }
 
     @Test
-    public void aScheduleWithTheWrongNumberOfPeriodsIsRefused() {
+    public void aScheduleWithADifferentPeriodCountIsAccepted() {
+        // The number of periods is the length of the arrays, not a fixed fifteen.
+        // A table of twenty periods is a valid file now that a schedule can have
+        // more than the default, and refusing it would make this build unable to
+        // read a backup it had just written.
         Map<String, Object> root = validRoot();
         Map<String, Object> schedule = firstSchedule(root);
-        schedule.put("starts", ints(BellSchedule.PERIODS - 1));
-        schedule.put("ends", ints(BellSchedule.PERIODS - 1));
+        schedule.put("starts", ints(20));
+        schedule.put("ends", ints(20));
 
-        assertRefused(json(root), String.valueOf(BellSchedule.PERIODS));
+        BackupCodec.Result result = BackupCodec.parse(json(root));
+
+        assertTrue("a twenty-period table must load: " + result.problem(),
+                result.isOk());
+        assertEquals(20, result.document().schedules().get(0).periodCount());
+    }
+
+    @Test
+    public void aScheduleWithFewerPeriodsThanTheMinimumIsRefused() {
+        Map<String, Object> root = validRoot();
+        Map<String, Object> schedule = firstSchedule(root);
+        schedule.put("starts", ints(BellSchedule.MIN_PERIODS - 1));
+        schedule.put("ends", ints(BellSchedule.MIN_PERIODS - 1));
+
+        assertRefused(json(root), String.valueOf(BellSchedule.MIN_PERIODS));
+    }
+
+    @Test
+    public void aScheduleWithMorePeriodsThanTheCeilingIsRefused() {
+        // Past the ceiling the file is refused and says how many periods it held.
+        // The minutes stay inside the day so that the count, not a time, is what
+        // trips -- otherwise this would pass for the wrong reason.
+        Map<String, Object> root = validRoot();
+        Map<String, Object> schedule = firstSchedule(root);
+        // Every entry is a legal minute, so what the refusal is about is the count.
+        // Times are not required to ascend, only to be times.
+        List<Object> tooManyStarts = MiniJson.array();
+        List<Object> tooManyEnds = MiniJson.array();
+        for (int i = 0; i < ScheduleUtils.MAX_PERIODS + 1; i++) {
+            tooManyStarts.add(Integer.valueOf(60));
+            tooManyEnds.add(Integer.valueOf(120));
+        }
+        schedule.put("starts", tooManyStarts);
+        schedule.put("ends", tooManyEnds);
+
+        assertRefused(json(root), String.valueOf(ScheduleUtils.MAX_PERIODS));
     }
 
     @Test
@@ -525,8 +564,26 @@ public class BackupCodecTest {
 
     @Test
     public void aCourseWithAnOutOfRangePeriodIsRefused() {
+        // Period sixteen is inside a schedule now that the count is settable, so the
+        // value that is out of range has to be past the app's ceiling rather than
+        // past the default fifteen.
         assertCourseFieldRefused("startPeriod",
-                Integer.valueOf(ScheduleUtils.PERIODS_PER_DAY + 1));
+                Integer.valueOf(ScheduleUtils.MAX_PERIODS + 1));
+    }
+
+    @Test
+    public void aCourseOnAPeriodBeyondTheDefaultIsAccepted() {
+        // A course on period sixteen is an ordinary course once a schedule can hold
+        // sixteen periods; refusing it here would reject a file this build wrote.
+        Map<String, Object> root = validRoot();
+        Map<String, Object> course = firstCourse(root);
+        course.put("startPeriod", Integer.valueOf(BellSchedule.PERIODS + 1));
+        course.put("endPeriod", Integer.valueOf(BellSchedule.PERIODS + 1));
+
+        BackupCodec.Result result = BackupCodec.parse(json(root));
+
+        assertTrue("a course on period 16 must load: " + result.problem(),
+                result.isOk());
     }
 
     @Test

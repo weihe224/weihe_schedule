@@ -105,7 +105,27 @@ public final class CourseFormValidator {
      */
     public static List<Problem> check(String name, Integer startWeek,
             Integer endWeek, int startPeriod, int endPeriod) {
+        return check(name, startWeek, endWeek, startPeriod, endPeriod,
+                ScheduleUtils.PERIODS_PER_DAY);
+    }
+
+    /**
+     * Checks the whole form against the day length of the schedule that applies.
+     *
+     * <p>The ceiling is a parameter rather than {@link ScheduleUtils#PERIODS_PER_DAY}
+     * because the day is no longer one number for the whole app: a course in a venue
+     * whose day runs to twenty periods may legitimately sit on period 18, and the
+     * default fifteen would reject it. The caller passes the count of the schedule
+     * the course resolves to, which is the same schedule its times will be read
+     * from -- checking against any other one would let a course pass validation and
+     * then be shown at the wrong bell.</p>
+     *
+     * @param periodCount how many periods the applying schedule has
+     */
+    public static List<Problem> check(String name, Integer startWeek,
+            Integer endWeek, int startPeriod, int endPeriod, int periodCount) {
         List<Problem> problems = new ArrayList<>();
+        int ceiling = Math.max(1, periodCount);
 
         if (name == null || name.trim().isEmpty()) {
             problems.add(new Problem(Field.NAME, Reason.REQUIRED));
@@ -119,8 +139,8 @@ public final class CourseFormValidator {
             problems.add(new Problem(Field.START_WEEK, Reason.START_AFTER_END));
         }
 
-        if (startPeriod < 1 || startPeriod > ScheduleUtils.PERIODS_PER_DAY
-                || endPeriod < 1 || endPeriod > ScheduleUtils.PERIODS_PER_DAY) {
+        if (startPeriod < 1 || startPeriod > ceiling
+                || endPeriod < 1 || endPeriod > ceiling) {
             problems.add(new Problem(Field.PERIODS, Reason.OUT_OF_RANGE));
         } else if (startPeriod > endPeriod) {
             problems.add(new Problem(Field.PERIODS, Reason.INVERTED));

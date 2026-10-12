@@ -166,7 +166,7 @@ public class SemesterListActivity extends Activity {
         TextView range = UiKit.text(this,
                 ScheduleUtils.formatDate(semester.start()) + " - "
                         + ScheduleUtils.formatDate(semester.lastDay())
-                        + "  \u00B7  \u5171 " + ScheduleUtils.SEMESTER_WEEKS + " \u5468",
+                        + "  \u00B7  \u5171 " + semester.weeks() + " \u5468",
                 UiTokens.Type.LABEL_LARGE, Palette.ON_SURFACE_VARIANT,
                 Typeface.NORMAL);
         LinearLayout.LayoutParams rangeParams = new LinearLayout.LayoutParams(

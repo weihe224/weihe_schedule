@@ -15,6 +15,8 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
@@ -32,6 +34,7 @@ import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.design.Palette;
+import com.weihe.schedule.rule.CourseColorSync;
 import com.weihe.schedule.rule.CourseConflicts;
 import com.weihe.schedule.rule.CourseDraft;
 import com.weihe.schedule.rule.CourseFormValidator;
@@ -62,6 +65,11 @@ public class EditCourseActivity extends Activity {
     private Course course;
     private boolean existingCourse;    /** Whether this editor is making a copy rather than changing a course. */    private boolean copying;
     private int selectedColor;
+    /** The colour the stored course had when this editor opened. */
+    private int originalColor;
+
+    /** The answer to the colour question, or null while it has not been asked. */
+    private Boolean colorSyncChoice;
     /** The form's uncommitted values, when this is a rebuild rather than a first visit. */
     private CourseDraft draft;
 
@@ -75,6 +83,15 @@ public class EditCourseActivity extends Activity {
     private Spinner daySpinner;
     private Spinner startPeriodSpinner;
     private Spinner endPeriodSpinner;
+    /**
+     * True while the period spinners are being resized.
+     *
+     * <p>Swapping their adapters fires their selection callbacks, which run
+     * {@link #updateSchedulePreview()} and come straight back into
+     * {@link #syncPeriodSpinners}. The flag makes the inner call a no-op instead of
+     * a second resize in the middle of the first one.</p>
+     */
+    private boolean syncingPeriodSpinners;
     private UiKit.Choice parityChoice;
     private LinearLayout colorRow;
     private Spinner scheduleSpinner;
@@ -104,6 +121,10 @@ public class EditCourseActivity extends Activity {
             course = source == null ? new Course() : source;
         }
         existingCourse = !copying && course.id != 0L;
+
+        // Remembered before the form can touch it: whether the user changed the
+        // colour is the difference between this and what the picker holds now.
+        originalColor = course.color;
         if (course == null) {
             course = new Course();
         }
@@ -766,7 +787,86 @@ public class EditCourseActivity extends Activity {
                         + applied.timeRange(scratch.startPeriod, scratch.endPeriod)
                         + "\uFF0C\u56FA\u5B9A\u4F7F\u7528\u8BE5\u4F5C\u606F\u8868");
         scheduleChip.setText(chosen.isEmpty() ? "\u81EA\u52A8" : "\u6307\u5B9A");
+        syncPeriodSpinners(applied);
     }
+
+    /**
+     * Grows or shrinks the period spinners to the applying schedule's day.
+     *
+     * <p>The day is not one number for the whole app any more, so the list of
+     * periods on offer has to come from the schedule this course will actually ring
+     * to. Offering the default fifteen to a course in a twenty-period venue would
+     * make its eighteenth period unselectable; offering twenty to one on a
+     * fifteen-period table would let the user pick a period that then resolves to
+     * the wrong bell.</p>
+     *
+     * <p>The current selection is kept where it still fits, so resizing does not
+     * move a choice the user already made. Both spinners are resized together, and
+     * the end is pulled back up to the start when the shorter day no longer reaches
+     * it -- otherwise a shrinking day would leave the course inverted, which the
+     * form validator would then report as a problem the user did not cause.</p>
+     *
+     * <p>Re-entrancy is guarded rather than merely unlikely: {@link #resyncSpinner}
+     * swaps an adapter, which fires the period spinners' own selection callback,
+     * which comes back here through {@link #updateSchedulePreview}. Without the
+     * flag that is an adapter swap inside an adapter swap, and the second swap
+     * would re-enter before the first has restored its selection.</p>
+     */
+    private void syncPeriodSpinners(BellSchedule applied) {
+        if (syncingPeriodSpinners || applied == null
+                || startPeriodSpinner == null || endPeriodSpinner == null) {
+            return;
+        }
+        int count = Math.max(1, Math.min(ScheduleUtils.MAX_PERIODS,
+                applied.periodCount()));
+        if (startPeriodSpinner.getCount() == count
+                && endPeriodSpinner.getCount() == count) {
+            return;
+        }
+        syncingPeriodSpinners = true;
+        try {
+            resyncSpinner(startPeriodSpinner, count);
+            resyncSpinner(endPeriodSpinner, count);
+            int start = startPeriodSpinner.getSelectedItemPosition() + 1;
+            if (endPeriodSpinner.getSelectedItemPosition() + 1 < start) {
+                endPeriodSpinner.setSelection(start - 1);
+            }
+        } finally {
+            syncingPeriodSpinners = false;
+        }
+    }
+
+    /** Replaces a period spinner's entries with {@code 1..count}, keeping its choice. */
+    private void resyncSpinner(Spinner spinner, int count) {
+        int selected = spinner.getSelectedItemPosition();
+        if (spinner.getCount() == count) {
+            return;
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                Arrays.asList(ScheduleUtils.periodLabels(count)));
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        // setAdapter resets the selection, so the old index is restored explicitly.
+        // Clamped: a period that the shorter day no longer has lands on the last one
+        // it does, which is the nearest thing to it that still exists.
+        spinner.setAdapter(adapter);
+        spinner.setSelection(Math.max(0, Math.min(count - 1, selected)));
+    }
+
+    /**
+     * A colour swatch, and the space between two of them.
+     *
+     * <p>30dp is the size this strip has always used. The gap used to be 8dp, which
+     * put nine swatches at 334dp and pushed the last one off a 360dp screen; at 4dp
+     * the nine come to 302dp, inside the 355dp this card can use on a 411dp screen.
+     * The size is not shrunk to fit narrower screens -- the strip scrolls instead,
+     * because a swatch below 30dp stops being a comfortable target.</p>
+     */
+    private static final int SWATCH_DP = 30;
+    private static final int SWATCH_GAP_DP = 4;
+
+    /** The ring drawn on the chosen swatch, in dp. */
+    private static final int SWATCH_RING_DP = 2;
 
     private View createColorSection() {
         LinearLayout wrapper = new LinearLayout(this);
@@ -776,9 +876,20 @@ public class EditCourseActivity extends Activity {
                 Palette.SURFACE_CONTAINER, UiTokens.RADIUS_L, Palette.OUTLINE_VARIANT, 1));
         wrapper.addView(UiKit.text(this, "\u8BFE\u7A0B\u989C\u8272",
                 12, Palette.ON_SURFACE, true));
+        // The strip scrolls sideways rather than wrapping. Nine colours fit a normal
+        // screen in a single row; a tenth appears only for a course saved under an
+        // older palette, and one extra swatch is a reason to move the row, not to
+        // add a second one -- a grid turns a strip of colours into a block of them
+        // and stops reading as a palette.
+        HorizontalScrollView strip = new HorizontalScrollView(this);
+        strip.setHorizontalScrollBarEnabled(false);
+        strip.setClipToPadding(false);
         colorRow = new LinearLayout(this);
         colorRow.setOrientation(LinearLayout.HORIZONTAL);
-        wrapper.addView(colorRow);
+        strip.addView(colorRow, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        wrapper.addView(strip);
         renderColorSwatches();
         LinearLayout.LayoutParams wrapperParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -788,27 +899,56 @@ public class EditCourseActivity extends Activity {
         return wrapper;
     }
 
+    /**
+     * Draws the course colours as one row of swatches.
+     *
+     * <p>One row, not a grid. Values that belong together read as a strip; wrapping
+     * the same nine three by three reads as a block, which is a different thing on
+     * the page, a taller one, and no longer a palette.</p>
+     *
+     * <p>{@link Palette#swatchesFor(int)} may hand back a tenth colour: one the
+     * course was saved with that the palette no longer lists. It is kept, last, and
+     * the strip scrolls to reach it rather than dropping it or wrapping onto a
+     * second row -- see {@link #createColorSection()}.</p>
+     */
     private void renderColorSwatches() {
         if (colorRow == null) {
             return;
         }
         colorRow.removeAllViews();
-        for (int color : Palette.COURSE_COLORS) {
-            View swatch = new View(this);
-            boolean selected = color == selectedColor;
-            swatch.setBackground(UiKit.outline(this, color, 8,
-                    selected ? Palette.ON_SURFACE : Color.TRANSPARENT,
-                    selected ? 2 : 1));
-            swatch.setOnClickListener(view -> {
-                selectedColor = color;
-                renderColorSwatches();
-            });
+        int[] swatches = Palette.swatchesFor(selectedColor);
+        for (int i = 0; i < swatches.length; i++) {
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    dp(30), dp(30));
-            params.rightMargin = dp(8);
-            params.topMargin = dp(11);
-            colorRow.addView(swatch, params);
+                    dp(SWATCH_DP), dp(SWATCH_DP));
+            if (i < swatches.length - 1) {
+                params.rightMargin = dp(SWATCH_GAP_DP);
+            }
+            colorRow.addView(colorSwatch(swatches[i]), params);
         }
+    }
+
+    /**
+     * One swatch: the colour, rounded, with a ring when it is the chosen one.
+     *
+     * <p>The mark is a stroke on the swatch's own background rather than a separate
+     * view, so it cannot drift away from the colour it marks and never becomes a
+     * second thing to read. An unselected swatch carries a zero-width stroke, which
+     * keeps every swatch the same size and keeps the ring from reading as a colour
+     * of its own.</p>
+     */
+    private View colorSwatch(final int color) {
+        boolean selected = color == selectedColor;
+        View swatch = new View(this);
+        swatch.setContentDescription(selected
+                ? "\u5DF2\u9009\u989C\u8272" : "\u9009\u62E9\u989C\u8272");
+        swatch.setBackground(UiKit.outline(this, color, UiTokens.RADIUS_S,
+                selected ? Palette.ON_SURFACE : Color.TRANSPARENT,
+                selected ? SWATCH_RING_DP : 0));
+        swatch.setOnClickListener(view -> {
+            selectedColor = color;
+            renderColorSwatches();
+        });
+        return swatch;
     }
 
     private View createSaveBar() {
@@ -847,9 +987,18 @@ public class EditCourseActivity extends Activity {
         int startPeriod = startPeriodSpinner.getSelectedItemPosition() + 1;
         int endPeriod = endPeriodSpinner.getSelectedItemPosition() + 1;
 
+        // Checked against the day of the schedule that applies, not against the
+        // app's default fifteen: the spinner only offers what that schedule has, so
+        // this catches the one case the spinner cannot -- a table edited on another
+        // screen since this form was opened.
+        Course scratch = new Course();
+        scratch.scheduleName = scheduleValues[Math.max(0, Math.min(
+                scheduleValues.length - 1, scheduleSpinner.getSelectedItemPosition()))];
+        scratch.location = locationInput.getText().toString().trim();
+        int periodCount = repository.scheduleFor(scratch).periodCount();
         List<CourseFormValidator.Problem> problems = CourseFormValidator.check(
                 nameInput.getText().toString(), startWeek, endWeek,
-                startPeriod, endPeriod);
+                startPeriod, endPeriod, periodCount);
         if (report(problems)) {
             return;
         }
@@ -969,12 +1118,68 @@ public class EditCourseActivity extends Activity {
         return message.toString();
     }
 
+    /**
+     * Writes the form, after asking about the colour if there is anything to ask.
+     *
+     * <p>The question is put here rather than in the validation because this is the
+     * one point every save passes through -- the plain path and the one confirmed
+     * after a clash both arrive here -- so it is asked exactly once, and only when
+     * the colour was actually changed and other arrangements of the same course
+     * exist to change with it.</p>
+     */
     private void commitSave() {
+        if (colorSyncChoice == null && selectedColor != originalColor) {
+            List<Course> affected = CourseColorSync.sameCourseAs(
+                    repository.getCourses(), course);
+            if (!CourseColorSync.needingColor(affected, selectedColor).isEmpty()) {
+                showColorSyncChoice(affected);
+                return;
+            }
+        }
         repository.upsertCourse(course);
+        String note = "\u8BFE\u7A0B\u5DF2\u4FDD\u5B58";
+        if (Boolean.TRUE.equals(colorSyncChoice)) {
+            // One batch call for every other arrangement. Read after the save above,
+            // so the record being edited is already carrying the new colour and is
+            // not counted twice.
+            int changed = repository.recolorCourses(
+                    CourseColorSync.needingColor(
+                            CourseColorSync.sameCourseAs(repository.getCourses(), course),
+                            selectedColor),
+                    selectedColor);
+            note = "\u8BFE\u7A0B\u5DF2\u4FDD\u5B58\uFF0C\u5DF2\u540C\u6B65 " + changed
+                    + " \u6761\u540C\u540D\u5B89\u6392\u7684\u989C\u8272";
+        }
         setResult(RESULT_OK);
-        Toast.makeText(this, "\u8BFE\u7A0B\u5DF2\u4FDD\u5B58",
-                Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, note, Toast.LENGTH_SHORT).show();
         finish();
+    }
+
+    /**
+     * Asks whether the new colour covers every arrangement of this course.
+     *
+     * <p>The list is the point of the dialog: the name is identical on every line,
+     * so the times are what let the user recognise what they are about to change.
+     * Dismissing it cancels the save rather than answering for them -- writing
+     * either answer on a dismissal would store something they did not choose.</p>
+     */
+    private void showColorSyncChoice(List<Course> affected) {
+        int count = CourseColorSync.needingColor(affected, selectedColor).size();
+        String message = "\u672C\u5B66\u671F\u8FD8\u6709 " + count
+                + " \u6761\u540C\u540D\u5B89\u6392\uFF1A\n"
+                + CourseColorSync.describe(affected)
+                + "\n\n\u8981\u628A\u65B0\u989C\u8272\u4E00\u8D77\u6539\u6389\u5417\uFF1F"
+                + "\u53EA\u6539\u989C\u8272\uFF0C\u4E0A\u8BFE\u65F6\u95F4\u3001\u5730\u70B9"
+                + "\u3001\u6559\u5E08\u548C\u5468\u6B21\u90FD\u4E0D\u53D8\u3002";
+        UiKit.dialog(this, "\u540C\u6B65\u8BFE\u7A0B\u989C\u8272", message, null, null,
+                UiKit.Action.of("\u4EC5\u6539\u5F53\u524D\u8BFE\u6B21", () -> {
+                    colorSyncChoice = Boolean.FALSE;
+                    commitSave();
+                }),
+                UiKit.Action.of("\u540C\u6B65\u8FD9 " + count + " \u6761", () -> {
+                    colorSyncChoice = Boolean.TRUE;
+                    commitSave();
+                }));
     }
 
     private void confirmDelete() {

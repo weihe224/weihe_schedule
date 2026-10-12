@@ -123,12 +123,20 @@ public class ScheduleListActivity extends Activity {
     private void render() {
         List<BellSchedule> schedules = repository.getBellSchedules();
         List<Course> courses = repository.getCourses();
+        // Read after the schedules, so a store that has never chosen a default has
+        // adopted one by now and every row below can be compared against the real
+        // choice rather than against a guess.
+        String defaultId = repository.getDefaultScheduleId();
         list.removeAllViews();
+        // The interaction line stays as it was; the default is explained by the badge
+        // and the "设为默认" button on the rows themselves, where it can be acted on,
+        // rather than by a sentence up here that the user has to match to a row.
         summary.setText("\u5171 " + schedules.size()
                 + " \u4E2A\u4F5C\u606F\u8868 \u00B7 \u70B9\u51FB\u4FEE\u6539\uFF0C\u957F\u6309\u5220\u9664");
 
         for (BellSchedule schedule : schedules) {
-            list.addView(scheduleCard(schedule, usersOf(schedule, courses)));
+            list.addView(scheduleCard(schedule, usersOf(schedule, courses),
+                    schedule.id() != null && schedule.id().equals(defaultId)));
         }
     }
 
@@ -142,7 +150,8 @@ public class ScheduleListActivity extends Activity {
         return users;
     }
 
-    private View scheduleCard(final BellSchedule schedule, int users) {
+    private View scheduleCard(final BellSchedule schedule, int users,
+            boolean isDefault) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(15), dp(13), dp(15), dp(14));
@@ -156,10 +165,10 @@ public class ScheduleListActivity extends Activity {
         titleRow.addView(UiKit.text(this, schedule.name(), UiTokens.Type.TITLE_MEDIUM, Palette.ON_SURFACE, true),
                 new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        // "Default" is the schedule the app falls back to, not whichever happens to
-        // be stored first: the badge moved with the array before, so any future
-        // reordering would have re-labelled the wrong row.
-        if (BellSchedules.STANDARD_NAME.equals(schedule.name())) {
+        // "Default" is the schedule the app falls back to, so it is read from the
+        // stored choice and never from the array position -- reordering the list
+        // must not move the label. See CourseRepository#getDefaultScheduleId.
+        if (isDefault) {
             titleRow.addView(badge("\u9ED8\u8BA4", Palette.PRIMARY));
         }
         card.addView(titleRow);
@@ -195,7 +204,29 @@ public class ScheduleListActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         keywordParams.topMargin = dp(8);
-        card.addView(keywords, keywordParams);
+
+        if (isDefault) {
+            card.addView(keywords, keywordParams);
+        } else {
+            // The action sits on the keyword line rather than getting a row of its
+            // own, so the card does not grow taller just to offer it. It is a real
+            // button with its own click listener, so tapping it cannot fall through
+            // to the card's own click (which opens the editor) -- a child view that
+            // handles the touch is what consumes it, and the long-press listener
+            // stays on the card for delete.
+            LinearLayout footnote = new LinearLayout(this);
+            footnote.setOrientation(LinearLayout.HORIZONTAL);
+            footnote.setGravity(Gravity.CENTER_VERTICAL);
+            footnote.addView(keywords, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView makeDefault = UiKit.textButton(this,
+                    "\u8BBE\u4E3A\u9ED8\u8BA4", Palette.PRIMARY,
+                    view -> chooseDefault(schedule));
+            footnote.addView(makeDefault, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            card.addView(footnote, keywordParams);
+        }
 
         card.setOnClickListener(view -> openEditor(schedule.name()));
         card.setOnLongClickListener(view -> {
@@ -225,6 +256,30 @@ public class ScheduleListActivity extends Activity {
         startActivityForResult(intent, REQUEST_EDIT);
     }
 
+    /**
+     * Makes {@code schedule} the fallback, in one tap and with no confirmation.
+     *
+     * <p>A dialog would be more ceremony than the action deserves: choosing a
+     * default is reversible by choosing another one, and nothing else in the app is
+     * rewritten -- only which timetable an unmatched course is read against. The
+     * list is redrawn from the stored choice rather than edited in place, so the
+     * badge that comes off and the badge that goes on are both the result of what
+     * was actually saved, not of what the tap appeared to do.</p>
+     */
+    private void chooseDefault(final BellSchedule schedule) {
+        if (schedule.id() == null || !repository.setDefaultSchedule(schedule.id())) {
+            // Only reachable from a list that was rebuilt under the card, which the
+            // repository's own guard also refuses; say so rather than silently
+            // doing nothing.
+            Toast.makeText(this, "\u8BBE\u7F6E\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        render();
+        Toast.makeText(this, "\u5DF2\u8BBE\u4E3A\u9ED8\u8BA4\u4F5C\u606F\u8868",
+                Toast.LENGTH_SHORT).show();
+    }
+
     private void confirmDelete(final BellSchedule schedule) {
         // Checked here and in the repository: this tells the user why nothing
         // happened, the repository is what actually guarantees it.
@@ -240,6 +295,21 @@ public class ScheduleListActivity extends Activity {
                     + " \u95E8\u8BFE\u7A0B\u6307\u5B9A\u4E86\u5B83\uFF0C\u5220\u9664\u540E\u8FD9\u4E9B\u8BFE\u7A0B\u5C06\u6539\u4E3A"
                     + "\u6309\u4E0A\u8BFE\u5730\u70B9\u81EA\u52A8\u5339\u914D\u3002";
         }
+        // Deleting the default is the one case where a course that matches no venue
+        // changes which table it rings on, so the user is told what it moves to
+        // rather than finding out from a lesson time later. The successor is the
+        // same one the repository picks, read from the same list it will act on.
+        if (isDefault(schedule)) {
+            List<BellSchedule> schedules = repository.getBellSchedules();
+            for (BellSchedule candidate : schedules) {
+                if (candidate != schedule) {
+                    message += "\n\u5B83\u662F\u5F53\u524D\u7684\u9ED8\u8BA4\u4F5C\u606F"
+                            + "\u8868\uFF0C\u5730\u70B9\u5339\u914D\u4E0D\u5230\u65F6\u5C06"
+                            + "\u6539\u7528\u201C" + candidate.name() + "\u201D\u3002";
+                    break;
+                }
+            }
+        }
         UiKit.dialog(this, "\u5220\u9664\u4F5C\u606F\u8868", message, null, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.destructive("\u5220\u9664\u4F5C\u606F\u8868", () -> {
@@ -248,6 +318,12 @@ public class ScheduleListActivity extends Activity {
                         Toast.makeText(this, "\u4F5C\u606F\u8868\u5DF2\u5220\u9664", Toast.LENGTH_SHORT).show();
                     }
                 }));
+    }
+
+    /** Whether this exact row is the schedule unmatched courses fall back to. */
+    private boolean isDefault(BellSchedule schedule) {
+        String defaultId = repository.getDefaultScheduleId();
+        return schedule.id() != null && schedule.id().equals(defaultId);
     }
 
     private int dp(float value) {

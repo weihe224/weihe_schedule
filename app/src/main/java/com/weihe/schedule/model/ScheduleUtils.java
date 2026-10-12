@@ -8,7 +8,27 @@ import java.util.Locale;
 
 public final class ScheduleUtils {
     public static final int SEMESTER_WEEKS = 18;
+
+    /**
+     * Periods in a day for a schedule that has not chosen otherwise.
+     *
+     * <p>Fifteen is this school's day, and it is what every stored schedule
+     * without a length of its own already has. It is the default rather than the
+     * ceiling: {@link #MAX_PERIODS} is what stops a timetable growing without
+     * bound.</p>
+     */
     public static final int PERIODS_PER_DAY = 15;
+
+    /**
+     * Most periods a day may be set to.
+     *
+     * <p>A guard rail, not a curriculum. A school that runs a morning, an
+     * afternoon and an evening session can legitimately reach the low twenties;
+     * thirty leaves room for that while keeping the editor's list, the week grid
+     * and the period spinners to a size a person can still scroll. Anything past
+     * it is far more likely to be a typo than a timetable.</p>
+     */
+    public static final int MAX_PERIODS = 30;
 
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("M/d", Locale.CHINA);
@@ -132,8 +152,22 @@ public final class ScheduleUtils {
 
     /** Period labels ("1" .. "15"), used to build the period pickers. */
     public static String[] periodLabels() {
-        String[] labels = new String[PERIODS_PER_DAY];
-        for (int i = 0; i < PERIODS_PER_DAY; i++) {
+        return periodLabels(PERIODS_PER_DAY);
+    }
+
+    /**
+     * Period labels ("1" .. {@code count}), used to build the period pickers.
+     *
+     * <p>The count comes from the schedule that will actually apply, so a course
+     * in a venue whose day runs to twenty periods is offered twenty and not the
+     * school's default fifteen. Clamped to {@link #MAX_PERIODS}: a caller holding a
+     * damaged count gets a short list instead of a spinner with ten thousand
+     * entries.</p>
+     */
+    public static String[] periodLabels(int count) {
+        int periods = Math.max(1, Math.min(MAX_PERIODS, count));
+        String[] labels = new String[periods];
+        for (int i = 0; i < periods; i++) {
             labels[i] = String.valueOf(i + 1);
         }
         return labels;

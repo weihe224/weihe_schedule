@@ -126,7 +126,11 @@ public class ScheduleDraftStorageTest {
         BellScheduleEditor editor = new BellScheduleEditor(stored,
                 new ArrayList<String>());
         editor.setStartText(3, "10:05");
-        editor.setEndText(3, "10:50");
+        // The end follows the start now: 10:05 plus this schedule's own length. It is
+        // written too, so that the restore carries the row exactly as the user sees
+        // it, but what the save keeps is the pair the length produces -- not a hand
+        // typed end, which no longer exists as a concept.
+        editor.setEndText(3, editor.suggestedEndText(3));
 
         BellScheduleEditor rebuilt = new BellScheduleEditor(
                 BellSchedules.byName(repository.getBellSchedules(),
@@ -143,7 +147,8 @@ public class ScheduleDraftStorageTest {
                 BellSchedules.STANDARD_NAME);
         assertNotNull(saved);
         assertEquals(10 * 60 + 5, saved.startMinute(3));
-        assertEquals(10 * 60 + 50, saved.endMinute(3));
+        assertEquals("the end is the start plus the schedule's length",
+                10 * 60 + 5 + stored.durationMinutes(), saved.endMinute(3));
     }
 
     // ------------------------------------------------------------------ fixtures

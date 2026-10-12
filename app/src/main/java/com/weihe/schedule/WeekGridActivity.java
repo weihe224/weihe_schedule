@@ -120,7 +120,12 @@ public class WeekGridActivity extends Activity {
         // Computed cumulatively instead of as dp(period * height): rounding each
         // row separately would let the block edges drift away from the cell
         // lines further down the day.
-        int rows = ScheduleUtils.PERIODS_PER_DAY + 2;
+        //
+        // Sized from MAX_PERIODS, not from the default fifteen, because the offset
+        // table has to cover whatever lastPeriodInUse can return -- it is indexed by
+        // period, and a twenty-period day whose table stopped at seventeen would
+        // clamp its last three rows onto row seventeen.
+        int rows = ScheduleUtils.MAX_PERIODS + 2;
         rowTopPx = new int[rows];
         for (int period = 1; period < rows; period++) {
             rowTopPx[period] = UiKit.dp(this, (period - 1) * (float) ROW_HEIGHT_DP);
@@ -527,16 +532,22 @@ public class WeekGridActivity extends Activity {
      * once the two numbers agree.</p>
      */
     static int dayColumnRows(int periods) {
-        return Math.max(1, Math.min(ScheduleUtils.PERIODS_PER_DAY, periods));
+        return Math.max(1, Math.min(ScheduleUtils.MAX_PERIODS, periods));
     }
 
     /**
      * How many period rows this timetable needs.
      *
-     * <p>Derived from the courses on screen, not from
-     * {@link ScheduleUtils#PERIODS_PER_DAY}, so a school day of nine periods
-     * gets nine rows. The floor of {@link #MIN_ROWS} keeps an empty week looking
-     * like a timetable rather than a two-row stub.</p>
+     * <p>Derived from the courses on screen, so a school day of nine periods
+     * gets nine rows and a day of twenty gets twenty. The floor of
+     * {@link #MIN_ROWS} keeps an empty week looking like a timetable rather than a
+     * two-row stub.</p>
+     *
+     * <p>The ceiling is {@link ScheduleUtils#MAX_PERIODS} rather than the default
+     * fifteen: a course may legitimately sit on period 18 of a twenty-period table,
+     * and clamping the grid at fifteen used to leave that lesson with no row to be
+     * drawn in. The grid allocates its row offsets from the same constant, so the
+     * two stay in step.</p>
      *
      * <p>Package-private rather than private so {@code WeekGridRowsTest} can
      * exercise the real rule instead of a hand-written copy of it.</p>
@@ -547,7 +558,7 @@ public class WeekGridActivity extends Activity {
             last = Math.max(last, course.endPeriod);
         }
         return Math.max(MIN_ROWS,
-                Math.min(ScheduleUtils.PERIODS_PER_DAY, last));
+                Math.min(ScheduleUtils.MAX_PERIODS, last));
     }
 
     /**
@@ -592,7 +603,7 @@ public class WeekGridActivity extends Activity {
 
     /** Height of {@code periods} rows, in pixels, using the same grid as rowTop. */
     private int rowSpan(int periods) {
-        int last = Math.max(1, Math.min(ScheduleUtils.PERIODS_PER_DAY, periods));
+        int last = Math.max(1, Math.min(ScheduleUtils.MAX_PERIODS, periods));
         return UiKit.dp(this, last * (float) ROW_HEIGHT_DP);
     }
 

@@ -23,26 +23,86 @@ public final class BellSchedule {
     public static final int PERIODS = ScheduleUtils.PERIODS_PER_DAY;
 
     /**
-     * How long one period lasts.
+     * Fewest periods a schedule may have.
      *
-     * <p>Fixed, and the reason the editor no longer asks for an end time: a period
-     * that begins at 08:15 ends at 08:55, so the end is a consequence of the start
-     * rather than a second thing to keep in step with it. Breaks between periods are
-     * not part of this -- they live in the starts, which stay exactly as they are.</p>
+     * <p>One. A day with no periods cannot be stored -- the constructor refuses an
+     * empty array, and every reader from the week grid to the reminder planner
+     * assumes at least one row exists -- so the editor stops the user one step
+     * before that rather than letting them build something unsaveable.</p>
      */
-    public static final int PERIOD_MINUTES = 40;
+    public static final int MIN_PERIODS = 1;
 
     /**
-     * When a period beginning at {@code startMinutes} ends.
+     * The period length a schedule has when nobody has chosen one.
+     *
+     * <p>This school rings forty-minute periods, so it is both the value every
+     * stored schedule without a length reads back as and the value a new schedule
+     * starts at. It is a default now, not a rule: a venue may ring for fifty
+     * minutes, and {@link #durationMinutes()} on the schedule itself is what
+     * decides.</p>
+     */
+    public static final int DEFAULT_PERIOD_MINUTES = 40;
+
+    /**
+     * Kept as an alias for {@link #DEFAULT_PERIOD_MINUTES}.
+     *
+     * <p>Existing callers spell the constant this way and mean "the ordinary
+     * length". Renaming it everywhere would have churned a dozen call sites for no
+     * behavioural gain, and leaving both names pointing at one value is what keeps
+     * "there is only one default" true.</p>
+     */
+    public static final int PERIOD_MINUTES = DEFAULT_PERIOD_MINUTES;
+
+    /** Shortest period a schedule may be set to, in minutes. */
+    public static final int MIN_PERIOD_MINUTES = 1;
+
+    /**
+     * Longest period a schedule may be set to, in minutes.
+     *
+     * <p>Three hours. Long enough for a double lab block or a self-study session,
+     * short enough that a start plus a length cannot silently walk past the
+     * {@link #MAX_MINUTE} the evening periods are labelled within. The editor
+     * reports anything outside {@link #MIN_PERIOD_MINUTES}..this.</p>
+     */
+    public static final int MAX_PERIOD_MINUTES = 180;
+
+    /**
+     * When a period beginning at {@code startMinutes} ends, under
+     * {@code durationMinutes}.
      *
      * <p>Held to {@link #MAX_MINUTE}, the same bound {@link #label(int)} writes
      * within: a period starting at 23:40 ends at {@code 24:20} rather than
      * {@code 00:20}, because an evening period belongs to the day whose timetable it
      * is. That is the rule the app already reads stored times by, so the arithmetic
      * here does not introduce a second one.</p>
+     *
+     * <p>A {@code null} or nonsensical length falls back to
+     * {@link #DEFAULT_PERIOD_MINUTES} rather than throwing: this is on the read path
+     * of every screen that shows a time, and a damaged stored length has to degrade
+     * to the ordinary one instead of taking the timetable down with it. The editor
+     * is where an out-of-range length is refused, and it is asked before anything is
+     * stored.</p>
+     */
+    public static int endOf(int startMinutes, int durationMinutes) {
+        int length = durationMinutes >= MIN_PERIOD_MINUTES
+                && durationMinutes <= MAX_PERIOD_MINUTES
+                ? durationMinutes
+                : DEFAULT_PERIOD_MINUTES;
+        return Math.min(MAX_MINUTE, startMinutes + length);
+    }
+
+    /**
+     * When a period beginning at {@code startMinutes} ends under the default
+     * length.
+     *
+     * <p>Kept for the callers that genuinely have no schedule in hand -- the tests
+     * that pin forty minutes, and the editor's blank form before a length has been
+     * read. Anything showing the time of a real period must go through the
+     * schedule's own {@link #endOf(int, int)}, or the screen and the bell would
+     * disagree.</p>
      */
     public static int endOf(int startMinutes) {
-        return Math.min(MAX_MINUTE, startMinutes + PERIOD_MINUTES);
+        return endOf(startMinutes, DEFAULT_PERIOD_MINUTES);
     }
 
     /**
@@ -56,10 +116,21 @@ public final class BellSchedule {
      */
     public static final int MAX_MINUTE = 30 * 60 - 1;
 
+    private final String id;
     private final String name;
     private final int[] starts;
     private final int[] ends;
     private final List<String> locationKeywords;
+    /**
+     * How long one period of this table lasts.
+     *
+     * <p>Per schedule, not global. Two venues in the same school can ring for
+     * different lengths -- the labs already ring on a different clock in this app --
+     * and making the length one shared number was the thing that made the setting
+     * impossible to express. It travels with the table it belongs to, so editing
+     * one schedule can never move another's ends.</p>
+     */
+    private final int durationMinutes;
 
     /**
      * @param starts start minute of each period, index 0 being period 1
@@ -69,6 +140,37 @@ public final class BellSchedule {
      */
     public BellSchedule(String name, int[] starts, int[] ends,
             List<String> locationKeywords) {
+        this(null, name, starts, ends, locationKeywords, DEFAULT_PERIOD_MINUTES);
+    }
+
+    /**
+     * @param durationMinutes how long one period lasts, clamped to
+     *        {@link #MIN_PERIOD_MINUTES}..{@link #MAX_PERIOD_MINUTES}
+     */
+    public BellSchedule(String name, int[] starts, int[] ends,
+            List<String> locationKeywords, int durationMinutes) {
+        this(null, name, starts, ends, locationKeywords, durationMinutes);
+    }
+
+    /**
+     * The full constructor, carrying the stable {@code id}.
+     *
+     * <p>The id is what "the default schedule" is remembered by. A name cannot be
+     * it: the editor lets a schedule be renamed, and remembering the default by
+     * name would silently move the default to a different table the moment
+     * somebody typed a new one. The id therefore changes as little as possible --
+     * a rename and a re-time both carry it across.</p>
+     *
+     * <p>A {@code null} or blank id is stored as {@code null} rather than invented
+     * here, because there is nothing to invent it from: filling it in belongs where
+     * the other schedules are in hand to keep it unique, which is
+     * {@code BellSchedules}. A schedule with no id still works everywhere; it
+     * simply cannot be named as the default until one is assigned.</p>
+     *
+     * @param id stable identity, or {@code null} when this schedule has none yet
+     */
+    public BellSchedule(String id, String name, int[] starts, int[] ends,
+            List<String> locationKeywords, int durationMinutes) {
         if (starts == null || ends == null || starts.length != ends.length) {
             throw new IllegalArgumentException(
                     "starts and ends must be non-null and equally long");
@@ -76,12 +178,58 @@ public final class BellSchedule {
         if (starts.length == 0) {
             throw new IllegalArgumentException("a schedule needs at least one period");
         }
+        this.id = id == null || id.trim().isEmpty() ? null : id.trim();
         this.name = name == null ? "" : name;
         this.starts = starts.clone();
         this.ends = ends.clone();
         this.locationKeywords = locationKeywords == null
                 ? Collections.<String>emptyList()
                 : new ArrayList<>(locationKeywords);
+        // Clamped rather than rejected, for the same reason endOf degrades: this
+        // constructor is on the path a stored payload is rebuilt through, and a
+        // repaired schedule the user can still open beats an exception on launch.
+        this.durationMinutes = durationMinutes < MIN_PERIOD_MINUTES
+                        || durationMinutes > MAX_PERIOD_MINUTES
+                ? DEFAULT_PERIOD_MINUTES
+                : durationMinutes;
+    }
+
+    /**
+     * Stable identity of this schedule, or {@code null} when it has none yet.
+     *
+     * <p>Never shown. It is the default-schedule pointer's target and nothing
+     * else.</p>
+     */
+    public String id() {
+        return id;
+    }
+
+    /**
+     * The same schedule under a new id.
+     *
+     * <p>Only {@code BellSchedules} assigns ids, when it finds a stored table
+     * without one; the editor has no reason to change an id and no way to.</p>
+     */
+    public BellSchedule withId(String newId) {
+        return new BellSchedule(newId, name, starts, ends, locationKeywords,
+                durationMinutes);
+    }
+
+    /** How long one period of this table lasts, in minutes. Never out of range. */
+    public int durationMinutes() {
+        return durationMinutes;
+    }
+
+    /**
+     * The end of {@code period} as this schedule's own length computes it.
+     *
+     * <p>Read off {@code starts} rather than off the stored {@code ends}, so a
+     * length the user has just changed is reflected before anything is saved. The
+     * stored ends are written from this same call, which is what keeps the two from
+     * drifting apart.</p>
+     */
+    public int computedEndMinute(int period) {
+        return endOf(startMinute(period), durationMinutes);
     }
 
     public String name() {
@@ -228,18 +376,41 @@ public final class BellSchedule {
         return label(startMinute(from)) + " - " + label(endMinute(to));
     }
 
+    /**
+     * The same schedule under a new name.
+     *
+     * <p>The id travels across, which is what makes a rename safe for the default
+     * pointer: the user may rename the schedule they picked as the default without
+     * that choice being lost.</p>
+     */
     public BellSchedule renamed(String newName) {
-        return new BellSchedule(newName, starts, ends, locationKeywords);
+        return new BellSchedule(id, newName, starts, ends, locationKeywords,
+                durationMinutes);
     }
 
-    /** The same table with new times. */
+    /**
+     * The same table with new times.
+     *
+     * <p>The length is carried over, not reset. A caller handing in times is
+     * usually answering "these are the starts now", and it would be a surprise for
+     * that to quietly put the venue back on forty minutes. The id travels too: a
+     * schedule that is still the same schedule after a re-time is still the one the
+     * user picked as the default.</p>
+     */
     public BellSchedule withTimes(int[] newStarts, int[] newEnds) {
-        return new BellSchedule(name, newStarts, newEnds, locationKeywords);
+        return new BellSchedule(id, name, newStarts, newEnds, locationKeywords,
+                durationMinutes);
+    }
+
+    /** The same table with a different period length. */
+    public BellSchedule withDuration(int newDurationMinutes) {
+        return new BellSchedule(id, name, starts, ends, locationKeywords,
+                newDurationMinutes);
     }
 
     /** The same table with different venue keywords. */
     public BellSchedule withLocationKeywords(List<String> keywords) {
-        return new BellSchedule(name, starts, ends, keywords);
+        return new BellSchedule(id, name, starts, ends, keywords, durationMinutes);
     }
 
     private int clampPeriod(int period) {
@@ -325,6 +496,9 @@ public final class BellSchedule {
 
     @Override
     public String toString() {
-        return name + "(" + timeRange(1, 1) + ", " + periodCount() + " periods)";
+        return name + "(" + timeRange(1, 1) + ", " + periodCount() + " periods"
+                + (durationMinutes == DEFAULT_PERIOD_MINUTES
+                        ? "" : ", " + durationMinutes + " min")
+                + ")";
     }
 }

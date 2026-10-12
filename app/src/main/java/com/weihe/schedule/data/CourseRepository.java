@@ -24,6 +24,21 @@ public class CourseRepository {
     private static final String KEY_START = "semester_start";
     private static final String KEY_COURSES_BACKUP = "courses_backup";
     private static final String KEY_BELL_SCHEDULES = "bell_schedules";
+    /**
+     * Id of the schedule a course with no venue match falls back to.
+     *
+     * <p>A sibling key rather than a field inside {@code bell_schedules}: the
+     * schedules payload is a bare array on disk, and turning it into an object to
+     * carry one pointer would change the shape every reader already parses. A
+     * store written before this key existed simply has nothing there, which is
+     * exactly what {@link #getDefaultScheduleId} treats as "nobody has chosen
+     * yet".</p>
+     *
+     * <p>Holds an <em>id</em>, not a name or an index -- see
+     * {@link BellSchedule#id()}. A name would break on rename and an index on
+     * reorder, and both of those are things the user is invited to do.</p>
+     */
+    private static final String KEY_DEFAULT_SCHEDULE = "default_schedule_id";
     private static final String KEY_SEMESTERS = "semesters";
     private static final String KEY_ACTIVE_SEMESTER = "active_semester";
 
@@ -577,7 +592,8 @@ public class CourseRepository {
     private void applyTimeRange(Course course) {
         List<BellSchedule> schedules = getBellSchedules();
         course.timeRange = BellSchedules.resolve(schedules, course.scheduleName,
-                course.location).timeRange(course.startPeriod, course.endPeriod);
+                course.location, getDefaultScheduleId())
+                .timeRange(course.startPeriod, course.endPeriod);
     }
 
     /** Keeps an unreadable payload around so it can still be recovered by hand. */
@@ -649,6 +665,41 @@ public class CourseRepository {
         saveCourses(courses);
     }
 
+    /**
+     * Repaints several courses in one write.
+     *
+     * <p>One call, not one per course. {@link #upsertCourse} stores the whole list
+     * every time, so a loop over N arrangements would put the timetable through N
+     * writes and could stop partway, leaving some repainted and some not. This reads
+     * the list once, changes nothing but the colour, and writes once.</p>
+     *
+     * <p>Every other field of every record is left alone -- the ids handed over are
+     * only matched, never rebuilt, so no course is ever deleted and recreated and no
+     * id ever changes.</p>
+     *
+     * @param ids   courses to repaint; ids not present are ignored
+     * @param color the course colour to store, the same ARGB a course holds
+     * @return how many courses actually changed colour
+     */
+    public int recolorCourses(List<Long> ids, int color) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        List<Course> courses = getCourses();
+        int changed = 0;
+        for (Course course : courses) {
+            if (course != null && ids.contains(Long.valueOf(course.id))
+                    && course.color != color) {
+                course.color = color;
+                changed++;
+            }
+        }
+        if (changed > 0) {
+            saveCourses(courses);
+        }
+        return changed;
+    }
+
     public void deleteCourse(long id) {
         List<Course> courses = getCourses();
         CourseList.remove(courses, id);
@@ -697,6 +748,121 @@ public class CourseRepository {
         // reached this process's in-memory map, so the snapshot it holds is no
         // longer something to hand out.
         cachedCourses = null;
+        return written;
+    }
+
+    /**
+     * Imports a timetable and sets the target term's week-1 date in one commit.
+     *
+     * <p>The import flow no longer asks which semester week the file's week 1
+     * belongs to: week 1 of the file is week 1 of the term, and the only thing
+     * left to place is the calendar date that week 1 starts on. That date is the
+     * term's own {@code semester_start:<id>} -- the same key every other screen
+     * reads week numbers from -- so choosing it here and leaving it out of the
+     * write would let the preview disagree with the timetable the moment the
+     * import landed.</p>
+     *
+     * <p>Both the courses and the date go into <em>one</em> editor: an editor
+     * applies all-or-nothing, so a refused write cannot save the date while the
+     * courses fail, which would move the whole term's dates for nothing. The
+     * pre-import course payload is kept in the same commit, so the undo that
+     * {@link #restorePreviousCourses} performs covers the timetable; the date is
+     * deliberately left where the user put it, because the undo restores the
+     * courses it replaced rather than rewinding the calendar.</p>
+     *
+     * <p>{@code target} names the term to write, so an import aimed at a term
+     * other than the active one cannot edit the active one by accident. The
+     * in-memory caches are dropped either way: a refused commit may still have
+     * reached this process's map.</p>
+     *
+     * @param imported courses as read from the file, weeks left untouched
+     * @param target   the term the courses belong to and whose week 1 moves
+     * @param weekOne  the Monday week 1 of {@code target} starts on; never null
+     * @return {@code true} when the store accepted the write. As with
+     *         {@link #replaceCourses}, a refusal is not proof that nothing
+     *         changed, so callers should re-read rather than assume either state
+     */
+    public boolean replaceCoursesAt(List<Course> imported, Semester target,
+            LocalDate weekOne) {
+        return replaceCoursesAt(imported, target, weekOne,
+                target == null ? Semester.MAX_WEEKS : target.weeks());
+    }
+
+    /**
+     * Imports a timetable and sets the target term's week-1 date and length in one
+     * commit.
+     *
+     * <p>Same contract as {@link #replaceCoursesAt(List, Semester, LocalDate)},
+     * with the term's week count as one more value in the same editor. The count
+     * belongs here rather than in a second write because it decides the term's last
+     * day: a committed length with uncommitted courses would give a term a range
+     * that does not cover the timetable it just received, which is exactly the
+     * inconsistency the single-editor rule exists to prevent.</p>
+     *
+     * <p>The count is clamped to the range a term may have, so a caller passing a
+     * typed value cannot store a term no screen can render. Courses are still
+     * written with the weeks the file gave them -- a length setting never rewrites
+     * a course's weeks, and a course reaching past the new length is a decision for
+     * the screen to warn about, not for this write to trim.</p>
+     *
+     * @param weeks how many weeks {@code target} runs, clamped on the way in
+     */
+    public boolean replaceCoursesAt(List<Course> imported, Semester target,
+            LocalDate weekOne, int weeks) {
+        if (target == null || weekOne == null) {
+            return false;
+        }
+        long targetId = target.id();
+        LocalDate monday = ScheduleUtils.mondayOf(weekOne);
+        int safeWeeks = Semester.clampWeeks(weeks);
+        List<Course> courses = new ArrayList<>();
+        long preferred = System.currentTimeMillis();
+        for (Course source : imported) {
+            Course course = source.copy();
+            if (course.id == 0L) {
+                course.id = CourseList.nextId(courses, preferred++);
+            }
+            // An imported row carries no schedule choice: the file only has
+            // period numbers, so the choice is made later, from the venue.
+            course.scheduleName = "";
+            courses.add(course);
+        }
+        // The term record keeps its start date and its length as well as the flat
+        // key, so the list screen, the label, the range and the week maths cannot
+        // drift apart. Written through the same editor as the courses, because a
+        // committed date or length with uncommitted courses is the inconsistency
+        // this method exists to avoid. Sorted the way saveSemesters sorts, so the
+        // next reader sees the same order it would have written.
+        List<Semester> semesters = getSemesters();
+        List<Semester> updated = new ArrayList<>(semesters.size());
+        boolean found = false;
+        for (Semester semester : semesters) {
+            if (semester.id() == targetId) {
+                updated.add(semester.startingOn(monday).withWeeks(safeWeeks));
+                found = true;
+            } else {
+                updated.add(semester);
+            }
+        }
+        if (!found) {
+            // A target that is not a stored term has nowhere to move week 1 to.
+            // Writing its courses anyway would leave a term's timetable filed
+            // under an id no screen can reach, so the whole import is refused.
+            return false;
+        }
+        sortByStart(updated);
+        SharedPreferences.Editor editor = preferences.edit()
+                .putString(coursesKeyFor(targetId), coursesJsonOf(courses))
+                .putString(previousCoursesKeyFor(targetId),
+                        previousEnvelope(
+                                preferences.getString(coursesKeyFor(targetId), null)))
+                .putString(startKeyFor(targetId), monday.toString())
+                .putString(KEY_SEMESTERS, SemesterJson.write(updated));
+        boolean written = editor.commit();
+        // Read back through reload(): the semester list, the target term's keys
+        // and the course cache all changed, and a partial drop would leave one of
+        // them serving the pre-import state.
+        reload();
         return written;
     }
 
@@ -811,6 +977,13 @@ public class CourseRepository {
      * to edit rather than an empty tuple. A store still holding an earlier
      * build's placeholder times is moved onto the real ones once, see
      * {@link #replacePlaceholderSchedules}.</p>
+     *
+     * <p>Every schedule that comes back has an id. A store written before ids
+     * existed gets them invented on the first read
+     * ({@link BellSchedules#assignMissingIds}) and written back, because the
+     * default pointer names a schedule by id and an install whose tables have none
+     * could never have one chosen. The same read adopts the legacy default the
+     * first time it runs, see {@link #getDefaultScheduleId}.</p>
      */
     public List<BellSchedule> getBellSchedules() {
         List<BellSchedule> snapshot = cachedSchedules;
@@ -822,14 +995,116 @@ public class CourseRepository {
         if (schedules.isEmpty()) {
             schedules = BellSchedules.copyOf(BellSchedules.presets());
             saveBellSchedules(schedules);
+            adoptLegacyDefault(schedules);
             return schedules;
         }
-        if (replacePlaceholderSchedules(schedules)) {
+        boolean changed = replacePlaceholderSchedules(schedules);
+        // Inventing ids is a write, so it happens here rather than on the way out:
+        // the pointer has to survive a restart, and it cannot survive on a value
+        // that only ever existed in this process.
+        changed |= BellSchedules.assignMissingIds(schedules);
+        if (changed) {
             saveBellSchedules(schedules);
+            adoptLegacyDefault(schedules);
             return schedules;
         }
         cachedSchedules = schedules;
+        // Separately from the ids: an install that already had ids still predates
+        // the choice, and reading a store must not be what decides to write.
+        adoptLegacyDefaultIfUnset(schedules);
         return schedules;
+    }
+
+    /**
+     * Gives a store that has never chosen a default the one it used to fall back
+     * to, and writes the choice down.
+     *
+     * <p>Called after the list is stored, so the ids being pointed at are the ones
+     * on disk. Without this an upgrade would change what an unmatched course
+     * resolves to -- see {@link BellSchedules#legacyDefaultId} -- which is the one
+     * thing this feature must not do.</p>
+     */
+    private void adoptLegacyDefault(List<BellSchedule> schedules) {
+        String chosen = BellSchedules.legacyDefaultId(schedules);
+        if (chosen != null) {
+            preferences.edit().putString(KEY_DEFAULT_SCHEDULE, chosen).apply();
+        }
+    }
+
+    /**
+     * {@link #adoptLegacyDefault} for a list that was not just written.
+     *
+     * <p>Split out because the write path must not be reachable from an ordinary
+     * read: a store whose schedules all already carry ids is not otherwise
+     * touched, and having "read the schedules" mutate the store was a surprise
+     * worth avoiding. Here the ids are already on disk, so only the pointer key is
+     * written, and only once.</p>
+     */
+    private void adoptLegacyDefaultIfUnset(List<BellSchedule> schedules) {
+        if (defaultScheduleIdRaw() != null) {
+            return;
+        }
+        adoptLegacyDefault(schedules);
+    }
+
+    /** The stored default id, or null when nothing was ever written. */
+    private String defaultScheduleIdRaw() {
+        String raw = preferences.getString(KEY_DEFAULT_SCHEDULE, null);
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
+     * Id of the schedule a course with no venue match falls back to, or null.
+     *
+     * <p>Never null in practice on an install that has schedules: the first read
+     * adopts the group an unmatched venue used to fall into. Null is returned only
+     * when there is nothing at all to name, which is the empty-store case the rest
+     * of the class already treats as "a fresh install".</p>
+     */
+    public String getDefaultScheduleId() {
+        // Reading the schedules first is what gives a legacy store its ids and its
+        // adopted default; asking for the pointer alone would answer null forever.
+        List<BellSchedule> schedules = getBellSchedules();
+        String stored = defaultScheduleIdRaw();
+        if (stored != null && BellSchedules.defaultOf(schedules, stored) != null) {
+            return stored;
+        }
+        return null;
+    }
+
+    /**
+     * The schedule a course with no venue match falls back to, or null.
+     *
+     * <p>Resolved against the stored list, so a pointer left dangling -- a restore
+     * that replaced the schedules, a store edited outside the app -- answers null
+     * instead of naming something that is not there.</p>
+     */
+    public BellSchedule getDefaultSchedule() {
+        return BellSchedules.defaultOf(getBellSchedules(), getDefaultScheduleId());
+    }
+
+    /**
+     * Makes {@code id} the default, writing nothing when it names no schedule.
+     *
+     * <p>Validated against the stored list rather than trusted: the only caller
+     * hands in an id taken from a card the user tapped, and a store that changed
+     * under it would otherwise end up pointing at a deleted table. Refusing is
+     * reported by the return value, which is what lets the screen say so instead of
+     * claiming a success that did not happen.</p>
+     *
+     * @return true when the choice was stored
+     */
+    public boolean setDefaultSchedule(String id) {
+        BellSchedule chosen = BellSchedules.defaultOf(getBellSchedules(), id);
+        if (chosen == null) {
+            return false;
+        }
+        preferences.edit().putString(KEY_DEFAULT_SCHEDULE, chosen.id()).apply();
+        return true;
     }
 
     /**
@@ -934,9 +1209,19 @@ public class CourseRepository {
         return true;
     }
 
-    /** Replaces every stored bell schedule. */
+    /**
+     * Replaces every stored bell schedule.
+     *
+     * <p>Ids are filled in here as the last line of defence. Every other writer
+     * already goes through a list that has been read back with ids, but a caller
+     * assembling a fresh list -- a restore, an import -- can hand in schedules that
+     * have none, and writing those would leave the default pointer unable to name
+     * anything. Doing it inside the single write path means no caller has to
+     * remember.</p>
+     */
     public void saveBellSchedules(List<BellSchedule> schedules) {
         List<BellSchedule> stored = BellSchedules.copyOf(schedules);
+        BellSchedules.assignMissingIds(stored);
         preferences.edit()
                 .putString(KEY_BELL_SCHEDULES, BellScheduleJson.write(stored))
                 .apply();
@@ -957,6 +1242,13 @@ public class CourseRepository {
      * back to venue resolution, and can end up on a different clock because
      * somebody renamed a timetable -- see {@link #renameSchedule}.</p>
      *
+     * <p>The id of the schedule being replaced is kept, whatever id the incoming
+     * object carries. The editor builds its result from the form and has no way to
+     * reproduce an id, so without this a plain edit-and-save would hand the table a
+     * brand new identity -- and the default pointer, which names the old one, would
+     * stop matching. A rename would then silently drop the user's default choice,
+     * which is exactly what the id exists to prevent.</p>
+     *
      * @param originalName the name the editor opened with, or {@code null}/empty
      *                     when this is a new schedule
      * @return the schedule that was stored
@@ -967,17 +1259,26 @@ public class CourseRepository {
         }
         List<BellSchedule> schedules = BellSchedules.copyOf(getBellSchedules());
         int at = indexOfSchedule(schedules, originalName);
+        BellSchedule toStore = schedule;
         if (at >= 0) {
-            schedules.set(at, schedule);
+            String keptId = schedules.get(at).id();
+            if (keptId != null) {
+                toStore = schedule.withId(keptId);
+            }
+            schedules.set(at, toStore);
         } else {
-            schedules.add(schedule);
+            schedules.add(toStore);
         }
         saveBellSchedules(schedules);
         if (originalName != null && !originalName.trim().isEmpty()
-                && !originalName.trim().equals(schedule.name())) {
-            renameSchedule(originalName, schedule.name());
+                && !originalName.trim().equals(toStore.name())) {
+            renameSchedule(originalName, toStore.name());
         }
-        return schedule;
+        // Read back rather than return what was handed in: the write path is what
+        // assigns an id to a brand new schedule, and the caller needs the stored
+        // one to offer "set as default" on it.
+        BellSchedule stored = BellSchedules.byName(getBellSchedules(), toStore.name());
+        return stored != null ? stored : toStore;
     }
 
     /**
@@ -988,6 +1289,13 @@ public class CourseRepository {
      * {@link BellSchedules#presets()} back, so deleting the final schedule would
      * not delete anything -- it would look like the delete silently undid itself
      * on the next screen that reads.</p>
+     *
+     * <p>When the deleted schedule was the default, the choice moves to the first
+     * one left rather than being left pointing at a table that is gone. Letting it
+     * dangle would be the worse failure: the pointer would still name a schedule,
+     * so nothing would look wrong, while every venue-less course quietly resolved
+     * through the standard fallback instead of the fallback the store says it
+     * has.</p>
      *
      * @param name the schedule to remove
      * @return false when no schedule carries that name, or it is the only one
@@ -1001,8 +1309,20 @@ public class CourseRepository {
         if (at < 0) {
             return false;
         }
+        BellSchedule removed = schedules.get(at);
+        boolean wasDefault = removed.id() != null
+                && removed.id().equals(getDefaultScheduleId());
         schedules.remove(at);
         saveBellSchedules(schedules);
+        if (wasDefault) {
+            BellSchedule replacement = BellSchedules.defaultOf(schedules,
+                    schedules.get(0).id());
+            if (replacement != null) {
+                preferences.edit()
+                        .putString(KEY_DEFAULT_SCHEDULE, replacement.id())
+                        .apply();
+            }
+        }
         clearScheduleReferences(name);
         return true;
     }
@@ -1025,28 +1345,87 @@ public class CourseRepository {
     }
 
     /**
+     * The courses that would be orphaned if {@code scheduleName} lost every
+     * period from {@code fromPeriod} upwards.
+     *
+     * <p>Asked before the editor removes the last period of a table. A course
+     * stores its periods as numbers and resolves its clock through whichever
+     * schedule applies to it, so a course sitting on period 15 of a table trimmed
+     * to 14 would not fail loudly: {@link BellSchedule#startMinute(int)} clamps into
+     * range, and the planner refuses a period the table does not reach. The result
+     * would be a lesson that silently keeps its number while its time quietly
+     * becomes the one above it. Telling the user which courses those are, before
+     * anything is written, is the only point at which that is still cheap to
+     * avoid.</p>
+     *
+     * <p>Matching follows {@link BellSchedules#resolve}, the same resolver every
+     * other screen uses: a course is affected when the table being trimmed is the
+     * one that actually applies to it, whether because the course named it or
+     * because its venue picked it. Testing against the named table alone would miss
+     * every course that got there by venue -- which is most of them.</p>
+     *
+     * @param scheduleName the table about to lose its tail
+     * @param fromPeriod   the first period that would no longer exist
+     * @return the affected courses, in stored order; empty when none are
+     */
+    public List<Course> coursesUsingPeriodsFrom(String scheduleName,
+            int fromPeriod) {
+        List<Course> affected = new ArrayList<>();
+        if (fromPeriod < 1) {
+            return affected;
+        }
+        List<BellSchedule> schedules = getBellSchedules();
+        BellSchedule trimmed = BellSchedules.byName(schedules, scheduleName);
+        if (trimmed == null) {
+            return affected;
+        }
+        for (Course course : getCourses()) {
+            if (course.endPeriod < fromPeriod) {
+                continue;
+            }
+            BellSchedule applied = BellSchedules.resolve(schedules,
+                    course.scheduleName, course.location, getDefaultScheduleId());
+            // resolve never returns null, but an install with no stored tables at
+            // all falls back to the standard one -- which is a different object, so
+            // the name is what decides, not the reference.
+            if (applied != null && applied.name().equals(trimmed.name())) {
+                affected.add(course);
+            }
+        }
+        return affected;
+    }
+
+    /**
      * The displayed time span of a course, according to the schedule that
      * applies to it.
      *
      * <p>Resolution order is {@link BellSchedules#resolve}: the course's own
-     * choice, then its venue, then the standard schedule.</p>
+     * choice, then its venue, then the default the user picked.</p>
      */
     public String timeRangeOf(Course course) {
         if (course == null) {
             return "";
         }
         BellSchedule schedule = BellSchedules.resolve(getBellSchedules(),
-                course.scheduleName, course.location);
+                course.scheduleName, course.location, getDefaultScheduleId());
         return schedule.timeRange(course.startPeriod, course.endPeriod);
     }
 
-    /** The schedule that applies to a course, never null. */
+    /**
+     * The schedule that applies to a course, never null.
+     *
+     * <p>Every screen reaches a course's clock through this, so the default the
+     * user chose is honoured in exactly one place. The alternative -- each caller
+     * resolving for itself -- is what let the home screen and the reminder planner
+     * disagree about what time a venue-less course starts.</p>
+     */
     public BellSchedule scheduleFor(Course course) {
         if (course == null) {
             return BellSchedules.standard();
         }
-        return BellSchedules.resolve(getBellSchedules(), course.scheduleName,
-                course.location);
+        List<BellSchedule> schedules = getBellSchedules();
+        return BellSchedules.resolve(schedules, course.scheduleName,
+                course.location, getDefaultScheduleId());
     }
 
     /**
@@ -1337,6 +1716,21 @@ public class CourseRepository {
         Map<String, Object> snapshot = captureRestoreScope();
         String expectation = expectationOf(document);
 
+        // The schedules are written and pointed at in the same commit, so the ids
+        // have to exist before either happens. A file that carries them keeps them;
+        // one written before ids existed has them invented here, by exactly the
+        // routine the ordinary read uses, or the pointer written below could not
+        // match what the next read of the same store produces.
+        List<BellSchedule> restored = BellSchedules.copyOf(document.schedules());
+        BellSchedules.assignMissingIds(restored);
+        String wantedDefault = document.defaultScheduleId();
+        if (wantedDefault == null) {
+            // Either the file predates the choice or it named a schedule it does not
+            // carry. Both mean "no opinion", and the fallback the exporting build
+            // would have used is the one that keeps the courses on their clock.
+            wantedDefault = BellSchedules.legacyDefaultId(restored);
+        }
+
         SharedPreferences.Editor editor = preferences.edit();
         for (String key : preferences.getAll().keySet()) {
             if (isScopedKey(key)) {
@@ -1347,7 +1741,10 @@ public class CourseRepository {
         editor.putString(KEY_RESTORE_PENDING, expectation);
         editor.putString(KEY_SEMESTERS, SemesterJson.write(document.semesters()));
         editor.putLong(KEY_ACTIVE_SEMESTER, document.activeSemesterId());
-        editor.putString(KEY_BELL_SCHEDULES, BellScheduleJson.write(document.schedules()));
+        editor.putString(KEY_BELL_SCHEDULES, BellScheduleJson.write(restored));
+        if (wantedDefault != null) {
+            editor.putString(KEY_DEFAULT_SCHEDULE, wantedDefault);
+        }
         for (Semester semester : document.semesters()) {
             editor.putString(coursesKeyFor(semester.id()),
                     coursesJsonOf(document.coursesOf(semester.id())));
@@ -1512,11 +1909,19 @@ public class CourseRepository {
      * back to courses the backup has just replaced, which is exactly the wrong
      * direction. Being scoped also puts those entries in the rollback material, so
      * a restore that fails to verify hands them back along with everything else.</p>
+     *
+     * <p>{@code default_schedule_id} is on the list for the same reason as
+     * {@code bell_schedules}: a restore replaces the schedules, and a pointer into
+     * the schedules it replaced would name a schedule that is no longer there.
+     * Being scoped means the restore writes the file's choice in the same commit,
+     * a failed restore hands back the old pointer, and a rollback of a partial
+     * restore cannot leave the pointer stranded on new schedules.</p>
      */
     private static boolean isScopedKey(String key) {
         return KEY_SEMESTERS.equals(key)
                 || KEY_ACTIVE_SEMESTER.equals(key)
                 || KEY_BELL_SCHEDULES.equals(key)
+                || KEY_DEFAULT_SCHEDULE.equals(key)
                 || key.startsWith(KEY_COURSES + SUFFIX_SEPARATOR)
                 || key.startsWith(KEY_START + SUFFIX_SEPARATOR)
                 || key.startsWith(KEY_COURSES_PREVIOUS + SUFFIX_SEPARATOR);
@@ -1556,6 +1961,20 @@ public class CourseRepository {
         if (scheduleNames.size() != MiniJson.optInt(expected, "scheduleCount", -1)) {
             return "\u4F5C\u606F\u8868\u6570\u91CF\u4E0D\u7B26\uFF1A\u5B9E\u9645\u4E3A "
                     + scheduleNames.size();
+        }
+        // The pointer is checked here even though it is not in the expectation: it
+        // is written in the same commit as the schedules, and a restore that landed
+        // with a pointer at nothing would silently move every unmatched course onto
+        // the wrong clock -- precisely the failure this feature exists to prevent.
+        // A store that ends up with no pointer at all is fine; the next read adopts
+        // the legacy default, which is the same timetable.
+        String storedDefault = defaultScheduleIdRaw();
+        if (storedDefault != null
+                && BellSchedules.defaultOf(BellScheduleJson.parse(
+                        preferences.getString(KEY_BELL_SCHEDULES, null)),
+                        storedDefault) == null) {
+            return "\u9ED8\u8BA4\u4F5C\u606F\u8868\u6307\u5411\u4E86\u4E0D\u5B58"
+                    + "\u5728\u7684\u4F5C\u606F\u8868";
         }
         Object rawCounts = expected.get("courseCounts");
         Map<?, ?> counts = rawCounts instanceof Map ? (Map<?, ?>) rawCounts : null;

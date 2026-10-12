@@ -127,6 +127,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         List<BellSchedule> schedules = repository.getBellSchedules();
         LocalDate day = entry.classDay();
         return ReminderPlan.forCourseOnDay(courses, semester, schedules,
-                entry.courseId(), day, ReminderSettings.leadMinutes(context));
+                entry.courseId(), day, ReminderSettings.leadMinutes(context),
+                repository.getDefaultScheduleId());
     }
 }

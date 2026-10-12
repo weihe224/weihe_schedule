@@ -50,6 +50,7 @@ import com.weihe.schedule.reminder.ReminderNotifications;
 import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.reminder.ReminderSettings;
 import com.weihe.schedule.rule.ReminderPlan;
+import com.weihe.schedule.rule.SemesterWeeks;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.Pickers;
 import com.weihe.schedule.ui.UiKit;
@@ -459,6 +460,20 @@ public class SettingsActivity extends Activity {
         return hint;
     }
 
+    /**
+     * The one sentence that says which calendar day the import will actually use.
+     *
+     * <p>Built in one place because it is rendered twice: once when the dialog
+     * opens and again on every confirmed pick. Two copies of the wording could
+     * drift, and this is the line the user reads to decide whether the date is
+     * right -- the tapped day and the effective day are different when the tap
+     * lands midweek.</p>
+     */
+    private String effectiveDateText(LocalDate monday) {
+        return "\u751F\u6548\u65E5\u671F\uFF1A" + monday
+                + "\uFF0C\u5373\u672C\u5B66\u671F\u7B2C 1 \u5468\u5468\u4E00";
+    }
+
     // ------------------------------------------------------------- undo import
 
     /**
@@ -551,9 +566,12 @@ public class SettingsActivity extends Activity {
         // one before the document is built.
         List<BellSchedule> schedules =
                 BellSchedules.copyOf(repository.getBellSchedules());
+        // Read after the schedules, so a store that has never chosen a default has
+        // adopted one by now and the file records what the user is actually using.
         return BackupCodec.of(semesters, coursesBySemester, schedules,
                 repository.getActiveSemester().id(),
-                OffsetDateTime.now().toString(), appVersionName());
+                OffsetDateTime.now().toString(), appVersionName(),
+                repository.getDefaultScheduleId());
     }
 
     /** Writes the already-checked backup to wherever the user pointed. */
@@ -1089,21 +1107,49 @@ public class SettingsActivity extends Activity {
         semesterValue.setText(active.label());
         semesterDetail.setText(ScheduleUtils.formatDate(active.start()) + " - "
                 + ScheduleUtils.formatDate(active.lastDay())
-                + " \u00B7 \u5171 " + ScheduleUtils.SEMESTER_WEEKS + " \u5468"
+                + " \u00B7 \u5171 " + active.weeks() + " \u5468"
                 + (inSession ? " \u00B7 \u8FDB\u884C\u4E2D" : " \u00B7 \u5DF2\u7ED3\u675F"));
 
         semesterStartValue.setText(ScheduleUtils.formatFullDate(start));
         semesterStartDetail.setText("\u7B2C 1 \u5468\uFF1A" + start
-                + " \u00B7 \u5171 " + ScheduleUtils.SEMESTER_WEEKS
+                + " \u00B7 \u5171 " + active.weeks()
                 + " \u5468 \u00B7 \u4ECA\u5929\u662F\u7B2C " + Math.min(currentWeek,
-                        ScheduleUtils.SEMESTER_WEEKS) + " \u5468");
+                        active.weeks()) + " \u5468");
 
+        // Read from the tables rather than from the default constant, because the
+        // day is settable per schedule now and "每节 15 节" would be wrong the moment
+        // anybody changed one. The range covers the usual case where every table
+        // agrees; when they differ it says so instead of picking one.
         schedulesValue.setText(schedules.size() + " \u4E2A\u4F5C\u606F\u8868 \u00B7 "
-                + "\u6BCF\u8282 " + BellSchedule.PERIODS + " \u8282");
+                + periodRange(schedules));
         backupValue.setText("\u5F85\u5BFC\u51FA\uFF1A" + semesters.size() + " \u4E2A\u5B66\u671F"
                 + " \u00B7 " + courses.size() + " \u95E8\u8BFE\u7A0B \u00B7 "
                 + schedules.size() + " \u5F20\u4F5C\u606F\u8868");
         weekValue.setText("WeiheSchedule 1.0 \u00B7 minSdk 26");
+    }
+
+    /**
+     * The day length across the stored tables, for the summary line.
+     *
+     * <p>One number when every table agrees, and a range when they do not. A single
+     * number would have to pick one table and would be a lie about the others;
+     * listing every table's count would be a wall of numbers where one figure
+     * belongs.</p>
+     */
+    private static String periodRange(List<BellSchedule> schedules) {
+        if (schedules == null || schedules.isEmpty()) {
+            return "\u6BCF\u5929 " + ScheduleUtils.PERIODS_PER_DAY + " \u8282";
+        }
+        int low = Integer.MAX_VALUE;
+        int high = 0;
+        for (BellSchedule schedule : schedules) {
+            low = Math.min(low, schedule.periodCount());
+            high = Math.max(high, schedule.periodCount());
+        }
+        if (low == high) {
+            return "\u6BCF\u5929 " + low + " \u8282";
+        }
+        return "\u6BCF\u5929 " + low + "-" + high + " \u8282";
     }
 
     /**
@@ -1204,16 +1250,11 @@ public class SettingsActivity extends Activity {
             return;
         }
         List<Course> courses = report.courses();
-        int lastSourceWeek = 1;
-        for (Course course : courses) {
-            lastSourceWeek = Math.max(lastSourceWeek, course.endWeek);
-        }
-        int latestStart = Math.max(1,
-                ScheduleUtils.SEMESTER_WEEKS - lastSourceWeek + 1);
-        String[] starts = new String[latestStart];
-        for (int i = 0; i < starts.length; i++) {
-            starts[i] = "\u7B2C " + (i + 1) + " \u5468";
-        }
+        // The term the file lands in. Its stored week-1 date is what the picker
+        // opens on, so the file's week 1 keeps meaning the week 1 the term
+        // already has rather than a date the import invents.
+        Semester target = repository.getActiveSemester();
+        LocalDate storedStart = repository.getSemesterStart();
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -1226,58 +1267,251 @@ public class SettingsActivity extends Activity {
                 "\u5BFC\u5165\u5C06\u8986\u76D6\u5F53\u524D\u8BFE\u8868", UiTokens.SPACE_XS + 1));
         content.addView(issueSummary(report));
 
+        content.addView(hintLine("\u5BFC\u5165\u5230\uFF1A" + target.label()
+                + " \u00B7 \u6587\u4EF6\u7B2C 1 \u5468\u5BF9\u5E94\u672C\u5B66\u671F\u7B2C 1 \u5468",
+                UiTokens.SPACE_L));
+
         TextView label = UiKit.text(this,
-                "\u8BFE\u8868\u7B2C 1 \u5468\u5BF9\u5E94\u672C\u5B66\u671F\uFF1A",
+                "\u672C\u5B66\u671F\u5F00\u5B66\u65E5\u671F",
                 UiTokens.Type.BODY_MEDIUM, Palette.ON_SURFACE, Typeface.BOLD);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        labelParams.topMargin = dp(UiTokens.SPACE_L);
+        labelParams.topMargin = dp(UiTokens.SPACE_M);
         content.addView(label, labelParams);
 
-        android.widget.Spinner startWeekSpinner = new android.widget.Spinner(this);
-        android.widget.ArrayAdapter<String> adapter =
-                new android.widget.ArrayAdapter<>(this,
-                        android.R.layout.simple_spinner_item, starts);
-        adapter.setDropDownViewResource(
-                android.R.layout.simple_spinner_dropdown_item);
-        startWeekSpinner.setAdapter(adapter);
-        startWeekSpinner.setSelection(0);
-        startWeekSpinner.setContentDescription("\u9009\u62E9\u5BFC\u5165\u8D77\u59CB\u5468");
-        LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
-        spinnerParams.topMargin = dp(4);
-        content.addView(startWeekSpinner, spinnerParams);
+        // The chosen date, kept here and written to nothing until 覆盖导入 is
+        // pressed. The picker hands back whatever the calendar says, including a
+        // midweek day, and the field shows the Monday the week maths will use --
+        // the preview must describe the date that takes effect, not the one that
+        // was tapped.
+        final LocalDate[] chosen = {ScheduleUtils.mondayOf(storedStart)};
+        // The line below the field is updated from inside this callback rather than
+        // from a TextWatcher on the field: the picker writes the tapped day into the
+        // field first and only then hands the value back, so a watcher would read
+        // the previous Monday and the two would disagree on screen.
+        final TextView[] effective = new TextView[1];
+        TextView dateField = Pickers.dateField(this, chosen[0], date -> {
+            chosen[0] = ScheduleUtils.mondayOf(date);
+            if (effective[0] != null) {
+                effective[0].setText(effectiveDateText(chosen[0]));
+            }
+        });
+        LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(UiTokens.TOUCH_TARGET));
+        fieldParams.topMargin = dp(UiTokens.SPACE_XS);
+        content.addView(dateField, fieldParams);
 
-        content.addView(hintLine("\u6587\u4EF6\u4E2D\u6700\u540E\u4E00\u5468\u4E3A\u7B2C"
-                + lastSourceWeek + "\u5468\uFF0C\u5DF2\u8FC7\u6EE4\u4F1A\u8D85\u51FA"
-                + ScheduleUtils.SEMESTER_WEEKS + "\u5468\u7684\u9009\u9879", 5));
+        effective[0] = hintLine(effectiveDateText(chosen[0]), 5);
+        content.addView(effective[0]);
+
+        // How long the term runs, held here and written nowhere until 覆盖导入 is
+        // pressed. Read from the target term rather than from the default, so the
+        // dialog opens on the length this term already has.
+        final int[] weeks = {SemesterWeeks.of(target)};
+        final int storedWeeks = SemesterWeeks.of(target);
+        TextView weeksLabel = UiKit.text(this,
+                "\u5B66\u671F\u603B\u5468\u6570",
+                UiTokens.Type.BODY_MEDIUM, Palette.ON_SURFACE, Typeface.BOLD);
+        LinearLayout.LayoutParams weeksLabelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        weeksLabelParams.topMargin = dp(UiTokens.SPACE_M);
+        content.addView(weeksLabel, weeksLabelParams);
+
+        final TextView[] weeksValue = new TextView[1];
+        content.addView(weekStepper(weeks, weeksValue), UiKit.stack(this,
+                UiTokens.SPACE_XS));
+        // What the count will mean once it lands: the term's own range, recomputed
+        // from the start date the dialog is currently showing and the count the
+        // user has chosen. Nothing here re-dates a course; it only says how far the
+        // term reaches.
+        final TextView[] range = new TextView[1];
+        range[0] = hintLine(semesterRangeText(chosen[0], weeks[0]), 5);
+        content.addView(range[0]);
+        weeksValue[0].addTextChangedListener(new Pickers.SimpleTextWatcher() {
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                range[0].setText(semesterRangeText(chosen[0], weeks[0]));
+            }
+        });
+        // The date and the length are independent: moving week 1 shifts the range,
+        // but it must not change how many weeks the term runs.
+        dateField.addTextChangedListener(new Pickers.SimpleTextWatcher() {
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                range[0].setText(semesterRangeText(chosen[0], weeks[0]));
+            }
+        });
 
         UiKit.dialog(this, "\u5BFC\u5165\u8BFE\u8868", null, content, null,
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.of("\u8986\u76D6\u5BFC\u5165", () -> {
-                    int sourceFirstWeek = startWeekSpinner
-                            .getSelectedItemPosition() + 1;
-                    try {
-                        List<Course> shifted = TimetableImportParser.shiftWeeks(
-                                courses, sourceFirstWeek);
-                        if (!repository.replaceCourses(shifted)) {
-                            // The store refused the write. "课表已导入" is a claim
-                            // the app cannot back up, so it is not made.
-                            refresh();
-                            UiKit.message(this, "\u5BFC\u5165\u672A\u5B8C\u6210",
-                                    "\u8BFE\u8868\u5199\u5165\u5931\u8D25\uFF0C\u5BFC\u5165"
-                                            + "\u53EF\u80FD\u6CA1\u6709\u751F\u6548\uFF0C\u8BF7"
-                                            + "\u91CD\u65B0\u5BFC\u5165\u3002");
-                            return;
-                        }
-                        refresh();
-                        Toast.makeText(this, "\u8BFE\u8868\u5DF2\u5BFC\u5165",
-                                Toast.LENGTH_SHORT).show();
-                    } catch (TimetableImportException error) {
-                        showImportError(error);
+                    LocalDate weekOne = chosen[0];
+                    int requestedWeeks = weeks[0];
+                    boolean dateMoved = !weekOne.equals(
+                            ScheduleUtils.mondayOf(storedStart));
+                    boolean weeksShrank = requestedWeeks < storedWeeks;
+                    List<Course> existing = repository.getCourses();
+
+                    // Shortening the term can leave a course outside it. That is a
+                    // refusal, not a quiet trim: the weeks on a course are the
+                    // user's data, and a length setting is not allowed to rewrite
+                    // them or drop the courses it strands.
+                    if (weeksShrank
+                            && SemesterWeeks.wouldStrandCourses(existing, requestedWeeks)) {
+                        int stranded = SemesterWeeks.countBeyond(existing, requestedWeeks);
+                        UiKit.dialog(this, "\u5468\u6570\u4E0D\u8DB3",
+                                "\u672C\u5B66\u671F\u5DF2\u6709 " + stranded
+                                        + " \u95E8\u8BFE\u7A0B\u6392\u5728\u7B2C "
+                                        + requestedWeeks + " \u5468\u4E4B\u540E\uFF0C"
+                                        + "\u6539\u6210 " + requestedWeeks
+                                        + " \u5468\u4F1A\u8BA9\u5B83\u4EEC\u843D\u5728"
+                                        + "\u5B66\u671F\u4E4B\u5916\u3002\n\n"
+                                        + "\u8BF7\u5148\u51CF\u5C11\u6216\u8C03\u6574"
+                                        + "\u8FD9\u4E9B\u8BFE\u7A0B\uFF0C\u6216\u6539"
+                                        + "\u56DE " + storedWeeks + " \u5468\u3002",
+                                null, null,
+                                UiKit.Action.of("\u77E5\u9053\u4E86", null));
+                        return;
                     }
+                    // Moving the date re-dates every course in the term, and moving
+                    // the length changes the term's range, so when the file would
+                    // land on a term that already has courses the user is told
+                    // before the write, not after.
+                    if ((dateMoved || requestedWeeks != storedWeeks)
+                            && !existing.isEmpty()) {
+                        UiKit.dialog(this, "\u4FEE\u6539\u5B66\u671F\u8BBE\u7F6E",
+                                semesterChangeWarning(weekOne, requestedWeeks, storedWeeks),
+                                null, null,
+                                UiKit.Action.of("\u53D6\u6D88", null),
+                                UiKit.Action.of("\u7EE7\u7EED\u5BFC\u5165",
+                                        () -> runImport(courses, target, weekOne,
+                                                requestedWeeks)));
+                        return;
+                    }
+                    runImport(courses, target, weekOne, requestedWeeks);
                 }));
+    }
+
+    /**
+     * Builds the {@code − 18 周 +} row for the import dialog.
+     *
+     * <p>Handed the value array rather than returning it, because the row has to
+     * read and write the same cell the confirm path reads; a copy would let the
+     * buttons and the import disagree about the count.</p>
+     *
+     * @param weeks holds the current count; updated in place by the buttons
+     * @param value receives the readout, so callers can hang a listener on it
+     */
+    private View weekStepper(final int[] weeks, final TextView[] value) {
+        TextView minus = UiKit.pill(this, "\u2212", UiTokens.Type.TITLE_MEDIUM,
+                Palette.SURFACE_CONTAINER_HIGH, Palette.PRIMARY, true,
+                UiTokens.RADIUS_S);
+        minus.setContentDescription("\u51CF\u5C11\u4E00\u5468");
+        TextView plus = UiKit.pill(this, "+", UiTokens.Type.TITLE_MEDIUM,
+                Palette.SURFACE_CONTAINER_HIGH, Palette.PRIMARY, true,
+                UiTokens.RADIUS_S);
+        plus.setContentDescription("\u589E\u52A0\u4E00\u5468");
+
+        value[0] = UiKit.text(this, weeksText(weeks[0]),
+                UiTokens.Type.BODY_MEDIUM, Palette.ON_SURFACE, Typeface.BOLD);
+        value[0].setGravity(Gravity.CENTER);
+
+        minus.setOnClickListener(view -> {
+            if (weeks[0] > Semester.MIN_WEEKS) {
+                weeks[0] = weeks[0] - 1;
+                value[0].setText(weeksText(weeks[0]));
+            }
+        });
+        plus.setOnClickListener(view -> {
+            if (weeks[0] < Semester.MAX_WEEKS) {
+                weeks[0] = weeks[0] + 1;
+                value[0].setText(weeksText(weeks[0]));
+            }
+        });
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+                dp(UiTokens.TOUCH_TARGET), dp(UiTokens.BUTTON_HEIGHT_COMPACT));
+        row.addView(minus, buttonParams);
+        row.addView(value[0], new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(plus, buttonParams);
+        return row;
+    }
+
+    /** The stepper's readout, for example {@code 18 周}. */
+    private String weeksText(int weeks) {
+        return weeks + " \u5468";
+    }
+
+    /**
+     * The range a term would have, given a start date and a length.
+     *
+     * <p>Shown under the stepper so a count change is visible as a range change
+     * rather than as a number that may or may not mean anything.</p>
+     */
+    private String semesterRangeText(LocalDate start, int weeks) {
+        LocalDate monday = ScheduleUtils.mondayOf(start);
+        return "\u8BFE\u7A0B\u53EF\u6392\u8303\u56F4\uFF1A"
+                + ScheduleUtils.formatDate(monday) + " - "
+                + ScheduleUtils.formatDate(SemesterWeeks.lastDay(monday, weeks))
+                + "\uFF0C\u5171 " + weeks + " \u5468";
+    }
+
+    /**
+     * The sentence shown before a date or length change is written.
+     *
+     * <p>Names only the parts that actually changed. Warning about the date when
+     * the user only touched the length would train them to dismiss the dialog.</p>
+     */
+    private String semesterChangeWarning(LocalDate weekOne, int weeks,
+            int storedWeeks) {
+        StringBuilder message = new StringBuilder();
+        if (!weekOne.equals(ScheduleUtils.mondayOf(repository.getSemesterStart()))) {
+            message.append("\u4FEE\u6539\u5F00\u5B66\u65E5\u671F\u4F1A\u6539\u53D8"
+                    + "\u672C\u5B66\u671F\u8BFE\u7A0B\u5BF9\u5E94\u7684\u5B9E\u9645"
+                    + "\u65E5\u671F\u53CA\u76F8\u5173\u63D0\u9192\u65F6\u95F4\u3002\n\n"
+                    + "\u65B0\u7684\u7B2C 1 \u5468\u5468\u4E00\uFF1A" + weekOne);
+        }
+        if (weeks != storedWeeks) {
+            if (message.length() > 0) {
+                message.append("\n\n");
+            }
+            message.append("\u5B66\u671F\u603B\u5468\u6570\uFF1A")
+                    .append(storedWeeks).append(" \u5468 \u2192 ")
+                    .append(weeks).append(" \u5468");
+        }
+        return message.toString();
+    }
+
+    /**
+     * Writes the file, the chosen week-1 date and the term length, or reports why
+     * it did not.
+     *
+     * <p>Separated from the dialog so the confirmation path and the plain path
+     * land in exactly one place: the date, the length and the courses are one
+     * commit inside the repository, so there is no order here in which the length
+     * could be saved while the courses failed.</p>
+     */
+    private void runImport(List<Course> courses, Semester target, LocalDate weekOne,
+            int weeks) {
+        if (repository.replaceCoursesAt(courses, target, weekOne, weeks)) {
+            refresh();
+            Toast.makeText(this, "\u8BFE\u8868\u5DF2\u5BFC\u5165",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // The store refused the write. "课表已导入" is a claim the app cannot back
+        // up, so it is not made -- and the date went with the courses, so neither
+        // is half-applied.
+        refresh();
+        UiKit.message(this, "\u5BFC\u5165\u672A\u5B8C\u6210",
+                "\u8BFE\u8868\u5199\u5165\u5931\u8D25\uFF0C\u5BFC\u5165\u53EF\u80FD"
+                        + "\u6CA1\u6709\u751F\u6548\uFF0C\u8BF7\u91CD\u65B0\u5BFC\u5165\u3002");
     }
 
     /**

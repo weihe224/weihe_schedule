@@ -2,6 +2,7 @@ package com.weihe.schedule.data;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
@@ -163,5 +164,125 @@ public class BellScheduleJsonTest {
 
         assertEquals(1, schedules.size());
         assertEquals(BellSchedule.PERIODS, schedules.get(0).periodCount());
+    }
+
+    // ============================================ the period length, added later
+
+    @Test
+    public void aPayloadWithoutALengthReadsAsForty() {
+        // Exactly what is on every device that has run an earlier build: starts and
+        // ends, no length anywhere. It must open as the table it was.
+        String old = "[{\"name\":\"\u6559\u5B66\u697C\u4F5C\u606F\","
+                + "\"keywords\":[\"a\u697C\"],"
+                + "\"starts\":[495,535],\"ends\":[535,575]}]";
+
+        BellSchedule restored = BellScheduleJson.parse(old).get(0);
+
+        assertEquals(40, restored.durationMinutes());
+        assertEquals("the stored count, not the default fifteen",
+                2, restored.periodCount());
+        assertEquals(495, restored.startMinute(1));
+        assertEquals(575, restored.endMinute(2));
+    }
+
+    @Test
+    public void aLengthSurvivesARoundTrip() {
+        BellSchedule original = new BellSchedule("50-min", new int[] {480, 535},
+                new int[] {530, 585}, new ArrayList<String>(), 50);
+
+        BellSchedule restored = BellScheduleJson
+                .parse(BellScheduleJson.write(java.util.Arrays.asList(original)))
+                .get(0);
+
+        assertEquals(50, restored.durationMinutes());
+        assertEquals(480, restored.startMinute(1));
+        assertEquals(530, restored.endMinute(1));
+        assertEquals(2, restored.periodCount());
+    }
+
+    @Test
+    public void writingAlwaysIncludesTheLength() {
+        // The key is written even at the default, so a table that is saved today
+        // states its length rather than relying on the reader's fallback.
+        String written = BellScheduleJson
+                .write(java.util.Arrays.asList(BellSchedules.standard()));
+
+        assertTrue("the length must be written: " + written,
+                written.contains("\"durationMinutes\":40"));
+    }
+
+    @Test
+    public void aLengthOutsideWhatTheModelAllowsIsRepairedRatherThanKept() {
+        // A damaged file. Reading it as the default is better than opening a
+        // schedule whose every end is nonsense.
+        String damaged = "[{\"name\":\"bad\",\"starts\":[495],\"ends\":[535],"
+                + "\"durationMinutes\":0}]";
+
+        assertEquals(40, BellScheduleJson.parse(damaged).get(0).durationMinutes());
+
+        String absurd = "[{\"name\":\"big\",\"starts\":[495],\"ends\":[535],"
+                + "\"durationMinutes\":9999}]";
+        assertEquals(40, BellScheduleJson.parse(absurd).get(0).durationMinutes());
+    }
+
+    @Test
+    public void periodsPastTheDefaultCountSurviveARoundTrip() {
+        int[] starts = new int[20];
+        int[] ends = new int[20];
+        for (int period = 1; period <= 20; period++) {
+            starts[period - 1] = 480 + (period - 1) * 55;
+            ends[period - 1] = starts[period - 1] + 50;
+        }
+        BellSchedule original = new BellSchedule("long", starts, ends,
+                new ArrayList<String>(), 50);
+
+        BellSchedule restored = BellScheduleJson
+                .parse(BellScheduleJson.write(
+                        java.util.Arrays.asList(BellSchedules.standard(), original)))
+                .get(1);
+
+        assertEquals(20, restored.periodCount());
+        assertEquals(50, restored.durationMinutes());
+        assertEquals(starts[19], restored.startMinute(20));
+        assertEquals(ends[19], restored.endMinute(20));
+    }
+
+    @Test
+    public void anIdSurvivesARoundTripAndIsOmittedWhenThereIsNone() {
+        BellSchedule withId = BellSchedules.standard();
+        BellSchedule withoutId = BellSchedules.deBuilding().withId(null);
+
+        java.util.List<BellSchedule> written = BellScheduleJson.parse(
+                BellScheduleJson.write(java.util.Arrays.asList(withId, withoutId)));
+
+        assertEquals("the id must come back unchanged",
+                withId.id(), written.get(0).id());
+        assertNull("a schedule with no id must not gain a blank one",
+                written.get(1).id());
+        // And the times are untouched by the extra field either way.
+        assertEquals(withId.startMinute(1), written.get(0).startMinute(1));
+        assertEquals(withoutId.startMinute(1), written.get(1).startMinute(1));
+    }
+
+    @Test
+    public void aScheduleStoredBeforeIdsExistedReadsBackWithoutOne() {
+        // The compatibility case: an id-less payload must load as it always did,
+        // with a null id that the reader fills in -- not as a schedule whose id is
+        // the empty string.
+        String json = "[{\"name\":\"old\",\"starts\":[495,535],\"ends\":[535,575],"
+                + "\"keywords\":[\"a\"]}]";
+
+        BellSchedule loaded = BellScheduleJson.parse(json).get(0);
+
+        assertNull(loaded.id());
+        assertEquals("old", loaded.name());
+        assertEquals(495, loaded.startMinute(1));
+        assertEquals(575, loaded.endMinute(2));
+
+        // A blank id is treated the same as a missing one, so a hand-edited store
+        // cannot end up with an id that matches nothing.
+        assertNull(BellScheduleJson.parse(
+                "[{\"name\":\"old\",\"id\":\"   \",\"starts\":[495],\"ends\":[535]}]")
+                .get(0).id());
     }
 }

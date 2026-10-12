@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 import com.weihe.schedule.model.Course;
+import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
 
 /**
@@ -155,16 +156,118 @@ public class PaletteContrastTest {
     public void everyCourseRailStaysVisibleOnItsCard() {
         // The rail is the course's colour softened towards the card, and the
         // softening is the risk: push it far enough and the rail that identifies
-        // the course disappears into the white it is drawn on.
+        // the course disappears into the card it is drawn on. The rail sits on a
+        // washed card now, not a white one, so that is the surface it is checked
+        // against.
         for (int color : Palette.COURSE_COLORS) {
-            int rail = Colors.blend(color, Palette.SURFACE_CONTAINER,
-                    Palette.COURSE_RAIL_SOFTEN);
-            double ratio = Colors.contrastRatio(rail, Palette.SURFACE_CONTAINER);
+            int card = UiKit.courseCard(color);
+            int rail = UiKit.courseRail(color);
+            double ratio = Colors.contrastRatio(rail, card);
             assertTrue(String.format(
                             "course colour %08X has an invisible rail: %s",
                             Integer.valueOf(color), round(ratio)),
                     ratio >= 1.8);
         }
+    }
+
+    @Test
+    public void aCourseCardStaysReadableAndIsNotJustWhite() {
+        // The day list draws the course name in ink and the venue and teacher in
+        // the variant role, both straight onto the washed card. A wash deep
+        // enough to be visible is also deep enough to cost that pair its
+        // contrast, so both are asserted, along with the wash actually being a
+        // wash rather than white.
+        for (int color : Palette.COURSE_COLORS) {
+            int card = UiKit.courseCard(color);
+            assertReadable(String.format("course card %08X name", Integer.valueOf(color)),
+                    Palette.ON_SURFACE, card);
+            assertReadable(String.format("course card %08X meta", Integer.valueOf(color)),
+                    Palette.ON_SURFACE_VARIANT, card);
+            // Perceptible as a colour rather than as the plain card surface, but
+            // nowhere near opaque: the light theme depends on the card reading as
+            // light. Distance is the measure here, not contrast, because a wash
+            // this light has almost no luminance contrast by definition.
+            double fromWhite = distance(card, 0xFFFFFFFF);
+            assertTrue(String.format("course card %08X is invisible on the page: %s",
+                            Integer.valueOf(color), round(fromWhite)),
+                    fromWhite >= 12.0);
+            assertTrue(String.format("course card %08X is too saturated to be a wash: %s",
+                            Integer.valueOf(color), round(fromWhite)),
+                    fromWhite <= 90.0);
+        }
+    }
+
+    @Test
+    public void theTimeTileInsideACardIsReadable() {
+        // The period label and the clock times sit on a block tinted from the
+        // course colour, which is drawn on the card wash. Two blends stack here,
+        // so the pair is checked on the stacked result rather than on either one.
+        for (int color : Palette.COURSE_COLORS) {
+            assertReadable(String.format("course colour %08X time tile",
+                            Integer.valueOf(color)),
+                    UiKit.courseInk(color), UiKit.courseTint(color));
+        }
+    }
+
+    @Test
+    public void theCourseColoursAreSpreadAroundTheHueWheel() {
+        // The complaint this palette exists to answer: the old set put blue,
+        // cyan and slate within 2.5 degrees of each other, so two courses read as
+        // one. Hue separation is the property, so it is what is asserted -- a
+        // list of nine colours that are merely "different RGB values" can still
+        // be nine shades of the same blue.
+        //
+        // Hue is computed here rather than with android.graphics.Color, because
+        // unitTests.returnDefaultValues is off and the framework-free layer has to
+        // stay testable on a bare JVM. Same reason Colors does its own arithmetic.
+        java.util.List<Double> hues = new java.util.ArrayList<>();
+        for (int color : Palette.COURSE_COLORS) {
+            hues.add(Double.valueOf(hueOf(color)));
+        }
+        java.util.Collections.sort(hues);
+        for (int i = 0; i < hues.size(); i++) {
+            double current = hues.get(i).doubleValue();
+            double next = i == hues.size() - 1
+                    ? hues.get(0).doubleValue() + 360.0
+                    : hues.get(i + 1).doubleValue();
+            double gap = next - current;
+            assertTrue(String.format(
+                            "two course colours are only %.1f degrees apart; they will "
+                                    + "read as the same colour",
+                            Double.valueOf(gap)),
+                    gap >= 6.0);
+        }
+    }
+
+    /** Hue in degrees, 0-360. Pure arithmetic, so it runs without the framework. */
+    private static double hueOf(int color) {
+        double red = Colors.red(color) / 255.0;
+        double green = Colors.green(color) / 255.0;
+        double blue = Colors.blue(color) / 255.0;
+        double max = Math.max(red, Math.max(green, blue));
+        double min = Math.min(red, Math.min(green, blue));
+        double span = max - min;
+        if (span == 0.0) {
+            return 0.0;
+        }
+        double hue;
+        if (max == red) {
+            hue = ((green - blue) / span) % 6.0;
+        } else if (max == green) {
+            hue = ((blue - red) / span) + 2.0;
+        } else {
+            hue = ((red - green) / span) + 4.0;
+        }
+        hue *= 60.0;
+        return hue < 0 ? hue + 360.0 : hue;
+    }
+
+    /** Euclidean distance in RGB, for "is this wash distinguishable from white". */
+    private static double distance(int first, int second) {
+        double dr = Colors.red(first) - Colors.red(second);
+        double dg = Colors.green(first) - Colors.green(second);
+        double db = Colors.blue(first) - Colors.blue(second);
+        return Math.sqrt(dr * dr + dg * dg + db * db);
     }
 
     @Test
