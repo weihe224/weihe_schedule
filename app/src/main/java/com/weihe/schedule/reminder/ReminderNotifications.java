@@ -10,8 +10,9 @@ import android.content.Intent;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
-import com.weihe.schedule.MainActivity;
+import com.weihe.schedule.CourseDetailActivity;
 import com.weihe.schedule.R;
+import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.rule.Reminder;
 
 /**
@@ -32,21 +33,32 @@ import com.weihe.schedule.rule.Reminder;
  * <h2>What the notification says</h2>
  *
  * <p>Everything comes from the course and the schedule, so a notification can
- * never disagree with the timetable. The title is the course name; the line under
- * it is the date, the start time, the venue and the teacher. Venue and teacher
- * are optional in the model, so an empty one is left out rather than printed as a
- * gap -- a reminder whose second field is blank, followed by a separator and then
- * the teacher's name, reads as broken. The lead time is named, so the reader can
- * tell five minutes from fifteen.</p>
+ * never disagree with the timetable. The title names the kind of alert and then
+ * the course -- "上课提醒 · 高等数学" -- because the shade already shows the app
+ * name, and a title that is only a course name does not say what is about to
+ * happen to it. The line under it carries when, which periods and where; venue
+ * and teacher are optional in the model, so an empty one is left out rather than
+ * printed as a gap, and a reminder whose second field is blank followed by a
+ * separator reads as broken. The lead time is named, so the reader can tell five
+ * minutes from fifteen.</p>
+ *
+ * <p>Tapping opens the course, not the app. The intent carries the course id and
+ * nothing else: the id is the timetable's own stable key, so a reminder for a
+ * course that has since been renamed or moved still lands on the right one, which
+ * a name or a list position could not promise. No extra rides along that would
+ * tell a screen to change anything -- a tap may open a page, never edit data.</p>
  */
 public final class ReminderNotifications {
 
     /** Channel id. Stable: changing it would orphan the user's channel settings. */
     public static final String CHANNEL_ID = "class_reminders";
 
+    /** What every reminder's title starts with. */
+    private static final String TITLE_PREFIX = "\u4E0A\u8BFE\u63D0\u9192";
+
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
     private static final DateTimeFormatter DATE =
-            DateTimeFormatter.ofPattern("M\u6708d\u65E5 EEEE");
+            DateTimeFormatter.ofPattern("M\u6708d\u65E5");
 
     private ReminderNotifications() {
     }
@@ -104,17 +116,22 @@ public final class ReminderNotifications {
                 reminder.classDay().toEpochDay());
         String detail = detailOf(reminder);
 
-        Intent open = new Intent(context, MainActivity.class);
-        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        // The course, by its own id. No FLAG_ACTIVITY_CLEAR_TOP: the detail screen
+        // reads its extra in onCreate and has no onNewIntent, so clearing on top of
+        // an existing instance would deliver this id to a page that never looks at
+        // it again -- the user would tap a reminder for one course and be shown
+        // another.
+        Intent open = new Intent(context, CourseDetailActivity.class);
+        open.putExtra(CourseDetailActivity.EXTRA_COURSE_ID, reminder.courseId());
+        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         // One request code per class and day, so opening a reminder never reuses
-        // another's PendingIntent. No extras ride along: a tap may only open a
-        // screen, never carry an instruction to change any data.
+        // another's PendingIntent.
         PendingIntent content = PendingIntent.getActivity(context, id, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         Notification notification = new Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_today)
-                .setContentTitle(reminder.courseName())
+                .setContentTitle(titleOf(reminder))
                 .setContentText(detail)
                 .setStyle(new Notification.BigTextStyle().bigText(detail))
                 .setWhen(reminder.startMillis(ZoneId.systemDefault()))
@@ -132,7 +149,32 @@ public final class ReminderNotifications {
     }
 
     /**
-     * The line under the title: when, where and with whom.
+     * The notification's title: what this is, then which course.
+     *
+     * <p>The kind of alert comes first because the shade already carries the app's
+     * name above the title, and "拾课 / 高等数学" does not say that the class is
+     * about to start. The course name follows so that the one thing the reader is
+     * deciding about is still the most prominent word on the row.</p>
+     */
+    public static String titleOf(Reminder reminder) {
+        return TITLE_PREFIX + " \u00B7 " + reminder.courseName();
+    }
+
+    /**
+     * Which periods the class covers: {@code 第 3-4 节}, or {@code 第 3 节}.
+     *
+     * <p>A single-period class is not written "3-3"; a range that names the same
+     * number twice reads like a mistake.</p>
+     */
+    public static String periodLabel(Reminder reminder) {
+        if (reminder.endPeriod() <= reminder.startPeriod()) {
+            return "\u7B2C " + reminder.startPeriod() + " \u8282";
+        }
+        return "\u7B2C " + reminder.startPeriod() + "-" + reminder.endPeriod() + " \u8282";
+    }
+
+    /**
+     * The line under the title: when, which periods, where and with whom.
      *
      * <p>A method of its own so the wording can be checked without a device, which
      * is otherwise the hardest part of a notification to test.</p>
@@ -140,7 +182,15 @@ public final class ReminderNotifications {
     public static String detailOf(Reminder reminder) {
         StringBuilder text = new StringBuilder();
         text.append(DATE.format(reminder.startAt())).append(' ')
-                .append(TIME.format(reminder.startAt()));
+                // The weekday comes from the app's own names rather than from the
+                // formatter's locale. The screen is Chinese on every phone, and a
+                // pattern letter would have printed "Tuesday" on an English one --
+                // the app would have been reading in two languages at once, and the
+                // device's locale would have decided which.
+                .append(ScheduleUtils.dayName(
+                        reminder.startAt().getDayOfWeek().getValue()))
+                .append(' ').append(TIME.format(reminder.startAt()))
+                .append(" \u00B7 ").append(periodLabel(reminder));
         if (!reminder.location().trim().isEmpty()) {
             text.append(" \u00B7 ").append(reminder.location().trim());
         }

@@ -406,9 +406,12 @@ public class ReminderScheduleTest {
 
         String detail = ReminderNotifications.detailOf(reminder);
 
-        assertEquals("one separator for the time, and none for the two empty fields",
-                0, detail.split("\u00B7", -1).length - 1);
+        // The periods are always known, so they are always the one separator; what
+        // the two empty fields must not do is add two more.
+        assertEquals("only the period, and nothing for the two empty fields",
+                1, detail.split("\u00B7", -1).length - 1);
         assertTrue(detail, detail.contains("08:00"));
+        assertTrue(detail, detail.contains("\u7B2C 1 \u8282"));
         assertFalse("a blank field must not leave a stray separator", detail.contains("\u00B7 \u00B7"));
     }
 
@@ -421,7 +424,50 @@ public class ReminderScheduleTest {
         String detail = ReminderNotifications.detailOf(reminder);
 
         assertTrue(detail, detail.contains("A203"));
-        assertEquals("exactly one separator", 1, detail.split("\u00B7", -1).length - 1);
+        assertEquals("the period and the venue, and nothing for the missing teacher",
+                2, detail.split("\u00B7", -1).length - 1);
+        assertFalse(detail.contains("\u00B7 \u00B7"));
+    }
+
+    @Test
+    public void theNotificationSaysWhatItIsAndWhichPeriods() {
+        Course spanning = course(1L, 1, 3);
+        spanning.endPeriod = 4;
+        Reminder reminder = planFor(Arrays.asList(spanning), LEAD, TERM_START).get(0);
+
+        String title = ReminderNotifications.titleOf(reminder);
+        String detail = ReminderNotifications.detailOf(reminder);
+
+        assertTrue(title, title.contains("\u4E0A\u8BFE\u63D0\u9192"));
+        assertTrue(title, title.contains(reminder.courseName()));
+        assertEquals("\u7B2C 3-4 \u8282", ReminderNotifications.periodLabel(reminder));
+        assertTrue(detail, detail.contains("\u7B2C 3-4 \u8282"));
+    }
+
+    @Test
+    public void aOnePeriodClassIsNotWrittenAsARange() {
+        Reminder reminder = planFor(singleCourse(1L, 2, 2), LEAD, TERM_START).get(0);
+
+        assertEquals("\u7B2C 2 \u8282", ReminderNotifications.periodLabel(reminder));
+        assertFalse(ReminderNotifications.periodLabel(reminder).contains("-"));
+    }
+
+    @Test
+    public void theWeekdayIsNamedInChineseWhateverTheDeviceLocale() {
+        // The app's screens are Chinese on every phone. A date pattern letter would
+        // have printed whatever the device's locale said -- "Tuesday" on this build
+        // machine -- so the notification read in two languages at once.
+        Reminder reminder = planFor(singleCourse(1L, 1, 1), LEAD, TERM_START).get(0);
+
+        String detail = ReminderNotifications.detailOf(reminder);
+
+        // TERM_START is a Monday.
+        assertTrue(detail, detail.contains("\u5468\u4E00"));
+        for (String english : new String[] {"Monday", "Tuesday", "Wednesday",
+                "Thursday", "Friday", "Saturday", "Sunday"}) {
+            assertFalse("a device locale must not decide this: " + detail,
+                    detail.contains(english));
+        }
     }
 
     // ---------------------------------------------------------------- fixtures

@@ -17,10 +17,15 @@
 
 | 项 | 值 |
 |---|---|
-| 更新时间 | **2026-10-12** |
+| 更新时间 | **2026-10-13**（上一版 2026-10-12） |
 | 核实方式 | 逐项对照当前源码、`git` 状态与实跑结果；未照抄旧文档 |
-| 本轮实际执行 | `git status/branch/log/diff`、8 项重点功能源码核查、`--rerun-tasks testDebugUnitTest assembleDebug lintDebug` |
-| 本轮代码改动 | **无**（只写文档：新增 `README.md`，重写本文件，扩充归档） |
+| 本轮实际执行 | `git status/branch/log`、提醒模块（`ReminderPlan`/`Reminder`/`ReminderScheduler`/`ReminderReceiver`/`ReminderNotifications`/`ReminderSettings`/`SettingsActivity`）逐行核查、`--rerun-tasks testDebugUnitTest assembleDebug lintDebug`、**模拟器实测：自定义提前时间 + 真实通知内容 + 点击跳转 + 关闭后不再发送** |
+| 本轮代码改动 | **4 个生产文件 + 3 个测试文件**（提醒模块，见 D-6）；另更正本文档的 Git 状态、D-4 依据、D-5、优先级表 |
+
+> **2026-10-13 复核要点（重要）**：工作区已**完全干净**，`8ee1a04` 同时是 HEAD 与
+> `origin/main`。上一版记录的「6 个文档被删除且未暂存」「`f0765a6` 未推送」**均已不再成立**
+> —— 见 B 节。上一版 D-4 中「只有编号栏与网格内容高度完全相等才跟得上」的**机制解释是错的**
+> —— 见 D-4 与 G-4。
 
 ---
 
@@ -29,46 +34,33 @@
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| HEAD | **`f0765a6`（`update`）—— 本地提交，⚠️ 尚未推送** |
-| `origin/main` | `bdd7d01` —— HEAD **领先远端 1 个提交** |
+| HEAD | **`8ee1a04`（`update`）** |
+| `origin/main` | **`8ee1a04`** —— 与 HEAD **完全一致**（`rev-list --count origin/main..HEAD` = **0**） |
 | 已暂存 | 无 |
-| 未跟踪 | `README.md`（本轮新建） |
-| 已修改（未暂存） | **7 项：6 个文档被删除 + 归档被本轮追加** |
+| 未跟踪 | **无** |
+| 已修改（未暂存） | **无** —— `git status --porcelain` 输出 **0 行** |
 
-### ⚠️ 最重要的一条：6 个项目文档被从工作区删除（未暂存）
+### ✅ 上一版的两个遗留问题均已解决（2026-10-13 复核）
 
-```
- D COURSE_REMINDER_PLAN.md          749 行
- D DATA_BACKUP_DESIGN.md            721 行
- D DATA_BACKUP_RESTORE_PLAN.md      790 行
- D NEXT_OPTIMIZATION_ROADMAP.md     635 行
- D PROJECT_ANALYSIS.md              988 行
- D PROJECT_ARCHITECTURE.md          699 行
-                      合计 4,582 行被删
-```
+| 上一版记录 | 现在的事实 |
+|---|---|
+| 「6 个项目文档被删除且**未暂存**」（旧 G-1） | **删除已提交**在 `8ee1a04` 中，与「重写 `AGENT_HANDOFF.md` + 新建 `AGENT_HANDOFF_ARCHIVE.md` + 新增 `README.md`」同属一次**有意的文档整理提交**。`git ls-tree HEAD` 中已无这 6 个文件。内容仍可从 `f0765a6` 取出 |
+| 「`f0765a6` 未推送」（旧 G-2） | **已推送**。`f0765a6` 与 `8ee1a04` 都在 `origin/main` 上，**没有任何未推送提交** |
 
-- 这 6 份是**设计 / 规划 / 分析文档**，**不是**交接文档，与本轮交接无关。
-- **内容没有丢失**：它们完整存在于提交 `f0765a6` 中。
-- 删除**未暂存、未提交**，也**不是本轮 Agent 所为**（本轮开始时即已如此）。
-- **属于谁的改动、是否有意为之：待确认。** 本轮**没有**恢复、也没有提交这些删除。
-- 若确认是误删，可在**征得用户同意后**用
-  `git checkout -- COURSE_REMINDER_PLAN.md DATA_BACKUP_DESIGN.md DATA_BACKUP_RESTORE_PLAN.md NEXT_OPTIMIZATION_ROADMAP.md PROJECT_ANALYSIS.md PROJECT_ARCHITECTURE.md`
-  恢复。**未经确认不要执行。**
-
-### 最近提交
+**最近提交**
 
 ```
-f0765a6 (HEAD -> main)  update     ← 58 个文件；把此前积累的全部未提交工作一次性提交
-bdd7d01 (origin/main)   update
-61d9da5                 update
-6875549                 update
-9b40146                 update
+8ee1a04 (HEAD -> main, origin/main, origin/HEAD)  update   ← 文档整理：改 AGENTS.md、重写本文件、
+                                                             新建归档与 README、删除 6 份设计文档
+f0765a6                                           update   ← 58 个文件；把此前积累的全部未提交工作一次性提交
+bdd7d01                                           update
+61d9da5                                           update
+6875549                                           update
 ```
 
 `f0765a6` 提交了此前跨多轮、由**多位 Agent** 留下的全部改动（配色、每节时长与动态节次、
 默认作息表、导入开学日期与学期总周数、滚轮选择器、同名课程颜色同步等），
 以及 `AGENTS.md`、两份交接文档与 `.workbuddy-ai/memory/`。
-**因此现在工作区已无未提交的代码改动** —— 与上一版交接文档记录的状态完全不同。
 
 ---
 
@@ -152,7 +144,7 @@ app/src/main/java/com/weihe/schedule/
 | 1 | 首页：当天课程、周次与星期导航、回到今天/本周 | 已实现并已验证 | 设备实测；`rule/TodayTarget` + 测试 |
 | 2 | 课表总览（周网格，周一到周日 × 节次） | 已实现并已验证 | 设备实测（本轮滚动测量，见 D-4） |
 | 3 | 单周课表（显示每列具体日期） | 已实现并已验证 | 设备实测；与总览共用同一网格 |
-| 4 | **左侧节次编号显示不全** | **本轮未复现；判定为已修复** | 见下方「D-4 专项结论」 |
+| 4 | **左侧节次编号显示不全** | **未复现；判定为已修复（含 20/30 行实测）** | 见下方「D-4 专项结论」 |
 | 5 | 课程新增 / 编辑 / 删除 | 已实现并已验证 | 设备实测；`CourseFormValidator` + 测试 |
 | 6 | 课程复制（新 ID，原课不变） | 已实现并已验证 | `data/CourseCopyTest`；设备实测过编辑页 |
 | 7 | 课程搜索 | 已实现并已验证 | `CourseSearchFlowTest`；设备实测 |
@@ -170,29 +162,202 @@ app/src/main/java/com/weihe/schedule/
 | 19 | **自定义默认作息表 + 地点匹配回退** | **已实现并已验证** | `CourseRepository.getDefaultScheduleId()`、`BellSchedules.resolve(..., defaultId)`；细节见归档 E2 |
 | 20 | **导入指定开学日期** | **已实现并已验证** | `CourseRepository.replaceCoursesAt(List, Semester, LocalDate)`；细节见归档 E3 |
 | 21 | **导入指定学期总周数** | **已实现并已验证** | `replaceCoursesAt(..., int)`；`rule/SemesterWeeks` + `SemesterWeeksTest`；细节见归档 E4 |
-| 22 | Excel 导入与异常报告 | 已实现但尚未充分验证 | `ExcelTimetableReaderTest`、`TimetableImportParserTest`、`TimetableImportRangeTest`；**本轮及近几轮均未做导入的设备实测** |
-| 23 | 备份导出 / 预览 / 恢复（快照 + 回滚） | 已实现但尚未充分验证 | `BackupCodecTest`；设备实测过入口与预览，**未真正写盘到用户文件并恢复** |
-| 24 | 上课提醒（计算 / 调度 / 重启恢复） | 已实现但尚未充分验证 | `ReminderPlan`、`ReminderRestoreTest`；**未做通知到点的设备实测** |
+| 22 | Excel 导入与异常报告 | **已实现并已验证（2026-10-13 设备端全流程）** | `ExcelTimetableReaderTest`、`TimetableImportParserTest`、`TimetableImportRangeTest` + **设备实测：选文件 → 预览 → 覆盖导入 → 撤销导入**，见 D-5 |
+| 23 | 备份导出 / 预览 / 恢复（快照 + 回滚） | 已实现但尚未充分验证 | `BackupCodecTest`；设备实测过入口与预览，**未真正写盘到用户文件并恢复**；2026-10-13 顺带发现导出摘要**把"条安排"说成"门课程"**，见 G-11 |
+| 24 | 上课提醒（计算 / 调度 / 重启恢复 / 通知内容 / 自定义提前分钟数） | **已实现并已验证（2026-10-13 设备端全流程）** | `ReminderPlan` / `ReminderScheduler` / `ReminderReceiver` / `ReminderNotifications` / `ReminderSettings`；**本轮新增 1–180 分钟自定义提前时间**，见 D-6 |
 | 25 | 日期与时刻统一选择器 | 已实现并已验证 | `ui/Pickers`；全项目系统 `Date/TimePickerDialog` 使用数 **= 0**；设备实测（中文按钮、24 小时制、日历/时分滚轮） |
 | 26 | 统一按钮层级 / 危险操作命名 / 空状态 | 已实现并已验证 | 5 处「删除」改为明确动词；首页区分"本学期没有课程"与"这天没有安排"（设备实测后者） |
 | 27 | 设置页功能顺序 | 已实现并已验证 | 设备实测：学期管理 → 学期起始日期 → 上课提醒 → 上下课时间 → 课表数据 → 关于 |
 | 28 | 作息表保存前的重叠校验（写盘前拦截） | 已实现并已验证 | 设备实测：制造重叠 → 保存被拒 → **存储载荷未变** |
 
-### D-4 专项结论：左侧节次编号（2026-10-12 实测）
+### D-4 专项结论：左侧节次编号（2026-10-12 初查，2026-10-13 复核并扩展到 30 行）
 
-**结论：在当前代码上无法复现，判定为已修复。**
+**结论：在 13 / 20 / 30 行三种规模、两个视图上均无法复现，判定为已修复。**
 
-- 结构性成因确实存在：`labelColumn` **不在纵向滚动容器内**，靠
-  `SyncedVerticalScrollView.onScrollChanged` 里的 `labelColumn.scrollTo(0, y)` 跟随；
-  `scrollTo` 会被自身内容高度夹取，**只有内容高度与网格完全相等时才跟得上**。
-- 但该等式现在成立：`rows = lastPeriodInUse(...)` 同时决定编号格数（1..periods）与
-  日列高度 `rowSpan(dayColumnRows(periods))`，而 `dayColumnRows(periods) == periods`。
-- 源码注释（`WeekGridActivity` L526-532）明确记录该"网格比编号栏矮一行 → 滚动范围带不出最后一行"
-  的缺陷**曾被修复**，`WeekGridRowsTest` 即为它而写。
-- **设备实测**：总课表与单周课表，编号 1–13 与课程行**逐行对齐**，滚到底 Δ=0，
-  最后一行完整可见、未被 FAB 遮挡。该学期最晚只用到**第 13 节**，所以只到 13 是正确行为。
-- **未在设备上验证 >13 行**（数据里没有更晚的节次）。
-- 遗留风险见 G-4。
+#### 真实根因（已在代码中修掉）
+
+`labelColumn` **不在纵向滚动容器内**（`bodyRow` 里与 `ScrollView` 并列），靠
+`SyncedVerticalScrollView.onScrollChanged` 里的 `labelColumn.scrollTo(0, y)` 跟随网格。
+两个视图共用同一份网格实现（`render()` + `dayColumnRows` / `lastPeriodInUse`），
+所以**不需要两套补丁**。
+
+当年的缺陷是：日列高度用 `rowTop(periods)` 计算，而 `rowTop(p)` 是第 p 行的**上边缘**，
+于是每个日列都比它要定位的行**矮整整一行** → 网格内容比编号栏矮一行 →
+纵向滚动范围带不出最后一行。修复即 `dayColumnRows(periods)`（见 `WeekGridActivity` 中
+`dayColumnRows` 的 javadoc），`WeekGridRowsTest` 为它而写。
+引入提交为 **`1213ef7`**（早已进入历史，远早于任何现存截图）。
+
+#### ⚠️ 上一版 D-4 的机制解释是**错的**（本次实测更正）
+
+上一版写「`scrollTo` 会被自身内容高度夹取，**只有内容高度与网格完全相等时才跟得上**」。
+两句都不成立：
+
+1. **`View.scrollTo` 不夹取**。它直接写 `mScrollX/mScrollY`（AOSP 实现无 clamp）；
+   按内容高度夹取是 `ScrollView` 自己的行为。因此编号栏**跟得上，且与两栏内容高度是否相等无关**。
+2. **两个内容高度并不相等**，实测（`1080×2424 @420`，`dp(54) = 142px`）：
+
+   | 行数 | 编号栏内容高 | 网格内容高 | 差 |
+   |---|---|---|---|
+   | 13 | `13 × dp(54) = 1846` | `dp(13 × 54) = 1843` | 编号栏**高 3px** |
+   | 20 | `20 × dp(54) = 2840` | `dp(20 × 54) = 2835` | 编号栏**高 5px** |
+   | 30 | `30 × dp(54) = 4260` | `dp(30 × 54) = 4253` | 编号栏**高 7px** |
+
+   原因：编号栏的每一行由 `rowHeight()` 单独取整后**相加**，网格的日列由
+   `rowSpan()` 对总高**一次取整**。两者只差几个像素，且**符号取决于屏幕密度**
+   （`round(54×density)` 与 `54×density` 的大小关系）——见 G-4。
+
+#### 设备实测（`emulator-5554`，Pixel_10 / API 37 / 1080×2424 @420）
+
+用 `run-as` 写入探针课程（第 15 / 20 / 30 节，周日列，避开既有数据），
+再用 `uiautomator dump` 读**真实屏幕坐标**逐行核对（不是目测）。测完已把数据恢复原状。
+
+| 验证项 | 实测结果 |
+|---|---|
+| 13 行（当前学期最晚第 13 节） | 编号 1–13 齐全；`最优控制与状态估计` 块顶 1006 vs 编号 6 顶 1007 → **Δ=1px** |
+| 20 行（探针在第 15、20 节） | 编号 1–20 齐全、每行**均匀 142px**；`探针15` 块顶 1844 vs 编号 15 顶 1847 → **Δ=3px**；`探针20` 与编号 20 对齐 |
+| 30 行（上限，探针在第 30 节） | 编号 1–30 齐全；`探针30` 与编号 30 对齐，**最后一行完整可见** |
+| 总课表 | 滚到底、滚到中段、横向滚到周五/周六/周日，编号栏**始终跟随**，Δ ≤ 3px |
+| 单周课表 | 同上，编号 10–20 与课程行对齐，末行完整 |
+| 底部遮挡 | 30 行时最后一行底边 **y=2145**，FAB 顶边 **y=2172** → **未被遮挡**（`FAB_CLEARANCE_DP=78` 与 FAB 几何 22+56=78dp 精确吻合） |
+| 视图切换 | 总课表 ↔ 单周课表反复切换（含行数由 30 降到 10 的收缩路径）**未崩溃** |
+| 星期标题 | 横向滚动时随网格同步滑动，未造成节次错位 |
+
+- **未在真机验证**（只有模拟器）。
+- **未验证**：改系统字号后的网格（`periodCell` 用 `BODY_LARGE=14sp`，固定 142px 行高，
+  200% 字号下文字约 74px，理论上不裁切，但**未实测**）。
+- 遗留的结构脆弱性见 G-4。
+
+### D-5 专项结论：Excel 导入全流程（2026-10-13 设备实测，首次走通）
+
+样本沿用 E3/E4 留下的 `build/importtest/timetable.xls`（**仓库里没有 `.xls` 样本**，
+`build/` 被 gitignore）。先在 JVM 上用 `ExcelTimetableReader + TimetableImportParser`
+读回确认，再推到 `/sdcard/Download/` 走设备。
+
+| 环节 | 实测结果 |
+|---|---|
+| JVM 预校验 | `usable=true courses=4 issues=0`，5 条安排；周次/单双周/节次全部符合文件 |
+| 入口 | 设置 → **课表数据 → 导入课表**（`当前共 23 条安排 · 从 Excel 文件导入`）→ 系统 `ACTION_OPEN_DOCUMENT` |
+| 选择器 | 打开即停在 **Downloads**，`timetable.xls` 可见可点 ✅ |
+| 预览弹窗 | **`识别到 4 门课程，共 5 条安排`**、**`文件内容已全部识别。`**（0 issues）、`导入将覆盖当前课表`、`导入到：2026 秋季学期 · 文件第 1 周对应本学期第 1 周` |
+| 默认开学日期 | **`2026-09-14`**（= 设置页已存值，**不是今天**）✅；生效行 `2026-09-14，即本学期第 1 周周一` |
+| 默认总周数 | **`18 周`**（= 目标学期已存值）；范围行 `9/14 - 1/17，共 18 周` |
+| 覆盖导入 | 因日期与周数均未改，**不弹二次确认**，直接落盘 |
+| **落盘内容（逐字段核对）** | 高等数学 `w1-16 parity=0` 周一 p1 A101；大学英语 `w1-16 parity=1` 周一 p2 B202；数据结构 `w1-8` + `w11-16`（**两条**）周三 p1 C303；线性代数 `w2-16 parity=2` 周五 p3 D404 —— **与文件逐字段一致** ✅ |
+| 非连续周次 | `1-8,11-16周` → **两条记录**（不是一条被拉平的 `1-16`）✅ |
+| 同课同色 | 两条「数据结构」颜色相同（`colorFor(code+name)` 哈希）✅ |
+| 学期设置未被改动 | `semester_start` 仍 `2026-09-14`；`semesters` 仍 `[{"id":…,"start":"2026-09-14","name":""}]`（**未新增 `weeks` 键**）✅ |
+| 撤销快照 | 写入 `courses_previous:1791793712068`，内含**导入前的 23 条** ✅ |
+| 首页 | `2026 秋季学期 · 9/14 开学`；`第5周 · 单周`；今天（10/13 周二）无课 → 正确空状态 ✅ |
+| 总课表 | `5 条安排`；大学英语带 **`· 单周`**；数据结构显示为 `第1-8周` 与 `第11-16周` **两块** ✅ |
+| **单双周过滤（第 5 周 / 单周）** | 大学英语**在**、线性代数**不在**（周五列空）✅ |
+| **单双周过滤（第 6 周 / 双周）** | 线性代数**在**（周五 D404）、大学英语**不在** ✅ |
+| 撤销上次导入 | 二次确认文案完整（含「每次导入只能撤销一次」）；确认后回到 **`23 条安排`** ✅ |
+| 撤销的数据等价性 | 与导入前**逐字段集合相等**（含颜色、周次、单双周、教师、地点）；`semester_start` / `semesters` / `bell_schedules` / `default_schedule_id` **逐字节相同**；**唯一差异是快照键按设计被消费** ✅ |
+
+**结论：Excel 导入的「选文件 → 预览 → 确认 → 结果 → 撤销」全流程在设备上走通，
+且导入结果与文件内容逐字段吻合、单双周与周次规则正确、学期设置未被波及。**
+
+- 未验证：导入**损坏/不可读**文件（设备上有 `broken.xls` / `unreadable.xls` 样本，
+  以及真实学校文件 `2026-2027第一学期-学期课表.xls`），未走这两条错误分支。
+- 未验证：`.xlsx`（jxl 只支持旧式 `.xls`，代码即如此设计）。
+- 顺带发现的**既有**缺陷见 G-11。
+
+### D-6 专项结论：上课提醒（2026-10-13 核实 + 新增自定义提前分钟数）
+
+#### 改动前通知的**实际**形态（以代码为准，非文档推断）
+
+| 项 | 改动前 | 改动后 |
+|---|---|---|
+| 发送方式 | **Android 系统通知**（`NotificationManager.notify`），无应用内提示 | 同 |
+| 渠道 | `class_reminders`「上课提醒」，`IMPORTANCE_HIGH`，`enableVibration(true)`，描述「在课程开始前提醒你，包含课程、时间与教室。」 | 未改 |
+| **标题** | **只有课程名**（`reminder.courseName()`） | **`上课提醒 · <课程名>`** |
+| **正文** | `M月d日 EEEE HH:mm · 地点 · 教师` + `\n` + `N 分钟后开始` | `M月d日 周X HH:mm · 第 X-Y 节 · 地点 · 教师` + `\n` + `N 分钟后开始`（**新增节次**；星期改为应用自己的中文名） |
+| 展开 | `BigTextStyle`（可展开） | 同 |
+| 时间戳 | `setWhen(上课时刻)` + `setShowWhen(true)` → 通知头显示「in 5h」 | 同 |
+| 声音/振动 | 渠道默认声音 + `enableVibration(true)`；代码**未**设自定义 sound | 未改 |
+| **点击** | 打开 **`MainActivity`**（首页），**不带任何 extra** → 与那门课无关 | **打开 `CourseDetailActivity`**，带 `EXTRA_COURSE_ID`（**稳定课程 id**） |
+| 通知 id | `notificationId(courseId, epochDay)` | 未改 |
+| 计划窗口/上限 | 7 天 / 最多 10 条 | 未改 |
+| 调度 | `AlarmManager.setAndAllowWhileIdle`（**故意非精确**，不申请 `SCHEDULE_EXACT_ALARM`） | 未改 |
+| 取消/重建 | 每次 `sync()` **先按旧 ledger 取消全部槽位**，再重新注册 → 幂等、无重复 | 未改 |
+| 重启恢复 | `ReminderRestoreReceiver` 监听 `BOOT_COMPLETED`/`TIME_SET` 等重建 | 未改 |
+| 提前分钟数 | `lead_minutes`（int，存于独立 `SharedPreferences("weihe_schedule_reminders")`），**只允许 5/10/15** | **1–180**，快捷项仍为 5/10/15，另有「自定义」 |
+
+#### 本轮代码改动
+
+1. **`rule/ReminderPlan`**：`MIN_LEAD_MINUTES` 5 → **1**，`MAX_LEAD_MINUTES` 15 → **180**；
+   新增 **`QUICK_LEAD_MINUTES = {5,10,15}`**（快捷项**不再**由带宽端点推导——否则会变成
+   「1 分钟」「180 分钟」）；新增纯函数 **`parseLeadMinutes(String)`**（拒绝而非修复：
+   空、空白、单词、`2.5`、`-10`、`25 分`、`0`、`181`、超 int 全部返回 null）。
+2. **`rule/Reminder`**：新增 `startPeriod`/`endPeriod`（含 equals/hashCode），供通知显示节次。
+3. **`reminder/ReminderNotifications`**：标题加前缀；正文加节次；**星期改用
+   `ScheduleUtils.dayName()`**（不再用 `EEEE`，见下）；点击目标改为课程详情，
+   并**去掉 `FLAG_ACTIVITY_CLEAR_TOP`**——详情页在 `onCreate` 读 extra 且**没有 `onNewIntent`**，
+   带上 CLEAR_TOP 会把新 id 交给一个不会重读的旧实例，用户点 A 课却看到 B 课。
+4. **`SettingsActivity`**：第四个「自定义」色块 + 数字输入对话框（`TYPE_CLASS_NUMBER`）。
+   校验失败用既有 `EditText.setError` 习惯（`Action.validated` 返回 false → 对话框不关）。
+
+#### 兼容性：老用户不受影响
+
+`lead_minutes` 的键与含义都没变，只是**可接受区间变宽**（5..15 ⊂ 1..180），
+所以旧值仍被原样读回。**设备实测**：改动前设备上 `lead_minutes=15`，
+升级后设置页仍显示 **`已开启 · 提前 15 分钟 · 已安排 10 条提醒`**，
+且 `15 分钟` 色块处于选中态 ✅。`ReminderSettings.leadMinutes()` 对越界值仍回落到默认 10（未改）。
+
+#### 设备实测（`emulator-5554`，Pixel_10 / API 37 / 1080×2424 @420）
+
+| 验证项 | 结果 |
+|---|---|
+| 四个色块一行放下 | `5 分钟`(79–230) `10 分钟`(251–419) `15 分钟`(440–610) `自定义`(631–788)，右侧余 ~210px ✅ |
+| 对话框 | 标题 `自定义提前时间`、正文 `提前多少分钟提醒（1–180 分钟）`、输入框预填当前值 15 ✅ |
+| 键盘 | **数字键盘**（`TYPE_CLASS_NUMBER`）✅ |
+| 超范围 `999` | 弹 **`请填写 1–180 之间的整数`**，**对话框不关**，`lead_minutes` 仍 15 ✅ |
+| 空输入 | 弹 **`请填写提前提醒的分钟数`**，同样不关、不写 ✅ |
+| 保存 25 | `lead_minutes` 15 → **25**；状态行 **`已开启 · 提前 25 分钟 · 已安排 10 条提醒`**；第 4 个色块变 **`25 分钟`** 且选中 ✅ |
+| **重新调度** | ledger **仍是 10 条、槽位与课程完全不变**，**每条触发时刻精确前移 10 分钟**（25−15）→ 旧闹钟被替换而非并存 ✅ |
+| 重启后 | `am force-stop` 再开：`lead_minutes=25`，页面显示 `提前 25 分钟` + `25 分钟` 色块 ✅ |
+| **通知真实内容** | `dumpsys notification --noredact` 读到：channel `class_reminders`、`BigTextStyle`、`AUTO_CANCEL`、importance 4；标题 **`上课提醒 · 最优控制与状态估计`**；正文 **`10月13日 周二 13:20 · 第 6-7 节 · 教学楼F楼F106多 · 李海波`** + `25 分钟后开始` ✅ |
+| 状态栏/通知栏 | 截图确认：`拾课 · in 5h` + 标题 + 两行正文 + 展开箭头 ✅ |
+| **点击跳转** | 点通知 → **`CourseDetailActivity`**，显示 `新时代中国特色社会主义理论与实践 / 周二 · 第 4-5 节 / 10:40-12:00 / 教学楼F楼F420多 / 张瀚文`，**与通知那门课完全一致** ✅ |
+| **重复抑制** | 同一槽位再广播一次 → **不产生第二条通知**（`markNotified` 生效）✅ |
+| **关闭提醒** | 取消勾选后 `scheduled` 立即变 **`[]`**；再广播 → **通知数 0** ✅ |
+| 恢复原状 | 测完把 `weihe_schedule_reminders.xml` 写回原文件，页面回到 `提前 15 分钟 / 10 条` ✅ |
+
+**通知是怎么被触发的**：`ReminderReceiver` 是 `exported="false"`，`adb shell am broadcast` 会被
+`SecurityException` 拒（shell uid）。可行路径是**以应用自身 uid 发送**：
+`adb shell run-as com.weihe.schedule am broadcast --user 0 -a com.weihe.schedule.action.REMIND -n com.weihe.schedule/.reminder.ReminderReceiver --ei slot <槽位> --el trigger_at <毫秒>`
+（`--user 0` 必须显式给，否则报 `INTERACT_ACROSS_USERS`）。槽位与触发毫秒从 `scheduled` 键里取。
+
+#### 本轮发现并**修掉**的既有缺陷
+
+**正文星期用的是 `EEEE`，跟随设备语言。** 本机（英文 locale）实测通知正文是
+`10月13日 Tuesday 10:40 …` —— 中文界面里混一个英文星期，而设备语言决定了它显示成什么。
+改为复用项目自己的 **`ScheduleUtils.dayName()`**（周一…周日），并加测试锁住
+「正文里不得出现任何英文星期名」。这不是新引入的问题，是核实通知内容时读出来的。
+
+#### 与本轮需求冲突的既有测试（**已按需求更新，特此报告**）
+
+AGENTS.md 规定「既有测试与需求冲突时停下来报告」。以下 4 处冲突均由本轮需求直接导致，
+更新后**断言仍然成立且更严格**，没有为了让代码通过而放宽：
+
+| 测试 | 原断言 | 现断言 | 原因 |
+|---|---|---|---|
+| `NonDefaultScheduleFlowTest.theDefaultReminderLeadIsStillFifteenMinutesOrLess` | `MIN==5`、`MAX==15`、`!supports(20)` | 改名 `theReminderLeadBandIsStillItsOwnSetting`：带宽自洽、仍拒绝带外值、`MAX > 一节时长` | 需求明确要求 1–180，`supports(20)` 必须为真 |
+| `ReminderPlanTest.aLeadTimeOutsideTheSupportedBandIsRefused` | `!supports(4)`、`!supports(16)` | 带内改为 1/5/10/15/20/180；带外改为 0/−10/**181**/1000 | 同上 |
+| `ReminderPlanTest.theDefaultLeadTimeIsOneOfTheThreeOffered` | 名字指「三者之一」 | 改名 `theDefaultLeadTimeIsInsideTheBand`（断言不变） | 带宽不再是三个值，旧名字已不成立 |
+| `ReminderScheduleTest.anEmptyVenueOrTeacherLeavesNoGapBehind` / `aVenueWithoutATeacherStillReadsProperly` | 分隔符数 0 / 1 | **1 / 2**，并继续断言不出现 `· ·` | 正文新增了「节次」这一**真实**字段，它必然占一个分隔符；「空字段不留多余分隔符」的原意保留 |
+
+#### 未验证 / 限制
+
+- 通知是**用广播手动触发**的，**没有等真实 `AlarmManager` 到点**（下一次真实触发在设备时间
+  10:15，超过 2 小时）。`setAndAllowWhileIdle` 的「可能晚几分钟」这一行为**未实测**。
+- **重启（`BOOT_COMPLETED`）后的自动重建**未实测（`ReminderRestoreReceiver` 代码未改）。
+- **自定义作息表**下的提醒时刻未单独实测（当前数据 23 门课都命中「教学楼作息」一张表）；
+  由 `ReminderPlanTest.theReminderNamesTheScheduleItUsed` 与未改动的 `ReminderPlan.startOf` 覆盖。
+- 未测**锁屏**上的显示形态（需要锁屏界面，未走）。
+- 未测**大字号**下四个色块是否换行（默认字号下右侧余 ~210px；`1.3×` 未实测）。
+- `ReminderSettings` **仍无 JVM 测试**（需要 `Context`，项目没有对应的测试接缝）；
+  持久化与老用户兼容性是**设备实测**的，不是单测。
 
 ---
 
@@ -210,7 +375,9 @@ app/src/main/java/com/weihe/schedule/
 | E4 | **导入弹窗新增「学期总周数」（1–18）** | 已完成；新增 `rule/SemesterWeeks` | 归档 E4 |
 | K | **课程颜色选择器布局恢复**（3×3 圆形网格 + 勾 → 单排圆角矩形） | 已完成；删除孤立资源 `ic_check.xml` | 归档 K |
 | — | **同名课程批量同步颜色** | 已完成；新增 `rule/CourseColorSync` + `recolorCourses` | 未入归档（本轮之前最后一轮） |
-| — | 左侧节次编号核查 | **未复现，判定已修复**（见 D-4） | 本文件 D-4 |
+| — | 左侧节次编号核查 | **未复现，判定已修复**；2026-10-13 扩展到 20/30 行、两个视图、滚动中段，仍不可复现（见 D-4） | 本文件 D-4 |
+| — | **Excel 导入全流程设备验证** | **2026-10-13 首次走通**：选文件 → 预览 → 覆盖导入 → 单双周过滤 → 撤销导入；导入结果与文件逐字段吻合（见 D-5） | 本文件 D-5 |
+| — | **上课提醒：核实通知形态 + 自定义提前分钟数（1–180）** | **2026-10-13 完成**；顺带修掉「正文星期跟随设备语言」；4 处既有测试按需求更新并已在 D-6 报告（见 D-6） | 本文件 D-6 |
 
 **注意：E0–E4 与 K 的代码均已包含在提交 `f0765a6` 中**，即已提交但未推送。
 
@@ -228,13 +395,17 @@ $env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
 
 | 检查 | 结果 |
 |---|---|
-| `testDebugUnitTest` | **54 个测试类 / 971 项 / 971 通过 / 0 失败 / 0 错误** |
-| `assembleDebug` | **BUILD SUCCESSFUL**，产物 `app/build/outputs/apk/debug/app-debug.apk` ✓ |
-| `lintDebug` | **`No issues found.`** |
+| `testDebugUnitTest` | **54 个测试类 / 980 项 / 980 通过 / 0 失败 / 0 错误**（本轮前 971；+9 项：自定义提前时间与通知文案） |
+| `assembleDebug` | **BUILD SUCCESSFUL**，产物 `app/build/outputs/apk/debug/app-debug.apk`（872,939 B）✓ |
+| `lintDebug` | **`No issues found.`**（`lint-results-debug.xml` 中 `<issue ` 计数 = **0**）✓ |
 
-- **结果对应的代码状态**：`f0765a6` + 本轮工作区的 6 个 `.md` 删除（文档增删**不影响**编译、测试与 lint）✓
+- **结果对应的代码状态**：`8ee1a04` + 本轮提醒改动（工作区未提交）✓
 - **必须带 `--rerun-tasks`**，否则会读到被跳过任务的旧结果。
 - 环境：Gradle 8.13 / JDK 20.0.1 / AGP 8.13.0 / `ANDROID_HOME=D:\Sdk`。
+
+> **一次假失败**：2026-10-13 首次执行门禁时报 `BUILD FAILED`（错误里列出一堆 `.class` 路径）。
+> 原因是**上一轮 Agent 会话被中断**，`--rerun-tasks` 已删除输出目录但没重建完。
+> **重跑即通过**，代码本身无问题。遇到同样的失败先重跑一次再判断。
 
 ### 从未验证过的部分
 
@@ -258,27 +429,49 @@ $env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
 
 ## G. 已知问题与技术风险
 
-**G-1 ⚠️ 6 个项目文档被删除且未提交** —— 见 B 节。归属与意图**待确认**；内容可从 `f0765a6` 恢复；
-**未经用户确认不要恢复、也不要提交这个删除**。
+**G-1 ✅ 已解决（2026-10-13 复核）** —— 6 个设计/规划文档（`COURSE_REMINDER_PLAN.md`、
+`DATA_BACKUP_DESIGN.md`、`DATA_BACKUP_RESTORE_PLAN.md`、`NEXT_OPTIMIZATION_ROADMAP.md`、
+`PROJECT_ANALYSIS.md`、`PROJECT_ARCHITECTURE.md`，合计 4,582 行）的删除**已提交**在 `8ee1a04`，
+与同一次提交里的「重写 `AGENT_HANDOFF.md` + 新建 `AGENT_HANDOFF_ARCHIVE.md` + 新增 `README.md`」
+同属**有意的文档整理**。内容仍可从 `f0765a6` 取出。**无需再问用户，也不需要恢复。**
 
-**G-2 ⚠️ `f0765a6` 未推送** —— HEAD 领先 `origin/main` 一个提交。
-是否推送**由用户决定**，Agent 不得擅自 push。
+**G-2 ✅ 已解决（2026-10-13 复核）** —— `f0765a6` 与 `8ee1a04` **都已在 `origin/main` 上**，
+`git rev-list --count origin/main..HEAD` = **0**，没有任何未推送提交。
 
 **G-3 已确认（设计取舍）** —— 作息表的**结束时间在界面上只读**（每节 40 分钟自动算出，
 时长可在 1–180 分钟内配置）；`BellScheduleEditor` 底层仍支持任意起止。
 
-**G-4 已确认（结构脆弱，未修）** —— 节次编号栏靠**自身 `scrollTo`** 跟随网格，
-**这个机制天然脆弱**：将来任何让网格内容比编号栏高的改动（日列多一行内边距、
-课程画到最后一节之外等）都会**静默重现**裁切 ✗ 而**现有测试不覆盖两个视图的高度相等**
-（`WeekGridRowsTest` 只覆盖行数算术）✗
-建议二选一：把编号栏移入同一纵向滚动容器（从机制上消除夹取），或补一个断言两视图内容等高的测试。
+**G-4 已确认（结构脆弱，未修；2026-10-13 更正描述）** —— 节次编号栏靠**自身 `scrollTo`**
+跟随网格（`SyncedVerticalScrollView.onScrollChanged`）。**上一版把它描述成"会被内容高度夹取、
+要求两栏等高"是错的**：`View.scrollTo` 不做任何 clamp（AOSP 实现只写 `mScrollX/mScrollY`），
+所以编号栏跟得上，**与两栏是否等高无关**。
+
+真正残留的问题是**两栏内容高度用两套取整方式算**，因此**并不相等**（实测 13 行差 3px、
+20 行差 5px、30 行差 7px，编号栏偏高）：
+
+- 编号栏：`periods × rowHeight()`，每行 `dp(54)` **各自取整后相加**；
+- 网格日列：`rowSpan(dayColumnRows(periods))`，对总高 **`dp(periods × 54)` 一次取整**。
+
+差值的**符号取决于屏幕密度**（`round(54 × density)` 与 `54 × density` 谁大）。
+若某密度的 `frac(54 × density) < 0.5`，编号栏会**比网格矮**最多约 `0.5 × periods` px
+（30 行时约 15px），表现为**编号列底部露出一条背景**——是**外观瑕疵**，
+**不足以造成"后续节次看不到"**（后者是 `1213ef7` 已修的那个缺陷）。
+当前设备（density 2.625，`54 × 2.625 = 141.75`，进位到 142）编号栏**偏高**，所以是安全的。
+
+**现有测试仍不覆盖两栏内容高度的关系**（`WeekGridRowsTest` 只覆盖行数算术）。
+若要加固，建议二选一（**先与用户确认**）：
+① 让编号栏的行高也走 `rowSpan()` 那套一次性取整，使两栏**由构造保证相等**；
+② 补一个断言两栏内容高度的测试（需要先把高度算式提成静态纯函数，否则 JVM 测试测不到）。
 
 **G-5 未验证的设备场景（按重要性）**
-1. 网格 **>13 行**（15/16/20 节）的实际滚动与对齐 —— 只有单测覆盖
-2. **Excel 导入**的完整设备流程（选文件 → 预览 → 确认 → 结果）
+1. ~~网格 >13 行的实际滚动与对齐~~ → **2026-10-13 已在设备上验证 13 / 20 / 30 行，见 D-4** ✅
+2. ~~**Excel 导入**的完整设备流程~~ → **2026-10-13 已走通，见 D-5** ✅
+   （遗留：损坏文件 / `.xlsx` 两条分支未走）
 3. **备份真正写盘到用户文件并恢复**（此前只验证到入口与预览打开选择器）
-4. **提醒到点通知**与重启后恢复
+4. ~~**提醒到点通知**与重启后恢复~~ → **2026-10-13 已实测通知内容、点击跳转、重复抑制、
+   关闭后不再发送（见 D-6）**；遗留：**未等真实闹钟到点**、未测 `BOOT_COMPLETED` 自动重建、未测锁屏形态
 5. 课程复制、备份恢复的端到端走查
+6. 网格在**改过系统字号**后的表现（`periodCell` 用 `BODY_LARGE=14sp` + 固定 142px 行高，**未实测**）
 
 **G-6 待确认** —— 学期自定义名（如 `大三上`）时，新建学期**不推算**名称而回到空输入框（看似有意）。
 **G-7 待确认** —— **非连续周次在数据模型上不可能表达**（`startWeek..endWeek` + 单双周）；
@@ -286,22 +479,60 @@ $env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
 **G-8 待确认** —— **首页没有"跳转到指定日期"入口**（用周次网格 + 星期栏）。把它当既有功能是误判。
 **G-9 待确认** —— 早期缺陷「`addSemester` 未写入 `semester_start:<新id>`」的修复**不追溯**已有数据：
 某个旧学期的 `semester_start` 键可能仍是错误日期，需手动重设或重建该学期。
-**G-10 待确认** —— `EditScheduleActivity.timeInput()` 是否已随 E1 的改动清理（本轮未复核）。
+**G-10 已确认（死代码）** —— `EditScheduleActivity.timeInput(String)` 定义在 L605，
+**全项目仅此一处出现、无任何调用点**（2026-10-13 `grep` 复核）→ 确认是死代码，可清理。
+清理属独立小任务，**本轮未动**（避免扩大范围）。
+
+**G-11 新发现（既有缺陷，未修）—— 导出摘要把"条安排"说成"门课程"**
+设置页「导出备份」的副标题写作
+`待导出：1 个学期 · N 门课程 · 3 张作息表`，但 **N 是"安排条数"而不是"课程门数"**：
+
+- 导入前：**23 条安排** / **14 个不同课名** → 显示 `23 门课程`
+- 导入后：**5 条安排** / **4 个不同课名** → 显示 `5 门课程`
+
+代码依据：`data/BackupCodec` 的 `courseCount()` 是各学期 `courses.size()` 之和，
+即安排条数；`data/BackupPreview.summary()` 把该数字拼进 `\u95E8\u8BFE\u7A0B`（"门课程"）。
+**同一份代码在导入弹窗里是对的**（`识别到 4 门课程，共 5 条安排` 分别用了
+`Report.courseCount()` 与 `Report.scheduleCount()`），所以这是**措辞不一致**而非计数错误。
+影响：用户按摘要估备份规模时会高估课程数；**不影响任何数据**。
+修法（很小，但**本轮未做**）：把措辞改成"条安排"，或改用去重后的课名数。
+
+**G-12 新发现（环境）—— 模拟器截图是缩放显示的**
+`adb screencap` 得到 1080×2424，但预览窗口按 480×1073 显示（**比例 2.25**）。
+**不要按截图上的目测位置点屏幕**——会点到 2.25 倍偏移的位置
+（2026-10-13 因此误点了文件选择器的"Large files"筛选条）。
+**一律用 `uiautomator dump` 里的 `bounds` 取真实设备坐标。**
 
 ---
 
 ## H. 当前工作区保护说明
 
+**2026-10-13 状态：工作区只有本轮的提醒改动与文档更新，没有别人的东西混在里面。**
+
+```
+git status --porcelain
+  M AGENT_HANDOFF.md
+  M AGENT_HANDOFF_ARCHIVE.md
+  M app/src/main/java/com/weihe/schedule/SettingsActivity.java
+  M app/src/main/java/com/weihe/schedule/reminder/ReminderNotifications.java
+  M app/src/main/java/com/weihe/schedule/rule/Reminder.java
+  M app/src/main/java/com/weihe/schedule/rule/ReminderPlan.java
+  M app/src/test/java/com/weihe/schedule/data/NonDefaultScheduleFlowTest.java
+  M app/src/test/java/com/weihe/schedule/reminder/ReminderScheduleTest.java
+  M app/src/test/java/com/weihe/schedule/rule/ReminderPlanTest.java
+  ?? .workbuddy-ai/memory/2026-10-13.md
+git rev-list --count origin/main..HEAD       # 0（无未推送提交）
+```
+
 | 类别 | 内容 | 处理要求 |
 |---|---|---|
-| **已删除（未暂存）** | 6 个项目文档（B 节） | **不要恢复、不要提交、不要 `git add`**，先问用户 |
-| **已修改（本轮）** | `AGENT_HANDOFF_ARCHIVE.md`（追加了旧交接全文） | 本轮产物，可保留 |
-| **未跟踪（本轮）** | `README.md` | 本轮产物，可保留 |
-| **已提交未推送** | `f0765a6`（58 文件） | **不要 push**，由用户决定 |
-| **代码改动** | 本轮**无** | —— |
+| **已提交并推送** | 除下表以外的全部代码与文档，HEAD = `origin/main` = `8ee1a04` | 无待处理项 |
+| **本轮代码改动（未提交）** | 提醒模块 4 个生产文件 + 3 个测试文件（见 D-6） | 可保留；**未经用户同意不要提交/推送** |
+| **本轮文档改动（未提交）** | `AGENT_HANDOFF.md`、`AGENT_HANDOFF_ARCHIVE.md`、`memory/2026-10-13.md` | 可保留 |
+| **已删除（已提交）** | 6 个设计/规划文档（G-1） | **已完成的有意整理**，不要恢复 |
 
 **禁止**：`git reset --hard`、`git clean`、强制切分支、`git checkout -- <file>`（除用户明确要求）、
-`git add`/`commit`/`push` 未经用户同意。工作区可能含他人的修改。
+`git add`/`commit`/`push` 未经用户同意。
 
 ---
 
@@ -309,12 +540,18 @@ $env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
 
 | 优先级 | 任务 | 前置条件 | 验收标准 |
 |---|---|---|---|
-| **P0** | **确认 6 个文档的删除是否有意**（G-1） | 只需问用户 | 用户给出结论；据此决定恢复或提交删除 |
-| **P0** | 确认是否推送 `f0765a6`（G-2） | 用户决定 | —— |
-| **P1** | 补设备验证 G-5 的 1–2 项（网格 >13 行 / Excel 导入） | 模拟器可用；导入需一个 `.xls` 文件 | 走通并截图；发现的问题记录而非当场大改 |
-| **P2** | 加固节次编号栏跟随机制（G-4） | 先与用户确认是否需要 | 编号栏与网格内容等高**由机制保证**，或有测试断言 |
-| **P3** | 清理 G-10 的死代码、G-9 的孤儿键 | 无 | 971 项测试仍全绿、lint 干净 |
+| ~~P0~~ | ~~确认 6 个文档的删除是否有意~~ | **已完成**：删除已提交，是有意整理（G-1） | —— |
+| ~~P0~~ | ~~确认是否推送 `f0765a6`~~ | **已完成**：已在 `origin/main`，无未推送提交（G-2） | —— |
+| ~~P1-1~~ | ~~补设备验证网格 >13 行~~ | **已完成 2026-10-13**：13 / 20 / 30 行实测，见 D-4 | —— |
+| **P1-2** | **Excel 导入的完整设备流程**（选文件 → 预览 → 确认 → 结果） | 需**先生成一个 `.xls` 样本**（仓库里没有）；系统文件选择器在 adb 下偶发点不中 | 走通并截图；发现的问题**记录而非当场大改** |
+| ~~P1-2~~ | ~~Excel 导入的完整设备流程~~ | **已完成 2026-10-13**：选文件 → 预览 → 覆盖导入 → 撤销导入全流程走通，见 D-5 | —— |
+| ~~P1-3~~ | ~~导入的**错误分支**设备验证~~ | **仍未做**：`broken.xls` / `unreadable.xls` / 真实学校文件 / `.xlsx` 都还在 `/sdcard/Download/` | 走通并截图；问题记录而非当场大改 |
+| **P1-4** | 提醒的**真实闹钟到点**验证（等一次 `AlarmManager` 自然触发）＋ `BOOT_COMPLETED` 后自动重建 ＋ 锁屏形态 | 模拟器可用；需要一个几十分钟内的课 | 走通并截图 |
+| **P2** | 加固节次编号栏跟随机制（G-4） | **先与用户确认是否需要**（当前只是 ≤15px 的外观瑕疵，不是功能缺陷） | 编号栏与网格内容等高**由构造保证**，或有测试断言 |
+| **P3** | 清理 `EditScheduleActivity.timeInput()` 死代码（G-10 已确认） | 无 | 980 项测试仍全绿、lint 干净 |
+| **P3** | 修正导出摘要措辞（G-11：`N 门课程` → 实际是安排条数） | 无 | 文案与计数一致；不改任何存储 |
 | **P4** | 需产品决策才能动（G-6/7/8） | **先问用户** | 不得自行开工 |
+| **P5** | 备份写盘恢复 / 课程复制端到端（G-5 的 3、5） | 模拟器可用 | 走通并截图 |
 
 ---
 
@@ -323,18 +560,18 @@ $env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
 1. **先读**（顺序）：[`README.md`](README.md)（项目是什么）→ [`AGENTS.md`](AGENTS.md)（怎么写）
    → **本文件**（现在什么状态）→ 需要背景时查 [`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)
    （**仅历史，其完成度判断不可信**）。
-2. **核对 Git**：
+2. **核对 Git**（2026-10-13 实测值）：
    ```
-   git branch --show-current     # 期望 main
-   git log -3 --oneline          # 期望 HEAD = f0765a6
-   git status --short            # 期望：7 项（6 个 D 删除 + 归档 M）+ README.md 未跟踪
-   git rev-list --count origin/main..HEAD   # 期望 1（未推送）
+   git branch --show-current                 # 期望 main
+   git log -2 --oneline                      # 期望 HEAD = 8ee1a04
+   git status --porcelain                    # 期望：0 行（工作区干净）
+   git rev-list --count origin/main..HEAD    # 期望 0（无未推送）
    ```
 3. **打开代码抽查**（不要只信文档）：`ui/Pickers`、`rule/CourseColorSync`、
    `EditCourseActivity` 的颜色选择器（单排 / `RADIUS_S` / 无 `ic_check`）、
    `model/BellSchedule` 的 `DEFAULT/MIN/MAX_PERIOD_MINUTES`、
    `WeekGridActivity` 的 `dayColumnRows`/`lastPeriodInUse`、`CourseRepository.recolorCourses`。
-4. **跑基线**（务必 `--rerun-tasks`）：期望 **971 项全通过 + lint `No issues found.`**。
+4. **跑基线**（务必 `--rerun-tasks`）：期望 **980 项全通过 + lint `No issues found.`**。
    若不是，**先报告，不要在其上叠加改动**。
 5. **保护工作区**：见 H 节。**不得** reset / clean / 强制切分支 / 未经同意 add·commit·push。
 6. **暂停并向用户报告的情形**：

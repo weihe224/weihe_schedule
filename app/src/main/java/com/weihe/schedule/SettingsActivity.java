@@ -13,6 +13,7 @@ import android.os.Build;
 import android.provider.Settings;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.text.InputType;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
@@ -887,6 +888,7 @@ public class SettingsActivity extends Activity {
         reminderLeadChips = new ArrayList<>();
         int current = ReminderSettings.leadMinutes(this);
         int[] choices = leadChoices();
+        boolean custom = !isQuickChoice(choices, current);
         for (int index = 0; index < choices.length; index++) {
             final int minutes = choices[index];
             TextView chip = UiKit.chip(this, minutes + " \u5206\u949F", minutes == current);
@@ -899,6 +901,18 @@ public class SettingsActivity extends Activity {
             leadRow.addView(chip, params);
             reminderLeadChips.add(chip);
         }
+        // The fourth entry, beside the three shortcuts rather than instead of them.
+        // It is a chip like the others so the row stays one control, and it carries
+        // the saved number when that number is not one of the three -- otherwise
+        // reopening the screen would show three unselected chips and the value only
+        // in the status line below.
+        TextView customChip = UiKit.chip(this, customLeadLabel(custom, current), custom);
+        customChip.setOnClickListener(view -> showCustomLeadDialog());
+        LinearLayout.LayoutParams customParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT));
+        customParams.leftMargin = dp(UiTokens.SPACE_S);
+        leadRow.addView(customChip, customParams);
+        reminderLeadChips.add(customChip);
         LinearLayout.LayoutParams leadParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         leadParams.topMargin = dp(UiTokens.SPACE_L);
@@ -914,13 +928,100 @@ public class SettingsActivity extends Activity {
         return card;
     }
 
-    /** The three lead times the feature offers, taken from the planner's own range. */
+    /**
+     * The one-tap lead times, taken from the planner's own list.
+     *
+     * <p>Not the ends of the supported band. Those were the same three numbers
+     * only while the band was five-to-fifteen; the band now reaches from one
+     * minute to three hours for typed values, and deriving the shortcuts from it
+     * would have offered "1 分钟" and "180 分钟" instead of the three a student
+     * actually picks.</p>
+     */
     private static int[] leadChoices() {
-        return new int[] {
-                ReminderPlan.MIN_LEAD_MINUTES,
-                ReminderPlan.DEFAULT_LEAD_MINUTES,
-                ReminderPlan.MAX_LEAD_MINUTES
-        };
+        return ReminderPlan.QUICK_LEAD_MINUTES;
+    }
+
+    /** Whether {@code minutes} is one of the shortcuts, and so needs no fourth chip. */
+    private static boolean isQuickChoice(int[] choices, int minutes) {
+        for (int choice : choices) {
+            if (choice == minutes) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * What the fourth chip reads: the saved number, or the word for the entry.
+     *
+     * <p>Showing the number is the point of the chip. A custom value has no
+     * shortcut to sit on, so without this the screen would open on three
+     * unselected chips and leave the user to find the number in the status line.</p>
+     */
+    private static String customLeadLabel(boolean custom, int minutes) {
+        return custom ? minutes + " \u5206\u949F" : "\u81EA\u5B9A\u4E49";
+    }
+
+    /**
+     * The dialog for typing a lead time.
+     *
+     * <p>A plain number field rather than a stepper: the shortcuts cover the
+     * common answers, and someone who wants twenty-five should not have to press a
+     * button twenty times to say so. The keyboard is asked for digits only, so the
+     * letter keys are not on screen to be hit by accident.</p>
+     *
+     * <p>Nothing is written until 保存 is pressed, and 保存 refuses rather than
+     * repairs: an empty field, a word, a fraction or a number outside the band
+     * leaves the stored value exactly as it was and says what is wrong. That is
+     * what makes 取消 and a failed 保存 the same thing as far as the timetable and
+     * the alarms are concerned.</p>
+     */
+    private void showCustomLeadDialog() {
+        final EditText input = UiKit.field(this,
+                "\u4F8B\u5982 25", true);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf(ReminderSettings.leadMinutes(this)));
+        input.setSelection(input.getText().length());
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(UiTokens.SPACE_XL - 2), dp(UiTokens.SPACE_S),
+                dp(UiTokens.SPACE_XL - 2), 0);
+        content.addView(input, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(UiTokens.FIELD_HEIGHT)));
+
+        UiKit.dialog(this, "\u81EA\u5B9A\u4E49\u63D0\u524D\u65F6\u95F4",
+                "\u63D0\u524D\u591A\u5C11\u5206\u949F\u63D0\u9192\uFF08"
+                        + ReminderPlan.MIN_LEAD_MINUTES + "\u2013"
+                        + ReminderPlan.MAX_LEAD_MINUTES + " \u5206\u949F\uFF09",
+                content, null,
+                UiKit.Action.of("\u53D6\u6D88", null),
+                UiKit.Action.validated("\u4FDD\u5B58",
+                        () -> applyCustomLeadMinutes(input)));
+    }
+
+    /**
+     * Saves a typed lead time, or refuses and keeps the dialog open.
+     *
+     * @return whether the value was accepted, which is what decides if the dialog
+     *         closes
+     */
+    private boolean applyCustomLeadMinutes(EditText input) {
+        String typed = input.getText().toString().trim();
+        if (typed.isEmpty()) {
+            input.setError("\u8BF7\u586B\u5199\u63D0\u524D\u63D0\u9192\u7684\u5206\u949F\u6570");
+            input.requestFocus();
+            return false;
+        }
+        Integer minutes = ReminderPlan.parseLeadMinutes(typed);
+        if (minutes == null) {
+            input.setError("\u8BF7\u586B\u5199 " + ReminderPlan.MIN_LEAD_MINUTES + "\u2013"
+                    + ReminderPlan.MAX_LEAD_MINUTES + " \u4E4B\u95F4\u7684\u6574\u6570");
+            input.requestFocus();
+            return false;
+        }
+        onLeadMinutesChosen(minutes.intValue());
+        return true;
     }
 
     private void onReminderEnabledChanged() {
@@ -957,9 +1058,16 @@ public class SettingsActivity extends Activity {
         boolean allowed = ReminderNotifications.canPost(this);
         int minutes = ReminderSettings.leadMinutes(this);
         int[] choices = leadChoices();
-        for (int index = 0; index < reminderLeadChips.size(); index++) {
+        for (int index = 0; index < choices.length; index++) {
             UiKit.styleChip(reminderLeadChips.get(index), choices[index] == minutes);
         }
+        // The fourth chip is styled from the same number as the other three, so
+        // exactly one of the four is ever selected and it is always the value the
+        // alarms were built from.
+        boolean custom = !isQuickChoice(choices, minutes);
+        TextView customChip = reminderLeadChips.get(choices.length);
+        customChip.setText(customLeadLabel(custom, minutes));
+        UiKit.styleChip(customChip, custom);
         if (!enabled) {
             reminderStatus.setText("\u5DF2\u5173\u95ED");
             reminderStatus.setTextColor(Palette.ON_SURFACE_VARIANT);

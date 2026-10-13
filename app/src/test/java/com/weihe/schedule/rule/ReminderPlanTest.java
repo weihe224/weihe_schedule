@@ -1,5 +1,6 @@
 package com.weihe.schedule.rule;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -449,13 +450,19 @@ public class ReminderPlanTest {
 
     @Test
     public void aLeadTimeOutsideTheSupportedBandIsRefused() {
+        // The band is 1..180 now that the user can type a number, so the values that
+        // count as "outside" are the ones past its ends rather than past the old
+        // five-and-fifteen shortcuts.
+        assertTrue(ReminderPlan.supportsLeadMinutes(1));
         assertTrue(ReminderPlan.supportsLeadMinutes(5));
         assertTrue(ReminderPlan.supportsLeadMinutes(10));
         assertTrue(ReminderPlan.supportsLeadMinutes(15));
+        assertTrue(ReminderPlan.supportsLeadMinutes(20));
+        assertTrue(ReminderPlan.supportsLeadMinutes(180));
         assertFalse(ReminderPlan.supportsLeadMinutes(0));
-        assertFalse(ReminderPlan.supportsLeadMinutes(4));
         assertFalse(ReminderPlan.supportsLeadMinutes(-10));
-        assertFalse(ReminderPlan.supportsLeadMinutes(16));
+        assertFalse(ReminderPlan.supportsLeadMinutes(181));
+        assertFalse(ReminderPlan.supportsLeadMinutes(1000));
 
         ReminderPlan.Plan plan = ReminderPlan.onDate(Arrays.asList(course(1L, 1, 1, 1)),
                 semester(), hourly(), WEEK1_MON, 0, at("2026-08-31T00:00"));
@@ -465,11 +472,86 @@ public class ReminderPlanTest {
     }
 
     @Test
-    public void theDefaultLeadTimeIsOneOfTheThreeOffered() {
+    public void theBandEndsWhereTheFeatureSaysTheyDo() {
+        assertEquals(1, ReminderPlan.MIN_LEAD_MINUTES);
+        assertEquals(180, ReminderPlan.MAX_LEAD_MINUTES);
+    }
+
+    @Test
+    public void theShortcutsAreFiveTenAndFifteenWhateverTheBandIs() {
+        // The shortcuts are not the band's ends. They were the same three numbers
+        // only while the band was five-to-fifteen; widening it for typed values must
+        // not turn the row of chips into "1 分钟" and "180 分钟".
+        assertArrayEquals(new int[] {5, 10, 15}, ReminderPlan.QUICK_LEAD_MINUTES);
+        for (int minutes : ReminderPlan.QUICK_LEAD_MINUTES) {
+            assertTrue("shortcut " + minutes + " must be settable",
+                    ReminderPlan.supportsLeadMinutes(minutes));
+        }
+        assertTrue(ReminderPlan.supportsLeadMinutes(ReminderPlan.DEFAULT_LEAD_MINUTES));
+    }
+
+    @Test
+    public void aTypedLeadTimeIsReadAsTheNumberItIs() {
+        assertEquals(Integer.valueOf(1), ReminderPlan.parseLeadMinutes("1"));
+        assertEquals(Integer.valueOf(20), ReminderPlan.parseLeadMinutes("20"));
+        assertEquals(Integer.valueOf(25), ReminderPlan.parseLeadMinutes("25"));
+        assertEquals(Integer.valueOf(30), ReminderPlan.parseLeadMinutes("30"));
+        assertEquals(Integer.valueOf(180), ReminderPlan.parseLeadMinutes("180"));
+        // A keyboard can leave a space behind; the user did not type a different
+        // number.
+        assertEquals(Integer.valueOf(25), ReminderPlan.parseLeadMinutes("  25 "));
+        // Leading zeros are still the number they spell.
+        assertEquals(Integer.valueOf(7), ReminderPlan.parseLeadMinutes("007"));
+    }
+
+    @Test
+    public void aTypedValueThatIsNotInTheBandIsRefusedRatherThanRepaired() {
+        assertNull(ReminderPlan.parseLeadMinutes(null));
+        assertNull("an empty field is not a value", ReminderPlan.parseLeadMinutes(""));
+        assertNull("nor is a field of spaces", ReminderPlan.parseLeadMinutes("   "));
+        assertNull("a word is not a number", ReminderPlan.parseLeadMinutes("abc"));
+        assertNull("a fraction must not be truncated to 2",
+                ReminderPlan.parseLeadMinutes("2.5"));
+        assertNull("a sign must not be stripped", ReminderPlan.parseLeadMinutes("-10"));
+        assertNull("units are not part of the number", ReminderPlan.parseLeadMinutes("25 \u5206"));
+        assertNull("below the band", ReminderPlan.parseLeadMinutes("0"));
+        assertNull("above the band", ReminderPlan.parseLeadMinutes("181"));
+        assertNull("far above the band, and past what an int holds",
+                ReminderPlan.parseLeadMinutes("99999999999"));
+    }
+
+    @Test
+    public void theDefaultLeadTimeIsInsideTheBand() {
+        // Renamed from "…IsOneOfTheThreeOffered": the band no longer has three
+        // members, so "one of the three" stopped describing anything.
         assertEquals(10, ReminderPlan.DEFAULT_LEAD_MINUTES);
         assertTrue(ReminderPlan.supportsLeadMinutes(ReminderPlan.DEFAULT_LEAD_MINUTES));
         assertTrue(ReminderPlan.supportsLeadMinutes(ReminderPlan.MIN_LEAD_MINUTES));
         assertTrue(ReminderPlan.supportsLeadMinutes(ReminderPlan.MAX_LEAD_MINUTES));
+    }
+
+    @Test
+    public void aCustomLeadTimeMovesTheAlarmAndNotTheClass() {
+        // What "re-scheduling after a custom value" means at the planner's level: the
+        // class starts when it always did, and only the warning moves.
+        Reminder twenty = onlyReminder(Arrays.asList(course(1L, 1, 1, 1)), 20);
+        Reminder twentyFive = onlyReminder(Arrays.asList(course(1L, 1, 1, 1)), 25);
+
+        assertEquals(twenty.startAt(), twentyFive.startAt());
+        assertEquals(twenty.startAt().minusMinutes(20), twenty.triggerAt());
+        assertEquals(twenty.startAt().minusMinutes(25), twentyFive.triggerAt());
+        assertEquals(20, twenty.leadMinutes());
+        assertEquals(25, twentyFive.leadMinutes());
+    }
+
+    @Test
+    public void aThreeHourLeadStillNamesTheDayTheClassIsOn() {
+        // The longest lead the feature accepts, so the reminder falls well before
+        // the class -- and still says which day the class belongs to.
+        Reminder reminder = onlyReminder(Arrays.asList(course(1L, 1, 1, 1)), 180);
+
+        assertEquals(WEEK1_MON, reminder.classDay());
+        assertEquals(reminder.startAt().minusMinutes(180), reminder.triggerAt());
     }
 
     // ================================================== midnight and day edges

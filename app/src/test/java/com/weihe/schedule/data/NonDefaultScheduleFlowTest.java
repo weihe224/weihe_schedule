@@ -213,13 +213,23 @@ public class NonDefaultScheduleFlowTest {
     }
 
     @Test
-    public void theDefaultReminderLeadIsStillFifteenMinutesOrLess() {
+    public void theReminderLeadBandIsStillItsOwnSetting() {
         // The lead is a user setting in minutes and has nothing to do with how long a
         // period is; the count change must not have reached it.
-        assertEquals(5, ReminderPlan.MIN_LEAD_MINUTES);
-        assertEquals(15, ReminderPlan.MAX_LEAD_MINUTES);
+        //
+        // The band's ends moved on purpose when typed lead times arrived -- they were
+        // 5 and 15, they are now 1 and 180 -- so what this pins is that the band is
+        // still a band of its own, still refuses what falls outside it, and still
+        // has nothing to do with the period length. The exact ends are asserted
+        // where the feature defines them, in ReminderPlanTest.
+        assertTrue(ReminderPlan.MIN_LEAD_MINUTES < ReminderPlan.MAX_LEAD_MINUTES);
         assertTrue(ReminderPlan.supportsLeadMinutes(15));
-        assertFalse(ReminderPlan.supportsLeadMinutes(20));
+        assertTrue(ReminderPlan.supportsLeadMinutes(20));
+        assertTrue(ReminderPlan.supportsLeadMinutes(ReminderPlan.MAX_LEAD_MINUTES));
+        assertFalse(ReminderPlan.supportsLeadMinutes(0));
+        assertFalse(ReminderPlan.supportsLeadMinutes(ReminderPlan.MAX_LEAD_MINUTES + 1));
+        // Longer than any period, so a lead can never be read as a period length.
+        assertTrue(ReminderPlan.MAX_LEAD_MINUTES > longDay().durationMinutes());
     }
 
     // ============================================ old data

@@ -28,13 +28,16 @@ public final class Reminder {
     private final String location;
     private final String scheduleName;
     private final int color;
+    private final int startPeriod;
+    private final int endPeriod;
     private final LocalDate classDay;
     private final LocalDateTime startAt;
     private final LocalDateTime triggerAt;
     private final int leadMinutes;
 
     Reminder(long courseId, String courseName, String teacher, String location,
-            String scheduleName, int color, LocalDate classDay, LocalDateTime startAt,
+            String scheduleName, int color, int startPeriod, int endPeriod,
+            LocalDate classDay, LocalDateTime startAt,
             LocalDateTime triggerAt, int leadMinutes) {
         this.courseId = courseId;
         this.courseName = courseName;
@@ -42,6 +45,8 @@ public final class Reminder {
         this.location = location;
         this.scheduleName = scheduleName;
         this.color = color;
+        this.startPeriod = startPeriod;
+        this.endPeriod = endPeriod;
         this.classDay = classDay;
         this.startAt = startAt;
         this.triggerAt = triggerAt;
@@ -71,6 +76,22 @@ public final class Reminder {
 
     public int color() {
         return color;
+    }
+
+    /**
+     * The first period of the class.
+     *
+     * <p>Carried so a notification can say which periods it is about. The start
+     * time already implies them, but a student reads a timetable in periods, and
+     * "第 3-4 节" is what they compare against the sheet on the wall.</p>
+     */
+    public int startPeriod() {
+        return startPeriod;
+    }
+
+    /** The last period of the class; equal to {@link #startPeriod()} for a single. */
+    public int endPeriod() {
+        return endPeriod;
     }
 
     /**
@@ -149,6 +170,8 @@ public final class Reminder {
         Reminder that = (Reminder) other;
         return courseId == that.courseId
                 && color == that.color
+                && startPeriod == that.startPeriod
+                && endPeriod == that.endPeriod
                 && leadMinutes == that.leadMinutes
                 && classDay.equals(that.classDay)
                 && startAt.equals(that.startAt)
@@ -171,6 +194,8 @@ public final class Reminder {
         result = 31 * result + location.hashCode();
         result = 31 * result + scheduleName.hashCode();
         result = 31 * result + color;
+        result = 31 * result + startPeriod;
+        result = 31 * result + endPeriod;
         return result;
     }
 

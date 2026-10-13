@@ -50,12 +50,38 @@ import com.weihe.schedule.model.Semester;
  */
 public final class ReminderPlan {
 
-    /** The shortest lead time the feature offers. */
-    public static final int MIN_LEAD_MINUTES = 5;
-    /** The longest lead time the feature offers. */
-    public static final int MAX_LEAD_MINUTES = 15;
+    /**
+     * The shortest lead time the feature accepts.
+     *
+     * <p>One minute, not five. Five was the shortest of the three shortcuts, and
+     * the shortcuts used to be the whole feature; now that the user can type a
+     * number, the band and the shortcuts are two different things and the band is
+     * what a typed value is judged against. Below one minute there is nothing to
+     * warn about.</p>
+     */
+    public static final int MIN_LEAD_MINUTES = 1;
+    /**
+     * The longest lead time the feature accepts.
+     *
+     * <p>Three hours. Longer than any gap a student has to cross campus, and short
+     * enough that a reminder still describes the day it is about -- the planner
+     * looks {@link #DEFAULT_DAYS_AHEAD} ahead, so a lead beyond a day would start
+     * announcing tomorrow's classes today.</p>
+     */
+    public static final int MAX_LEAD_MINUTES = 180;
     /** What the settings screen starts on. */
     public static final int DEFAULT_LEAD_MINUTES = 10;
+    /**
+     * The lead times the settings screen offers as one-tap chips.
+     *
+     * <p>Deliberately not derived from the band's ends any more. It used to be
+     * {@code {MIN, DEFAULT, MAX}}, which was the same three numbers only while the
+     * band was five-to-fifteen; widening the band for typed values would otherwise
+     * have silently turned the shortcuts into "1 minute" and "180 minutes". These
+     * three are the values a student actually picks, and they stay put whatever
+     * the band does.</p>
+     */
+    public static final int[] QUICK_LEAD_MINUTES = {5, 10, 15};
     /** How far ahead a single rebuild schedules. */
     public static final int DEFAULT_DAYS_AHEAD = 7;
     /** How many alarms one rebuild may end up holding. */
@@ -231,6 +257,44 @@ public final class ReminderPlan {
     }
 
     /**
+     * The lead time a typed string means, or {@code null} when it means nothing.
+     *
+     * <p>Pure, so the dialog's rule can be tested without a device. It refuses
+     * rather than repairs: {@code "2.5"} is not two, {@code "-10"} is not ten and
+     * {@code "25 分"} is not twenty-five. A field that quietly drops what it does
+     * not understand is a field where a typo looks like a setting.</p>
+     *
+     * <p>The one thing it does forgive is surrounding whitespace, because a phone
+     * keyboard can add a trailing space and the user did not type a different
+     * number.</p>
+     *
+     * <p>An out-of-band number -- {@code 0}, {@code 181}, or a run of digits too
+     * long for an {@code int} -- is {@code null} for the same reason: the caller
+     * has to say what the accepted range is, not silently substitute an end of
+     * it.</p>
+     */
+    public static Integer parseLeadMinutes(String typed) {
+        if (typed == null) {
+            return null;
+        }
+        String text = typed.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        for (int index = 0; index < text.length(); index++) {
+            if (!Character.isDigit(text.charAt(index))) {
+                return null;
+            }
+        }
+        try {
+            int minutes = Integer.parseInt(text);
+            return supportsLeadMinutes(minutes) ? Integer.valueOf(minutes) : null;
+        } catch (NumberFormatException tooManyDigits) {
+            return null;
+        }
+    }
+
+    /**
      * The schedule a course rings to, or {@code null} when there is none to use.
      *
      * <p>An empty list means the app has no bell schedules to read from, which is
@@ -398,6 +462,7 @@ public final class ReminderPlan {
             reminders.add(new Reminder(course.id, course.name, course.teacher,
                     course.location,
                     scheduleFor(course, schedules, defaultId).name(), course.color,
+                    course.startPeriod, course.endPeriod,
                     day, startAt, triggerAt, leadMinutes));
         }
         reminders.sort(BY_TRIGGER);
@@ -508,8 +573,9 @@ public final class ReminderPlan {
             }
             LocalDateTime startAt = startOf(course, schedules, day, defaultId);
             return new Reminder(course.id, course.name, course.teacher, course.location,
-                    scheduleFor(course, schedules, defaultId).name(), course.color, day,
-                    startAt, startAt.minusMinutes(leadMinutes), leadMinutes);
+                    scheduleFor(course, schedules, defaultId).name(), course.color,
+                    course.startPeriod, course.endPeriod,
+                    day, startAt, startAt.minusMinutes(leadMinutes), leadMinutes);
         }
         return null;
     }
