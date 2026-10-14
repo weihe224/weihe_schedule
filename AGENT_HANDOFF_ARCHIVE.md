@@ -2480,3 +2480,44 @@ write cannot save the date…"* —— 与阶段一**同一个错误假设**，�
 备份恢复与恢复后强杀重启；损坏 / 深层嵌套 / 未来版本备份的拒绝；Excel 正常导入、取消、
 超限文件；课程增删改后的提醒；学期切换；重启设备后的提醒恢复；撤销通知权限的表现；
 API 26 与 API 34 上的权限弹窗、SAF 选择器与状态栏。**完整表格见本轮交付报告。**
+
+
+---
+
+## P. 追加记录 — 2026-10-14：图标替换与个人自用打包
+
+### P-1 图标问题：不是资源旧，是启动器缓存
+
+用户反馈"桌面图标和启动画面还是旧的"。逐项核实后推翻了最初假设：
+
+1. **`tools/IconForge.java` 已存在**（529 行，自带头部注释说明所有图层由它从源图生成）。
+   用它针对根目录 `icon.png` 重跑，输出与仓库中**既有资源逐字节相同**（27 个文件 MD5 全部一致），
+   `git status` 中 `app/src/main/res` 也**无任何改动**。
+   → 结论：**仓库里的图标资源本来就是这张 `icon.png` 生成的**，不存在"旧资源没替换"。
+2. 于是"仍是旧图标"的原因只能是 **启动器图标缓存**。用
+   `am force-stop com.google.android.apps.launcher` 清缓存后重装，
+   应用列表里「拾课」立即显示为新设计（米白圆底 + 深绿日历 + 橙色块 + 右下角时钟），
+   完整、不裁切、无黑块。**已目视确认**（证据：`tools/out/icon-drawer.png`）。
+3. 页内 Logo 是**另一个**问题：`AboutActivity` 用了 `R.mipmap.ic_launcher`，
+   而它是 `<adaptive-icon>`，平台只保证中间 72dp 可见，放进 `ImageView` 会显得偏小。
+   改为专用的 `R.drawable.ic_brand_logo`（同一原图裁掉透明边距后**等比**缩放到 512×495）+ `FIT_CENTER`。
+
+### P-2 启动画面：项目此前根本没有配置
+
+全项目检索 `windowSplashScreen*` **零命中** → Android 12+ 的启动画面是系统拿应用图标自行拼的。
+新增 `res/values-v31/themes.xml`，**完整重写** `Theme.WeiheSchedule`
+（含父样式、全部既有条目、并重复 v27 的 `windowLightNavigationBar`，因为该文件在 API 31+ 会整体取代 v27 的定义），
+再显式指定 `windowSplashScreenAnimatedIcon = @mipmap/ic_launcher_foreground` 与
+`windowSplashScreenBackground = @color/surface`（与 `windowBackground` 同色，避免闪色）。
+
+**教训**：首次构建 `mergeDebugResources FAILED`，原因是我在 XML 注释里写了字面量 `--`（XML 注释禁止）。
+构建失败而 `install` 仍成功 → 装的是旧包 → 据此拍的截图**全部无效**。修正注释重建后才取得有效证据。
+
+### P-3 个人自用打包
+
+- 应用身份：`com.weihe.schedule` / `versionCode 1` / `versionName 1.0` / `minSdk 26` / `targetSdk 34`。
+- **Debug APK**：1136 KB，`apksigner verify` **退出码 0**，签名者 `CN=Android Debug`
+  （证书 SHA-256 `d623aa4a...`）→ **可安装，个人自用推荐**。
+- **Release APK**：866 KB `app-release-unsigned.apk`，**未签名、装不上**（`release {}` 无 `signingConfig`）。
+- 因 `minifyEnabled false` 两边一致，Debug 包与 Release 行为相同。
+- **换签名必须卸载重装，而卸载会清空课表** → 已要求用户先「导出备份」。

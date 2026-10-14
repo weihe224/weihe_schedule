@@ -207,3 +207,44 @@ tools/                         开发辅助脚本（图标生成、UI dump 等�
 | [`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md) | **历史归档**：更早的交接记录与逐轮开发日志，仅作背景参考，其中的完成度判断可能已过期 |
 
 贡献代码前请先读 `AGENTS.md`；了解当前进度与遗留问题请读 `AGENT_HANDOFF.md`。
+
+## 构建产物与个人安装
+
+构建命令见上文「构建与测试」。产物有两个：
+
+| 产物 | 路径 | 可安装 | 说明 |
+|---|---|---|---|
+| **Debug** | `app/build/outputs/apk/debug/app-debug.apk` | ✅ | 由 `~/.android/debug.keystore` 签名。**个人自用就用它** |
+| Release | `app/build/outputs/apk/release/app-release-unsigned.apk` | ❌ | 项目**未配置发布签名**，产物是未签名的，装不上 |
+
+Release 配置当前是 `minifyEnabled false`，所以 Debug 与 Release 的**代码行为一致**，
+Debug 包并非"功能更少的版本"。可用 `apksigner verify --print-certs <apk>` 复核签名者。
+
+安装到手机：
+
+```powershell
+& 'D:\Sdk\platform-tools\adb.exe' install -r 'app\build\outputs\apk\debug\app-debug.apk'
+```
+
+也可以把 APK 直接拷进手机，用文件管理器点开安装（需允许"安装未知应用"）。
+
+> ⚠️ **换签名前必须先导出备份。** 如果手机上已装的「拾课」是用**另一把密钥**签名的，
+> 覆盖安装会报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，唯一的办法是卸载旧版；
+> 而卸载会连同 `SharedPreferences` 里的课表、学期、作息表一并删除，**无法恢复**。
+> 所以：先打开「设置 → 课表数据 → 导出备份」，把文件存到手机之外，再动签名。
+
+想长期自用并换成自己的密钥：在 Android Studio 里
+**Build → Generate Signed Bundle / APK… → APK → Create new…**，
+把 keystore 存到**仓库之外**的目录，口令记进密码管理器，勾选 **V1 + V2** 签名。
+**这把密钥要永久保存**：日后升级、换机都要用它才能覆盖安装。
+
+## 图标资源
+
+图标**不是手工维护的**，而是由 `tools/IconForge.java` 从根目录的 `icon.png` 统一生成：
+
+```powershell
+java tools/IconForge.java icon.png app/src/main/res tools/out
+```
+
+它一次产出五个密度所需的全部图层，并写出 `tools/out/icon-masks.png`（各启动器遮罩下的对照图）。
+详见 [`AGENTS.md`](AGENTS.md) 第 9 节。

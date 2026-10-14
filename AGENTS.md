@@ -142,3 +142,38 @@ $env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
 - UI dump 里是**真实中文**，用 `\uXXXX` 去匹配必然找不到。
 - 整个模拟器窗口黑屏但应用正常（系统 Settings 也一样）→ WindowManager 缺陷，
   `adb reboot` 可解，**不是应用 bug**，不要为此改代码。
+
+---
+
+## 9. 图标资源（长期规范）
+
+**`tools/IconForge.java` 是图标资源的唯一来源。**
+
+```powershell
+java tools/IconForge.java icon.png app/src/main/res tools/out
+```
+
+- 它从根目录的 `icon.png`（原始素材，**不要覆盖**）生成五个密度各自的
+  `ic_launcher_background` / `_foreground` / `_monochrome` / `ic_launcher` / `ic_launcher_round`，
+  并把各遮罩下的效果写成 `tools/out/icon-masks.png` 供人工核对。
+- **不要手工编辑或替换 `res/mipmap-*/` 下的任何 PNG**，也不要另起一套生成脚本：
+  自适应图标的 108dp 画布、66dp 安全圆、72dp 可视区这套换算是集中在一处的，
+  手改会让某个密度与其它密度不一致，而这一点在桌面图标上才会暴露。
+- 页内品牌 Logo 用 `res/drawable-nodpi/ic_brand_logo.png`（同一原图裁掉透明边距后等比缩放）。
+  **页面里不要用 `R.mipmap.ic_launcher`**：它是自适应图标，平台只保证中间 72dp 可见，
+  放进 `ImageView` 会显得比实际小一圈。
+- 启动画面在 `res/values-v31/themes.xml` 里显式指定
+  `windowSplashScreenAnimatedIcon`（复用 `ic_launcher_foreground`）与
+  `windowSplashScreenBackground`（与 `windowBackground` 同色，避免启动闪色）。
+
+**注意**：`values/`、`values-v27/`、`values-v31/` 三份主题**各自完整定义** `Theme.WeiheSchedule`，
+因为跨配置目录的 style 不会被合并。**改主题必须三份同时改**。
+
+## 10. 签名与打包（长期规范）
+
+- **绝不把 keystore、口令或签名配置写进仓库**。`app/build.gradle` 只允许引用仓库外的路径。
+- `release` 目前**没有** `signingConfig`，`assembleRelease` 产出的是
+  `app-release-unsigned.apk`，**不可安装**，这是预期行为而非构建失败。
+- 个人自用可安装 **Debug 包**：它由 `~/.android/debug.keystore` 签名，功能与 Release 相同
+  （`minifyEnabled` 两边都是 `false`）。
+- **换签名必须卸载重装，而卸载会清空课表**。引导用户换签名前，先要求导出备份。

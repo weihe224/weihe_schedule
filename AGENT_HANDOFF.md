@@ -17,17 +17,17 @@
 
 | 项 | 值 |
 |---|---|
-| 更新时间 | **2026-10-14**（上一版 2026-10-13） |
-| 核实方式 | 逐项对照当前源码、`git status/diff` 与**实跑结果**；六阶段修复**逐个文件确认是否真的落地**，不采信任何一轮的自述 |
-| 本轮实际执行 | `git status/diff/numstat`、逐阶段关键代码标记核查、`--rerun-tasks testDebugUnitTest assembleDebug lintDebug`、仓库 blob 换行字节核查 |
-| 本轮代码改动 | **1 个生产文件**（`CourseRepository.restoreFrom` 的拒绝提交路径）+ `.gitattributes`；其余为复审结论 |
-| 未验证 | **模拟器与真机全部未跑**；六阶段中有两处失败路径无测试（见 B-2） |
+| 更新时间 | **2026-10-14（文档同步轮）**（上一版 2026-10-14 六阶段复审） |
+| 核实方式 | `git branch/log/status/diff`、四个项目文档逐节比对**实际事实**、复跑测试与构建、`apksigner verify` 复核签名 |
+| 本轮实际执行 | 图标替换（`IconForge` 重跑 + 页内 Logo + `values-v31` 启动画面主题）、模拟器目视验证桌面图标、Debug/Release 双构建、`--rerun-tasks testDebugUnitTest assembleDebug`、文档同步 |
+| 本轮代码改动 | `AboutActivity.java`（改用 `ic_brand_logo`）、新增 `res/values-v31/themes.xml`、新增 `res/drawable-nodpi/ic_brand_logo.png`；**25 个 mipmap PNG 经比对与新生成结果逐字节相同，未产生实际改动** |
+| 未验证 | **启动画面未拍到**（启动窗口过短）；**API 26–30 从未运行过**（只在 API 37 模拟器验证）；备份恢复与提醒的失败路径仍无测试 |
 
 > **2026-10-14 复核要点（重要）**：前六轮"修复"里**只有四轮真的留下了代码**
 > （`MiniJson` 深度限制、`BackupCodec` 版本校验、`ReminderScheduler` 注册顺序、
 > `ExcelTimetableReader` 规模校验）。**"备份恢复一致性"那一轮当轮即被整体撤销**，
-> 本轮才补上能安全落地的一半 —— 详见 **B-2**，那是当前唯一权威的阶段状态表。
-> 另：上一版关于 `gradlew` CRLF 的历史结论**已被证伪**，见 B-2.1。
+> 后补上能安全落地的一半 —— 详见 **B-2**，那是阶段修复的权威状态表。
+> 图标与打包的状态见 **B-3**。上一版关于 `gradlew` CRLF 的历史结论**已被证伪**，见 B-2.1。
 
 ---
 
@@ -36,11 +36,26 @@
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| HEAD | **`9702b8b`**（未新建提交、未推送） |
-| `origin/main` | 上一版的 `8ee1a04` 之后项目又有提交，`9702b8b` 为本轮起点 |
+| HEAD | **`f0995e4`**（`update`, 2026-10-14） |
 | 已暂存 | 无 |
-| 未跟踪 | **2 项**：`.gitattributes`（新增，待提交）、`weihe_schedule_audit.zip`（非本 Agent 创建，**未触碰**） |
-| 已修改（未暂存） | **7 个文件**，合计 **+463 / −36**（逐项见 B-2） |
+| 未跟踪 | **无** |
+| 已修改（未暂存） | **无** —— 工作区**干净**（六阶段修复、图标资源、`.gitattributes`、四份文档**均已提交**） |
+| 提交节奏 | `9702b8b` → `dc3f798` → **`f0995e4`**。每轮结束后由用户提交，**Agent 全程未 commit / 未 push** |
+
+> 本节的数字会随用户提交而变化得很快。**接手时请自己跑一遍 `git status --short`
+> 与 `git log -1`，不要直接采信这里的哈希。**
+
+### B-3. 图标与打包状态（2026-10-14 核实）
+
+| 项 | 状态 | 依据 |
+|---|---|---|
+| **桌面 Launcher Icon** | **已实现并已验证** ✅ | 自适应图标三层齐全 ✓ APK 内五个密度各 5 个文件 ✓ 模拟器应用列表**已目视确认**为新设计（`tools/out/icon-drawer.png`）✓ |
+| 图标资源来源 | 单一来源 ✅ | `tools/IconForge.java` 从根目录 `icon.png` 生成；**重跑结果与仓库既有资源逐字节相同**（27 个文件 MD5 全部一致）→ 原"旧图标"问题**实为启动器缓存**，用 `am force-stop` 清缓存后即显示新图标 |
+| **启动画面图标** | **部分实现** ⚠️ | 此前项目**零配置** ✗ → 新增 `res/values-v31/themes.xml`，显式指定 `windowSplashScreenAnimatedIcon=@mipmap/ic_launcher_foreground` 与 `windowSplashScreenBackground=@color/surface` ✓ **但启动瞬间的画面未拍到，效果未目视验证** ✗ |
+| 页内品牌 Logo | 已实现 ✅ | `AboutActivity` 改用 `R.drawable.ic_brand_logo`（原图裁边后等比 512×495）+ `FIT_CENTER` ✓ 原因：`R.mipmap.ic_launcher` 是自适应图标，平台只保证中间 72dp 可见，放进 `ImageView` 会偏小 ✓ |
+| **Debug APK** | **可安装** ✅ | `app/build/outputs/apk/debug/app-debug.apk` **1136 KB** ✓ `apksigner verify` **退出码 0** ✓ 签名者 `CN=Android Debug`（证书 SHA-256 `d623aa4a…`）✓ 个人自用推荐此包 ✓ |
+| **Release APK** | **不可安装** ✗ | `app-release-unsigned.apk` **866 KB**，`release {}` 无 `signingConfig` → **未签名** ✗ 因 `minifyEnabled false`，其代码行为与 Debug 一致 ✓ |
+| 换签名的风险 | 已向用户说明 ⚠️ | 签名不同则无法覆盖安装 ✗ 唯一办法是卸载 ✗ 而卸载会清空课表 ✗ → **必须先「设置 → 课表数据 → 导出备份」并存到手机之外** ✓ |
 
 ### B-2. 六阶段修复的当前真实状态（2026-10-14 逐个文件核实）
 
