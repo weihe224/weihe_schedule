@@ -1,0 +1,36 @@
+# Line endings, stated rather than left to whoever cloned the repository.
+#
+# `core.autocrlf` is a per-machine setting, so without this file the same commit
+# checks out with different bytes on different machines. That matters for exactly
+# two kinds of file here:
+#
+#   * `gradlew` is a POSIX shell script. A CRLF copy of it fails on Linux and
+#     macOS with `$'\r': command not found`, which reads like a broken Gradle
+#     rather than a broken checkout.
+#   * `gradlew.bat` is a Windows batch file, where the reverse is true: some
+#     interpreters mis-parse an LF-only batch file.
+#
+# The rest of the tree is text and is pinned to LF so a diff never shows a whole
+# file changed because one machine disagrees with another.
+
+* text=auto eol=lf
+
+# Windows batch files keep CRLF on every platform.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts keep LF even on Windows, where they are run by Git Bash or WSL.
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Binary files are never converted.
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.xls binary
+*.zip binary
+*.apk binary
+*.keystore binary
+*.jks binary

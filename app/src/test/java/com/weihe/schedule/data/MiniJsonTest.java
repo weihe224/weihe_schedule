@@ -3,6 +3,7 @@ package com.weihe.schedule.data;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotNull;
 
 import java.util.List;
 import java.util.Map;
@@ -127,5 +128,110 @@ public class MiniJsonTest {
         assertEquals("null", MiniJson.write(null));
         assertEquals("[]", MiniJson.write(MiniJson.array()));
         assertEquals("{}", MiniJson.write(MiniJson.object()));
+    }
+    // ============================================ nesting depth
+    //
+    // The reader recurses: readValue -> readObject/readArray -> readValue. Nothing
+    // used to bound that, and the byte cap is not a depth cap -- a few kilobytes of
+    // brackets nests thousands deep. These tests state the boundary rather than
+    // relying on a particular stack size to notice it.
+
+    @Test
+    public void containersNestedToTheLimitAreAccepted() {
+        assertNotNull("exactly at the limit must parse",
+                MiniJson.parse(arraysOfDepth(MiniJson.MAX_DEPTH)));
+        assertNotNull("and so must a mixed chain that deep",
+                MiniJson.parse(mixedOfDepth(MiniJson.MAX_DEPTH)));
+    }
+
+    @Test
+    public void oneLevelPastTheLimitIsRefused() {
+        assertNull(MiniJson.parse(arraysOfDepth(MiniJson.MAX_DEPTH + 1)));
+        assertNull(MiniJson.parse(mixedOfDepth(MiniJson.MAX_DEPTH + 1)));
+    }
+
+    @Test
+    public void fiveThousandLevelsAreRefusedRatherThanRunningOutOfStack() {
+        String deep = arraysOfDepth(5000);
+        assertTrue("the input is small enough to pass any size check",
+                deep.length() < 20000);
+        assertNull("the reader must refuse it, not recurse until the stack ends",
+                MiniJson.parse(deep));
+    }
+
+    @Test
+    public void depthCountsNestingAndNotLength() {
+        // A flat array holding far more items than the depth limit is still flat.
+        // A counter that never fell on the way out would reject this one.
+        StringBuilder out = new StringBuilder("[");
+        for (int i = 0; i < MiniJson.MAX_DEPTH * 4; i++) {
+            if (i > 0) {
+                out.append(',');
+            }
+            out.append("{\"i\":").append(i).append('}');
+        }
+        out.append(']');
+        assertEquals(MiniJson.MAX_DEPTH * 4,
+                MiniJson.parseArray(out.toString()).size());
+    }
+
+    @Test
+    public void aDocumentAtTheLimitStillReadsCorrectly() {
+        Object value = MiniJson.parse(arraysOfDepth(MiniJson.MAX_DEPTH));
+        int unwrapped = 0;
+        while (value instanceof List) {
+            value = ((List<?>) value).get(0);
+            unwrapped++;
+        }
+        assertEquals("every level is still there", MiniJson.MAX_DEPTH, unwrapped);
+        assertEquals("and the value at the bottom survives", "leaf", value);
+    }
+
+    @Test
+    public void aBackupShapedDocumentIsWellInsideTheLimit() {
+        String backup = "{\"format\":\"weihe-schedule-backup\",\"version\":1,"
+                + "\"semesters\":[{\"id\":1,\"start\":\"2026-08-31\",\"name\":\"\","
+                + "\"courses\":[{\"id\":1,\"name\":\"\u9AD8\u7B49\u6570\u5B66\","
+                + "\"color\":4280842421}]}]}";
+        Object parsed = MiniJson.parse(backup);
+        assertNotNull("the deepest shape the app writes must never hit the limit",
+                parsed);
+        assertTrue(parsed instanceof Map);
+    }
+
+    @Test
+    public void aRefusedDocumentIsIndistinguishableFromOtherBadInput() {
+        // The contract is unchanged: parse answers null for anything it will not
+        // read, so callers keep the one error path they already have.
+        assertNull(MiniJson.parse(arraysOfDepth(5000)));
+        assertNull(MiniJson.parse("{\"a\":"));
+        assertTrue(MiniJson.parseArray(arraysOfDepth(5000)).isEmpty());
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    private static String arraysOfDepth(int depth) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < depth; i++) {
+            out.append('[');
+        }
+        out.append("\"leaf\"");
+        for (int i = 0; i < depth; i++) {
+            out.append(']');
+        }
+        return out.toString();
+    }
+
+    /** Alternating array/object nesting: the rule must not depend on which. */
+    private static String mixedOfDepth(int depth) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < depth; i++) {
+            out.append(i % 2 == 0 ? "[" : "{\"a\":");
+        }
+        out.append("\"leaf\"");
+        for (int i = depth - 1; i >= 0; i--) {
+            out.append(i % 2 == 0 ? "]" : "}");
+        }
+        return out.toString();
     }
 }

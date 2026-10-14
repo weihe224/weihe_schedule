@@ -1108,4 +1108,108 @@ public class BackupCodecTest {
         assertNotNull(first);
         return new LinkedHashSet<>(first.keySet());
     }
+    // ============================================ the version field, strictly
+    //
+    // The version decides whether the rest of the file may be read at all, so it is
+    // the one field read strictly: a whole JSON number, judged before it is narrowed.
+    // 4294967297 is the value that used to slip through -- intValue() turns it into
+    // 1, the oldest version there is, so a file from the future was read as one.
+
+    @Test
+    public void theLowestSupportedVersionIsStillAccepted() {
+        assertNotNull("version 1 must keep parsing",
+                BackupCodec.parse(json(withVersion(1))).document());
+    }
+
+    @Test
+    public void theHighestSupportedVersionIsStillAccepted() {
+        assertNotNull(BackupCodec.parse(
+                json(withVersion(BackupCodec.MAX_SUPPORTED_VERSION))).document());
+    }
+
+    @Test
+    public void oneVersionPastTheTopIsRefused() {
+        assertRefused(json(withVersion(BackupCodec.MAX_SUPPORTED_VERSION + 1)),
+                String.valueOf(BackupCodec.MAX_SUPPORTED_VERSION + 1));
+    }
+
+    @Test
+    public void anIntegerThatNarrowsToAValidVersionIsRefusedAnyway() {
+        // 4294967297 = 2^32 + 1. As an int it is 1, and 1 is a version this build
+        // supports, which is exactly why the check has to happen before the cast.
+        Map<String, Object> root = validRoot();
+        root.put("formatVersion", Double.valueOf(4294967297.0));
+        assertRefused(json(root), "4294967297");
+    }
+
+    @Test
+    public void otherValuesThatNarrowIntoRangeAreRefusedToo() {
+        for (double value : new double[] {4294967296.0, 4294967298.0, 8589934593.0}) {
+            Map<String, Object> root = validRoot();
+            root.put("formatVersion", Double.valueOf(value));
+            assertRefused(json(root), String.valueOf((long) value));
+        }
+    }
+
+    @Test
+    public void anIntegerBeyondLongRangeIsRefused() {
+        Map<String, Object> root = validRoot();
+        root.put("formatVersion", Double.valueOf(1.0E30));
+        assertRefused(json(root), "\u683C\u5F0F\u7248\u672C");
+    }
+
+    @Test
+    public void aNegativeVersionIsRefusedRatherThanReadAsVersionOne() {
+        // It used to be noted and read as version 1. A version of -1 is not an older
+        // file, it is a file whose version means nothing.
+        assertRefused(json(withVersion(-1)), "\u4E0D\u5408\u6CD5");
+        assertRefused(json(withVersion(0)), "\u4E0D\u5408\u6CD5");
+    }
+
+    @Test
+    public void aFractionalVersionIsRefusedRatherThanTruncated() {
+        // 1.5 used to become 1 and be accepted.
+        Map<String, Object> root = validRoot();
+        root.put("formatVersion", Double.valueOf(1.5));
+        assertRefused(json(root), "\u65E0\u6CD5\u8BC6\u522B");
+    }
+
+    @Test
+    public void aVersionWrittenAsAStringIsRefused() {
+        // The format writes a number. A string is a different file, not a lenient
+        // reading of this one, and is not converted.
+        assertRefused(json(withVersionString("1")), "\u65E0\u6CD5\u8BC6\u522B");
+        assertRefused(json(withVersionString("2")), "\u65E0\u6CD5\u8BC6\u522B");
+    }
+
+    @Test
+    public void aNullVersionIsRefused() {
+        Map<String, Object> root = validRoot();
+        root.put("formatVersion", null);
+        assertRefused(json(root), "\u65E0\u6CD5\u8BC6\u522B");
+    }
+
+    @Test
+    public void aBooleanVersionIsRefused() {
+        Map<String, Object> root = validRoot();
+        root.put("formatVersion", Boolean.TRUE);
+        assertRefused(json(root), "\u65E0\u6CD5\u8BC6\u522B");
+    }
+
+    @Test
+    public void aFutureVersionNeverReachesTheRestOfTheFile() {
+        // Refused means refused: no document comes back, so nothing downstream has
+        // anything to decode, store or restore.
+        Map<String, Object> root = validRoot();
+        root.put("formatVersion", Double.valueOf(4294967297.0));
+        BackupCodec.Result result = BackupCodec.parse(json(root));
+        assertNull("a future version must not produce a document", result.document());
+        assertFalse("and must say why", result.problem().isEmpty());
+    }
+
+    private static Map<String, Object> withVersionString(String version) {
+        Map<String, Object> root = validRoot();
+        root.put("formatVersion", version);
+        return root;
+    }
 }

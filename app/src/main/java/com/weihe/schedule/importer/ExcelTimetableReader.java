@@ -12,6 +12,34 @@ import com.weihe.schedule.model.Course;
 
 /** Reads an old-style Excel .xls workbook exported by the school system. */
 public final class ExcelTimetableReader {
+
+    /**
+     * The largest sheet this reader will look at.
+     *
+     * <p>Sized against a real timetable, not against what a spreadsheet can hold.
+     * A term's grid is a week of columns plus a header block, and a few dozen rows
+     * once every period of every day is listed; 500 x 100 is an order of magnitude
+     * of headroom. It matters because {@link TimetableGrid} allocates four arrays of
+     * {@code rows x columns} before a single cell is read: a workbook that merely
+     * declares a million rows by sixteen thousand columns -- a dimension record is
+     * a header, not a promise -- asks for four arrays of sixteen billion entries,
+     * which arrives as an {@code OutOfMemoryError} rather than as anything the
+     * caller can report.</p>
+     */
+    private static final int MAX_ROWS = 500;
+    private static final int MAX_COLUMNS = 100;
+
+    /**
+     * The longest cell text kept.
+     *
+     * <p>A cell in a timetable holds a course name, a teacher or a room, so a
+     * thousand characters is already two orders of magnitude beyond anything real.
+     * Longer is a corrupt or hostile file, and the whole sheet is refused rather
+     * than quietly trimmed -- an import that silently drops text is worse than one
+     * that says it cannot read the file.</p>
+     */
+    private static final int MAX_CELL_LENGTH = 1000;
+
     private ExcelTimetableReader() {
     }
 
@@ -40,10 +68,27 @@ public final class ExcelTimetableReader {
                         "\u6587\u4EF6\u4E2D\u6CA1\u6709\u5DE5\u4F5C\u8868");
             }
             Sheet sheet = workbook.getSheet(0);
-            TimetableGrid grid = new TimetableGrid(sheet.getRows(), sheet.getColumns());
-            for (int row = 0; row < sheet.getRows(); row++) {
-                for (int column = 0; column < sheet.getColumns(); column++) {
-                    grid.put(row, column, sheet.getCell(column, row).getContents());
+            int rows = sheet.getRows();
+            int columns = sheet.getColumns();
+            // Checked before the grid is built, because building it is the
+            // allocation: four arrays of rows x columns, spent before one cell has
+            // been looked at. Only sheet 0 is read, so the number of sheets needs no
+            // bound of its own.
+            if (rows > MAX_ROWS || columns > MAX_COLUMNS) {
+                throw new TimetableImportException("\u8868\u683C\u5C3A\u5BF8\u8FC7\u5927"
+                        + "\uFF08" + rows + " \u884C \u00D7 " + columns
+                        + " \u5217\uFF09\uFF0C\u65E0\u6CD5\u5BFC\u5165");
+            }
+            TimetableGrid grid = new TimetableGrid(rows, columns);
+            for (int row = 0; row < rows; row++) {
+                for (int column = 0; column < columns; column++) {
+                    String contents = sheet.getCell(column, row).getContents();
+                    if (contents != null && contents.length() > MAX_CELL_LENGTH) {
+                        throw new TimetableImportException("\u8868\u683C\u4E2D\u6709"
+                                + "\u5355\u5143\u683C\u7684\u6587\u5B57\u8FC7\u957F\uFF0C"
+                                + "\u65E0\u6CD5\u5BFC\u5165");
+                    }
+                    grid.put(row, column, contents);
                 }
             }
             for (Range range : sheet.getMergedCells()) {

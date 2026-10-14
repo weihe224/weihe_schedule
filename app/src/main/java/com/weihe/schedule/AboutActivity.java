@@ -105,7 +105,16 @@ public class AboutActivity extends Activity {
         card.setGravity(Gravity.CENTER_HORIZONTAL);
 
         ImageView icon = new ImageView(this);
-        icon.setImageResource(R.mipmap.ic_launcher);
+        // The brand artwork, not the launcher icon. R.mipmap.ic_launcher is an
+        // <adaptive-icon>: the platform draws it on a 108dp canvas whose outer ring
+        // exists only so launcher masks have something to cut, so the illustration
+        // arrives already inset to the central safe area -- about three quarters of
+        // the box. That inset is right on a home screen and wrong here, where there
+        // is no mask and the drawing simply looked smaller than it should. This
+        // drawable is the same artwork cropped to its own ink and centred, with no
+        // canvas around it.
+        icon.setImageResource(R.drawable.ic_brand_logo);
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
         int iconSize = dp(72);
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(
                 iconSize, iconSize);

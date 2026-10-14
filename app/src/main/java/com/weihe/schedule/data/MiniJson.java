@@ -30,6 +30,29 @@ public final class MiniJson {
     private MiniJson() {
     }
 
+    /**
+     * How deep a document may nest before it is refused.
+     *
+     * <p>Counting rule: the outermost object or array is level 1, and every
+     * container inside it is one more. Objects and arrays count the same way, so
+     * depth does not depend on which one a level happens to be, and a container
+     * that holds many siblings is not deeper than one that holds a few -- this
+     * counts nesting, not length.</p>
+     *
+     * <p>32 is chosen against the format, not against the parser. A backup nests
+     * five deep (root object, {@code semesters} array, semester object,
+     * {@code courses} array, course object), and the deepest thing the app writes
+     * anywhere is a snapshot object holding a key holding an encoded string --
+     * six. Thirty-two leaves room for the format to grow several times over while
+     * still refusing the input this exists for: a document deep enough to run the
+     * recursive reader out of stack, which needs thousands of levels and can be
+     * built in a few kilobytes.</p>
+     *
+     * <p>Package-private so the tests can state the boundary without writing the
+     * number down a second time.</p>
+     */
+    static final int MAX_DEPTH = 32;
+
     // ------------------------------------------------------------------ reading
 
     /**
@@ -250,6 +273,37 @@ public final class MiniJson {
             return position >= text.length();
         }
 
+        /**
+         * How many containers are open. Rises on the way in and falls on the way
+         * out, so it is the depth of the value being read rather than a count of
+         * everything read so far -- without the fall, a long flat array would be
+         * mistaken for a deep one.
+         */
+        private int depth;
+
+        /**
+         * Opens one container, refusing before the recursion rather than after it.
+         *
+         * <p>Refusing after the descent would have spent exactly the stack this is
+         * meant to save: by the time a check could see the limit, the frames that
+         * overflow the stack are already on it.</p>
+         *
+         * @throws IllegalArgumentException when the document nests past
+         *         {@link MiniJson#MAX_DEPTH}; {@link MiniJson#parse} turns that
+         *         into its usual "not valid JSON" answer
+         */
+        private void enter() {
+            depth++;
+            if (depth > MAX_DEPTH) {
+                throw new IllegalArgumentException(
+                        "nesting is deeper than " + MAX_DEPTH + " levels");
+            }
+        }
+
+        private void leave() {
+            depth--;
+        }
+
         void skipWhitespace() {
             while (position < text.length()) {
                 char character = text.charAt(position);
@@ -286,6 +340,13 @@ public final class MiniJson {
         }
 
         private Map<String, Object> readObject() {
+            enter();
+            Map<String, Object> value = readObjectBody();
+            leave();
+            return value;
+        }
+
+        private Map<String, Object> readObjectBody() {
             Map<String, Object> object = new LinkedHashMap<>();
             position++;
             skipWhitespace();
@@ -319,6 +380,13 @@ public final class MiniJson {
         }
 
         private List<Object> readArray() {
+            enter();
+            List<Object> value = readArrayBody();
+            leave();
+            return value;
+        }
+
+        private List<Object> readArrayBody() {
             List<Object> array = new ArrayList<>();
             position++;
             skipWhitespace();

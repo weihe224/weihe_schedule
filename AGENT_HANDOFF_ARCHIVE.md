@@ -2412,3 +2412,71 @@ adb shell run-as com.weihe.schedule am broadcast --user 0 \
 - 锁屏形态未测；大字号下四色块是否换行未测。
 - `ReminderSettings` **仍无 JVM 测试**（需要 `Context`，项目没有对应测试接缝）；持久化与老用户
   兼容性是设备实测的。
+
+---
+
+## O. 追加记录 — 2026-10-14：六阶段修复的整合复审（逐文件核实）
+
+> 本轮**不采信任何前轮自述**，全部以当前源码与实跑结果为准。结论见
+> [`AGENT_HANDOFF.md`](AGENT_HANDOFF.md) 的 **B-2** 节（当前权威状态表）。
+
+### O-1 复核结果：六轮里只有四轮真的留下了代码
+
+| 阶段 | 声称 | 实际 |
+|---|---|---|
+| 一 备份恢复 | 修复 `commit()` 失败的数据一致性 | **当轮即被整体撤销**，`git diff` 为零。本轮才补上"先核验再报告"的一半 |
+| 二 JSON 深度 | `MAX_DEPTH` 限制 | 落地 ✅ `MiniJson.java` +68 |
+| 三 版本号溢出 | 先按 `long` 比较 | 落地 ✅ `BackupCodec.java` +42/−7 |
+| 四 提醒调度 | 先注册后取消 | 落地 ✅ `ReminderScheduler.java` +70/−21 |
+| 五 导入/构建 | 规模校验 + `.gitattributes` | 落地 ✅ `ExcelTimetableReader.java` +49/−4、`.gitattributes` 新增 |
+
+### O-2 阶段一的完整来龙去脉（避免下一个 Agent 重走）
+
+1. 原始缺陷：`restoreFrom()` 的 `if (!editor.commit())` 分支**不核验**就返回
+   `RestoreReport.unchanged("写入失败，当前数据保持不变")`。注释声称
+   *"SharedPreferences applies an editor all-or-nothing"* —— **与平台行为不符**：
+   `EditorImpl.commit()` **先**把 editor 应用到内存 `mMap`，**再**写盘；写盘失败时
+   **不回滚内存**。于是可能出现"内存已是新数据、文件还是旧数据"，而用户被告知"数据未变"。
+2. 第一次尝试：加核验 + 失败则 `rollBackTo()` 回滚 + `FakePreferences.failedCommitKeepsChanges()` +
+   5 个回归测试。**测试失败**：数据确实回滚了，但被拒的那次提交**顺带写入了
+   `restore_pending` / `restore_snapshot`**，而这两个键**不在恢复范围内**（`isScopedKey` 是正向白名单），
+   于是回滚后的 `verifyStored()` 不通过，状态落在 `NEEDS_ATTENTION` 而非 `ROLLED_BACK`。
+   → 判定"修复不完整"，**整体撤销**（未放宽断言）。
+3. 本轮采用**只做能证明的那一半**：核验一致 → 仍报 `unchanged`（保持既有契约）；
+   核验不一致 → `reload()` + `needsAttention`，**不做回滚**（回滚是又一次可能同样被拒的提交，
+   半途而废的回滚比一个说清楚的状态更危险）。
+4. **遗留**：`FakePreferences` 仍无法模拟"拒绝但内存已变"，该分支**无测试**。
+   下一步若要做回滚，**必须先解决 `restore_pending`/`restore_snapshot` 的清理**。
+
+### O-3 同源缺陷（未修，P1）
+
+`CourseRepository` **L715 与 L766** 的注释仍写 *"an editor applies all-or-nothing, so a refused
+write cannot save the date…"* —— 与阶段一**同一个错误假设**，涉及导入学期起始日期与
+`courses_backup` 的写入。**与阶段一同源，应一并处理。**
+
+### O-4 阶段五历史结论的证伪
+
+"归档中的 `gradlew` 使用 CRLF" —— **不成立**。仓库 blob 与工作区均为 **LF**（`gradlew` 8,752 字节，
+不含 CR）。真实隐患是 `core.autocrlf = true` 且仓库无 `.gitattributes`，已用 `.gitattributes` 处理；
+生效证据：git 警告由 "LF → CRLF" 变为 "CRLF → LF"。
+
+### O-5 本轮自伤（如实记录）
+
+本轮第一个脚本**先写入 `FakePreferences.java`、随后在下一个锚点抛错**，导致测试源集
+**一度编译失败**；此时 Gradle 输出的 "999 项通过" 是**上一轮的陈旧 XML**，不是真实结果。
+已确认该文件在本阶段前**无任何本地改动**，用 `git checkout --` 精确还原，未丢失他人工作。
+**教训**：多步脚本必须**先完成全部锚点定位再写入任一文件**（AGENTS.md §8 已有同类记录）。
+
+### O-6 本轮实跑结果
+
+```
+& '.\.gradle-local\bin\gradle.bat' "-Dorg.gradle.vfs.watch=false" --rerun-tasks testDebugUnitTest assembleDebug lintDebug
+```
+**54 个测试类 / 999 项 / 999 通过 / 0 失败 / 0 错误**；`assembleDebug` BUILD SUCCESSFUL；
+`lintDebug` `No issues found.`。**模拟器与真机均未执行。**
+
+### O-7 真机回归清单（13 项，全部待做）
+
+备份恢复与恢复后强杀重启；损坏 / 深层嵌套 / 未来版本备份的拒绝；Excel 正常导入、取消、
+超限文件；课程增删改后的提醒；学期切换；重启设备后的提醒恢复；撤销通知权限的表现；
+API 26 与 API 34 上的权限弹窗、SAF 选择器与状态栏。**完整表格见本轮交付报告。**

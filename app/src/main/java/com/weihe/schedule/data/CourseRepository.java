@@ -1751,10 +1751,30 @@ public class CourseRepository {
             editor.putString(startKeyFor(semester.id()), semester.start().toString());
         }
         if (!editor.commit()) {
-            // SharedPreferences applies an editor all-or-nothing, so a refusal
-            // here means nothing was written and the old data is untouched.
-            return RestoreReport.unchanged("\u5199\u5165\u5931\u8D25\uFF0C\u5F53\u524D"
-                    + "\u6570\u636E\u4FDD\u6301\u4E0D\u53D8");
+            // A refused commit is not proof that nothing changed. The platform
+            // applies an editor to its in-memory map *before* it writes the file,
+            // and does not put the old values back when the write fails -- so this
+            // process can already be holding the restored data while the file still
+            // holds the old one. Answering "nothing changed" without looking was a
+            // claim, not a check.
+            if (captureRestoreScope().equals(snapshot)) {
+                return RestoreReport.unchanged("\u5199\u5165\u5931\u8D25\uFF0C\u5F53\u524D"
+                        + "\u6570\u636E\u4FDD\u6301\u4E0D\u53D8");
+            }
+            // Checked, and the store really has moved. The old state is not written
+            // back here on purpose: a rollback is another commit, which can be
+            // refused for the very reason this one was, and a rollback that stops
+            // halfway leaves a state nobody described. What the caller gets instead
+            // is the truth -- what this process holds is no longer what it held, and
+            // a restart is what settles which copy survives.
+            reload();
+            return RestoreReport.needsAttention(
+                    "\u5199\u5165\u5931\u8D25\uFF0C\u6570\u636E\u53EF\u80FD\u5DF2\u6539\u53D8",
+                    "\u5B58\u50A8\u62D2\u7EDD\u4E86\u5199\u5165\uFF0C\u4F46\u5185\u5B58\u4E2D"
+                            + "\u7684\u6570\u636E\u5DF2\u7ECF\u4E0D\u540C\u4E8E\u6062\u590D"
+                            + "\u524D\u3002\u8BF7\u91CD\u65B0\u542F\u52A8\u5E94\u7528\u540E"
+                            + "\u6838\u5BF9\u8BFE\u8868\uFF0C\u5E76\u518D\u6B21\u5C1D\u8BD5"
+                            + "\u6062\u590D\u3002");
         }
 
         reload();

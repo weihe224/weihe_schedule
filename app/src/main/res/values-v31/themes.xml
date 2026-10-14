@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The complete theme again, plus the splash screen items that need API 31.
+      See values/themes.xml for why this is duplicated rather than inherited: a
+      style is not merged across configuration folders, and omitting the parent
+      makes AAPT look for style/Theme.
+
+      The splash icon is set explicitly rather than left to the platform. Without
+      this, Android 12 and later draw the starting window with the launcher icon,
+      which is an <adaptive-icon>, so the system has to pick a layer and mask it,
+      and what appears is whatever that rule produces rather than a decision this
+      app made. Naming the foreground layer puts the same artwork in the splash at
+      the size the splash is specified for, and naming the background keeps the
+      starting window the page surface colour, so there is no flash of a different
+      colour and no black square behind a transparent drawing.
+    -->
+    <style name="Theme.WeiheSchedule" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">@color/primary</item>
+        <item name="android:windowBackground">@color/surface</item>
+        <!-- Every screen enters and leaves the same way; see animations.xml. -->
+        <item name="android:windowAnimationStyle">@style/PageAnimation</item>
+
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLightStatusBar">true</item>
+
+        <item name="android:navigationBarColor">@color/navigation_bar</item>
+        <!-- Carried from values-v27: this file wins on API 31+, so the API 27
+             item has to be repeated here or the light navigation bar is lost. -->
+        <item name="android:windowLightNavigationBar">true</item>
+
+        <!-- Additive, API 31+: the starting window. -->
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenBackground">@color/surface</item>
+    </style>
+</resources>

@@ -478,17 +478,30 @@ public final class BackupCodec {
             notes.add("\u5907\u4EFD\u6587\u4EF6\u672A\u6807\u6CE8\u683C\u5F0F\u7248"
                     + "\u672C\uFF0C\u5DF2\u6309\u7248\u672C 1 \u8BFB\u53D6");
         } else {
-            Long parsedVersion = asLong(root.get("formatVersion"));
-            if (parsedVersion == null) {
+            // Read, judged and compared as a number, and narrowed only once it is
+            // known to fit. The version used to be narrowed first: intValue() turns
+            // 4294967297 into 1, so a file from the future arrived looking like the
+            // oldest version there is, passed the check below, and was read as one.
+            Double stated = wholeNumberOrNull(root.get("formatVersion"));
+            if (stated == null) {
                 return fail("\u65E0\u6CD5\u8BC6\u522B\u5907\u4EFD\u6587\u4EF6\u7684"
                         + "\u683C\u5F0F\u7248\u672C");
             }
-            if (parsedVersion.longValue() < 1L) {
-                notes.add("\u5907\u4EFD\u6587\u4EF6\u7684\u683C\u5F0F\u7248\u672C\u4E0D"
-                        + "\u5408\u6CD5\uFF0C\u5DF2\u6309\u7248\u672C 1 \u8BFB\u53D6");
-            } else {
-                version = parsedVersion.intValue();
+            long wanted = (long) stated.doubleValue();
+            if (wanted < 1L) {
+                // Not read as version 1. A version of -1 is not an older file, it is
+                // a file whose version field means nothing, and the one field that
+                // decides whether the rest may be read should not be guessed at.
+                return fail("\u5907\u4EFD\u6587\u4EF6\u7684\u683C\u5F0F\u7248\u672C\u4E0D"
+                        + "\u5408\u6CD5");
             }
+            if (wanted > (long) MAX_SUPPORTED_VERSION) {
+                return fail("\u5907\u4EFD\u6587\u4EF6\u7684\u683C\u5F0F\u7248\u672C\uFF08"
+                        + wanted + "\uFF09\u9AD8\u4E8E\u5F53\u524D\u5E94\u7528\u652F\u6301"
+                        + "\u7684\u7248\u672C\uFF08" + MAX_SUPPORTED_VERSION
+                        + "\uFF09\uFF0C\u8BF7\u5148\u5347\u7EA7\u300C\u62FE\u8BFE\u300D");
+            }
+            version = (int) wanted;
         }
         if (version > MAX_SUPPORTED_VERSION) {
             return fail("\u5907\u4EFD\u6587\u4EF6\u7684\u683C\u5F0F\u7248\u672C\uFF08"
@@ -943,6 +956,28 @@ public final class BackupCodec {
             }
         }
         return null;
+    }
+
+    /**
+     * A whole JSON number, or null when the value is anything else.
+     *
+     * <p>Stricter than {@link #asLong}, which also reads a number out of a string
+     * and drops any fractional part. That leniency is right for the fields whose job
+     * is to accept what a file happens to say; it is wrong for the one field that
+     * decides whether the rest of the file may be read at all. The format writes
+     * {@code "formatVersion": 1} as a number, so anything that is not one -- a
+     * string, a boolean, null, a container, a fraction -- is refused rather than
+     * quietly converted.</p>
+     */
+    private static Double wholeNumberOrNull(Object value) {
+        if (!(value instanceof Number)) {
+            return null;
+        }
+        double number = ((Number) value).doubleValue();
+        if (Double.isNaN(number) || Double.isInfinite(number)) {
+            return null;
+        }
+        return number == Math.floor(number) ? Double.valueOf(number) : null;
     }
 
     /** A whole number out of JSON, whether it arrived as a number or as text. */

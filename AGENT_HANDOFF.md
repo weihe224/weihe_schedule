@@ -17,15 +17,17 @@
 
 | 项 | 值 |
 |---|---|
-| 更新时间 | **2026-10-13**（上一版 2026-10-12） |
-| 核实方式 | 逐项对照当前源码、`git` 状态与实跑结果；未照抄旧文档 |
-| 本轮实际执行 | `git status/branch/log`、提醒模块（`ReminderPlan`/`Reminder`/`ReminderScheduler`/`ReminderReceiver`/`ReminderNotifications`/`ReminderSettings`/`SettingsActivity`）逐行核查、`--rerun-tasks testDebugUnitTest assembleDebug lintDebug`、**模拟器实测：自定义提前时间 + 真实通知内容 + 点击跳转 + 关闭后不再发送** |
-| 本轮代码改动 | **4 个生产文件 + 3 个测试文件**（提醒模块，见 D-6）；另更正本文档的 Git 状态、D-4 依据、D-5、优先级表 |
+| 更新时间 | **2026-10-14**（上一版 2026-10-13） |
+| 核实方式 | 逐项对照当前源码、`git status/diff` 与**实跑结果**；六阶段修复**逐个文件确认是否真的落地**，不采信任何一轮的自述 |
+| 本轮实际执行 | `git status/diff/numstat`、逐阶段关键代码标记核查、`--rerun-tasks testDebugUnitTest assembleDebug lintDebug`、仓库 blob 换行字节核查 |
+| 本轮代码改动 | **1 个生产文件**（`CourseRepository.restoreFrom` 的拒绝提交路径）+ `.gitattributes`；其余为复审结论 |
+| 未验证 | **模拟器与真机全部未跑**；六阶段中有两处失败路径无测试（见 B-2） |
 
-> **2026-10-13 复核要点（重要）**：工作区已**完全干净**，`8ee1a04` 同时是 HEAD 与
-> `origin/main`。上一版记录的「6 个文档被删除且未暂存」「`f0765a6` 未推送」**均已不再成立**
-> —— 见 B 节。上一版 D-4 中「只有编号栏与网格内容高度完全相等才跟得上」的**机制解释是错的**
-> —— 见 D-4 与 G-4。
+> **2026-10-14 复核要点（重要）**：前六轮"修复"里**只有四轮真的留下了代码**
+> （`MiniJson` 深度限制、`BackupCodec` 版本校验、`ReminderScheduler` 注册顺序、
+> `ExcelTimetableReader` 规模校验）。**"备份恢复一致性"那一轮当轮即被整体撤销**，
+> 本轮才补上能安全落地的一半 —— 详见 **B-2**，那是当前唯一权威的阶段状态表。
+> 另：上一版关于 `gradlew` CRLF 的历史结论**已被证伪**，见 B-2.1。
 
 ---
 
@@ -34,11 +36,53 @@
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| HEAD | **`8ee1a04`（`update`）** |
-| `origin/main` | **`8ee1a04`** —— 与 HEAD **完全一致**（`rev-list --count origin/main..HEAD` = **0**） |
+| HEAD | **`9702b8b`**（未新建提交、未推送） |
+| `origin/main` | 上一版的 `8ee1a04` 之后项目又有提交，`9702b8b` 为本轮起点 |
 | 已暂存 | 无 |
-| 未跟踪 | **无** |
-| 已修改（未暂存） | **无** —— `git status --porcelain` 输出 **0 行** |
+| 未跟踪 | **2 项**：`.gitattributes`（新增，待提交）、`weihe_schedule_audit.zip`（非本 Agent 创建，**未触碰**） |
+| 已修改（未暂存） | **7 个文件**，合计 **+463 / −36**（逐项见 B-2） |
+
+### B-2. 六阶段修复的当前真实状态（2026-10-14 逐个文件核实）
+
+> ⚠️ **本节取代 D / E / G / I 各节中与此冲突的描述。** 判断依据是**当前源码里的代码**
+> 与**实跑结果**，不是任何一轮的交付说明。
+
+| 阶段 | 结论 | 代码依据 | 测试证据 | 未解决 |
+|---|---|---|---|---|
+| **一 备份恢复一致性** | **部分实现** ⚠️ | `data/CourseRepository.java` **+24/−4**：`restoreFrom()` 在 `!editor.commit()` 后先 `captureRestoreScope().equals(snapshot)` 核验 ✓ 不一致则 `reload()` + `RestoreReport.needsAttention(...)` ✓ **刻意未实现回滚**（回滚是又一次可能同样被拒的提交） | `data.RestoreProtocolTest` **26 项通过** —— 其中"干净拒绝仍报 unchanged"的既有用例仍绿，证明整洁路径未被破坏 | **P1**：`FakePreferences` **无法**模拟"拒绝但内存已变"，该分支**零测试覆盖**。另 `CourseRepository` **L715 / L766** 注释仍写 *"an editor applies all-or-nothing"* —— **同源缺陷**，导入起始日期与 `courses_backup` 写入**未修** |
+| **二 JSON 深度** | **已实现并已验证** ✅ | `data/MiniJson.java` **+68/−0**：`MAX_DEPTH = 32`；`readObject()`/`readArray()` 先 `enter()` 再调 `readObjectBody()`/`readArrayBody()`，正常返回时 `leave()` 回退 | `data.MiniJsonTest` **9 → 16 项通过**：恰好 32 层可解、33 层被拒、**5000 层被拒不溢出**、扁平 128 项不误判为深 | 调用方 `BackupCodec.parse` 把 `IllegalArgumentException` 转为 `null` 并给出「文件不是合法的 JSON 文本」—— **源码已确认** ✓ |
+| **三 版本号溢出** | **已实现并已验证** ✅ | `data/BackupCodec.java` **+42/−7**：新增 `wholeNumberOrNull()`（只收 JSON 整数，拒字符串/布尔/null/容器/小数/NaN/Inf）；**先按 `long` 比较，再 `(int)` 收窄** | `data.BackupCodecTest` **67 → 79 项通过**：`4294967297`、2³²、2×2³²+1、1e30、−1、0、1.5、`"1"`、null、布尔全部被拒 | `asLong()` 对**其它字段**仍宽容（接受字符串、截断小数）—— 各字段另有范围校验，未发现可利用绕过 |
+| **四 提醒调度** | **已实现但尚未充分验证** ⚠️ | `reminder/ReminderScheduler.java` **+70/−21**：**先注册、后仅取消新计划未复用的槽位**（`usesSlot`）；台账只记录**实际写入成功**的条目；`sync()` 改为返回 `register()` 的实际条数 | `reminder/ReminderScheduleTest` **34** ✓ `rule.ReminderPlanTest` **68** ✓ —— **但都是计划计算**，失败路径**零覆盖** | **P1**：`AlarmManager`/`PendingIntent` 无法在 JVM 测试中伪造（`unitTests.returnDefaultValues = false`），需先引入注入缝隙 |
+| **五 导入 / 构建 / 发布** | **部分实现** ⚠️ | `importer/ExcelTimetableReader.java` **+49/−4**：`MAX_ROWS = 500` / `MAX_COLUMNS = 100` / `MAX_CELL_LENGTH = 1000`，**在 `new TimetableGrid(...)` 之前检查**（该构造会分配 4 个 `rows×cols` 数组）；`.gitattributes` 新增 | `importer.ExcelTimetableReaderTest` **13** ✓ `importer.TimetableImportParserTest` **42** ✓ —— **新增边界用例未写** | **P2**：超限行/列、超长单元格、空表的用例待补 |
+
+#### B-2.1 阶段五历史结论更正：`gradlew` **不是** CRLF
+
+| 历史说法 | 实测事实 |
+|---|---|
+| "归档中的 `gradlew` 使用 CRLF，Linux 下会报 `$'\r'`" | **不成立** ✗。`git show HEAD:gradlew` **不含 CR**（blob 8,752 字节）；工作区 `gradlew` 为**纯 LF（251 LF / 0 CRLF）**；`gradlew.bat` 的 **blob 也不含 CR**（工作区因检出而是 CRLF，正确） |
+
+**真实隐患与已采取的措施**：本机 `core.autocrlf = true`，而仓库原本**没有 `.gitattributes`** ——
+换一台机器 clone，`gradlew` 的字节就取决于该机器的 Git 配置。已新增 `.gitattributes`
+（`* text=auto eol=lf`；`*.bat`/`*.cmd` → `eol=crlf`；`gradlew`/`*.sh` → `eol=lf`；二进制扩展名标 `binary`）。
+**生效证据**：加该文件后 git 警告由 "LF will be replaced by CRLF" 变为 **"CRLF will be replaced by LF"**。
+
+#### B-2.2 发布阻断项（未修，禁止擅自处理）
+
+| # | 问题 | 依据 |
+|---|---|---|
+| 1 | **`release` 无 `signingConfig`** | `app/build.gradle` 的 `release {}` 只有 `minifyEnabled false` 与 proguard 配置；`signingConfigs` 只有 `localDebug` → `assembleRelease` 产出**未签名 APK**，不可安装、不可上传 |
+| 2 | **`targetSdk 34` 的 Play 合规性未核实** | 本轮抓取官方页面**网络失败**，故**不对现行要求的版本号或日期下任何断言**。当前：`compileSdk 34` / `targetSdk 34` / `minSdk 26` / `versionCode 1` / `versionName 1.0`；AGP 8.13.0、Gradle 8.13、Java 17 |
+
+#### B-2.3 本轮实跑结果
+
+```
+& '.\.gradle-local\bin\gradle.bat' "-Dorg.gradle.vfs.watch=false" --rerun-tasks testDebugUnitTest assembleDebug lintDebug
+```
+
+**54 个测试类 / 999 项 / 999 通过 / 0 失败 / 0 错误**；`assembleDebug` BUILD SUCCESSFUL；
+`lintDebug` `No issues found.`。**模拟器与真机均未执行。**
+
+---
 
 ### ✅ 上一版的两个遗留问题均已解决（2026-10-13 复核）
 

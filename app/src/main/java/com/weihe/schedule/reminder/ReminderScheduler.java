@@ -9,6 +9,7 @@ import android.util.Log;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -94,8 +95,11 @@ public final class ReminderScheduler {
             List<Reminder> reminders = planFor(app, now);
             List<ReminderSchedule.Entry> entries =
                     ReminderSchedule.entriesFor(reminders, ZoneId.systemDefault());
-            register(app, entries);
-            return entries.size();
+            // The count that comes back is the number of alarms that were actually
+            // set. Reporting the size of the plan instead was a claim about alarms
+            // that may never have been registered -- no alarm service at all being
+            // the plainest case.
+            return register(app, entries);
         } catch (RuntimeException failed) {
             // A reminder is an addition to the app, never a reason for it to fall
             // over. Leave whatever is registered alone rather than cancelling: a
@@ -145,32 +149,77 @@ public final class ReminderScheduler {
                 repository.getDefaultScheduleId()).reminders();
     }
 
-    private static void register(Context context, List<ReminderSchedule.Entry> entries) {
-        // Cancel by the previous ledger first. Slots are recycled, so this also
-        // covers the case where a slot now means a different class: the old alarm
-        // is gone before the new one takes the number.
+    /**
+     * Registers the plan and reports how many alarms were actually set.
+     *
+     * <p>Register first, cancel afterwards. A slot is the {@code PendingIntent}'s
+     * request code, so writing a new alarm into a slot replaces whatever was there;
+     * the old plan does not have to be torn down for the new one to take its place.
+     * Tearing it down first is what left a sync that failed partway with no alarms
+     * at all, while the caller above promised the old plan was being kept.</p>
+     *
+     * <p>What the ledger records is what happened, not what was intended. A sync
+     * that stopped halfway stores the entries that were set, so the next sync -- and
+     * {@link #cancelAll} -- sees the alarms that exist rather than the ones that were
+     * planned, and the retry converges instead of working from a stale idea of the
+     * state.</p>
+     *
+     * <p>Only slots the new plan does not reuse are cancelled, and only after the new
+     * ones are in place. A slot that is still used never passes through an empty
+     * moment, and a slot that is no longer used is cleared in the same sync rather
+     * than left to fire for a course that has moved.</p>
+     *
+     * @return how many alarms were set; less than {@code entries.size()} when one was
+     *         refused, in which case the failure is rethrown after the ledger has
+     *         been brought up to date
+     */
+    private static int register(Context context, List<ReminderSchedule.Entry> entries) {
+        AlarmManager alarms = alarms(context);
         List<ReminderSchedule.Entry> previous = ReminderSettings.scheduled(context);
-        for (ReminderSchedule.Entry stale : previous) {
-            cancel(context, stale.slot());
+        List<ReminderSchedule.Entry> registered = new ArrayList<>();
+
+        RuntimeException failure = null;
+        if (alarms != null) {
+            // Registered again even when the plan has not changed, because
+            // re-asserting an alarm is how it gets repaired after something outside
+            // the app dropped it -- a reboot clears every alarm there is.
+            for (ReminderSchedule.Entry entry : entries) {
+                try {
+                    alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,
+                            entry.triggerAtMillis(), pendingIntent(context, entry));
+                    registered.add(entry);
+                } catch (RuntimeException refused) {
+                    failure = refused;
+                    break;
+                }
+            }
         }
 
-        AlarmManager alarms = alarms(context);
-        if (alarms == null) {
-            ReminderSettings.setScheduled(context,
-                    Collections.<ReminderSchedule.Entry>emptyList());
-            return;
+        for (ReminderSchedule.Entry stale : previous) {
+            if (!usesSlot(registered, stale.slot())) {
+                cancel(context, stale.slot());
+            }
         }
-        // Registered again even when the plan has not changed, because re-asserting
-        // an alarm is how it gets repaired after something outside the app dropped
-        // it -- a reboot clears every alarm there is. The ledger, on the other
-        // hand, only needs writing when it actually differs.
+
+        if (!registered.equals(previous)) {
+            ReminderSettings.setScheduled(context, registered);
+        }
+        if (failure != null) {
+            // The ledger already describes what is actually registered, so the
+            // caller can report a failure without the state being a guess.
+            throw failure;
+        }
+        return registered.size();
+    }
+
+    /** Whether {@code slot} is one of the slots the new plan occupies. */
+    private static boolean usesSlot(List<ReminderSchedule.Entry> entries, int slot) {
         for (ReminderSchedule.Entry entry : entries) {
-            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,
-                    entry.triggerAtMillis(), pendingIntent(context, entry));
+            if (entry.slot() == slot) {
+                return true;
+            }
         }
-        if (!entries.equals(previous)) {
-            ReminderSettings.setScheduled(context, entries);
-        }
+        return false;
     }
 
     private static void cancel(Context context, int slot) {
