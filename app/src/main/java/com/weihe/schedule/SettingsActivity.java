@@ -107,7 +107,6 @@ public class SettingsActivity extends Activity {
     private TextView semesterStartDetail;
     private TextView schedulesValue;
     private TextView coursesValue;
-    private TextView weekValue;
 
     /** The undo entry in the import card; shown only when there is one. */
     private LinearLayout undoImportSection;
@@ -1132,17 +1131,21 @@ public class SettingsActivity extends Activity {
         }
     }
 
+    /**
+     * The way into the about page.
+     *
+     * <p>One row, where two paragraphs used to sit. The version and the note about
+     * where the data lives are worth reading once, and this is a page people open to
+     * change a setting -- the height is better spent on the settings. Neither line
+     * has been dropped: both moved to the page this opens, where the version is read
+     * from the installed package instead of typed into the source.</p>
+     */
     private View createAboutCard() {
-        LinearLayout card = card();
-        card.setBackground(UiKit.outline(this, Palette.SURFACE_CONTAINER_LOW,
-                UiTokens.RADIUS_L, Palette.OUTLINE_VARIANT,
-                UiTokens.STROKE_HAIRLINE));
-        UiKit.elevate(card, UiTokens.RADIUS_L, UiTokens.ELEVATION_NONE);
-        addTitle(card, R.drawable.ic_grid, "\u5173\u4E8E");
-        weekValue = valueLine("", 8);
-        card.addView(weekValue);
-        card.addView(hintLine("\u6570\u636E\u53EA\u5B58\u5728\u672C\u673A\uFF08SharedPreferences\uFF09\uFF0C"
-                + "\u5378\u8F7D\u5E94\u7528\u4F1A\u4E00\u5E76\u5220\u9664\u3002", 6));
+        LinearLayout card = groupCard();
+        Row row = settingRow(R.drawable.ic_grid, "\u5173\u4E8E\u62FE\u8BFE",
+                "\u7248\u672C\u3001\u6570\u636E\u4E0E\u9690\u79C1\u8BF4\u660E",
+                view -> startActivity(new Intent(this, AboutActivity.class)));
+        card.addView(row.view);
         return card;
     }
 
@@ -1233,7 +1236,6 @@ public class SettingsActivity extends Activity {
         backupValue.setText("\u5F85\u5BFC\u51FA\uFF1A" + semesters.size() + " \u4E2A\u5B66\u671F"
                 + " \u00B7 " + courses.size() + " \u95E8\u8BFE\u7A0B \u00B7 "
                 + schedules.size() + " \u5F20\u4F5C\u606F\u8868");
-        weekValue.setText("WeiheSchedule 1.0 \u00B7 minSdk 26");
     }
 
     /**
