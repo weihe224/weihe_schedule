@@ -40,7 +40,7 @@ import java.util.List;
 public final class BellSchedules {
 
     /** Name of the schedule for 教学楼 A, F and J301 室. */
-    public static final String STANDARD_NAME = "\u6559\u5B66\u697C\u4F5C\u606F";
+    public static final String STANDARD_NAME = "A/F \u697C\u4F5C\u606F";
 
     /** Name of the second group: 教学楼 B, C, J302 室 and other teaching places. */
     public static final String BC_NAME = "B/C \u697C\u4F5C\u606F";

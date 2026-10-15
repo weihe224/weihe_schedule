@@ -139,7 +139,7 @@ public class RestoreProtocolTest {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = seededRepository(preferences);
         assertEquals(9, repository.getCourses().size());
-        // Compare id-and-name pairs, not ids: the sample timetable uses 1..9 and
+        // Compare id-and-name pairs, not ids: the seeded timetable uses 1..9 and
         // the backup puts its own course at id 1, so the ids alone overlap.
         List<String> oldCourses = idNamePairs(allCourses(repository));
         List<Long> oldSemesterIds = idsOfSemesters(repository);
@@ -492,13 +492,39 @@ public class RestoreProtocolTest {
         return new CourseRepository((Context) null);
     }
 
-    /** A repository whose store has already been written once. */
+    /**
+     * A repository holding the nine-course timetable the restore tests replace.
+     *
+     * <p>A term starts empty now, so the courses are written here on purpose.
+     * The ids run 1..9 to match what the old sample timetable used: several tests
+     * below reason about the ids overlapping the backup's own ids, and they were
+     * written against that 1..9 space.</p>
+     */
     private static CourseRepository seededRepository(FakePreferences preferences) {
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         assertEquals(9, repository.getCourses().size());
         assertEquals(1, repository.getSemesters().size());
         assertEquals(3, repository.getBellSchedules().size());
         return repository;
+    }
+
+    /** Nine courses at ids 1..9, one per weekday-and-period slot. */
+    private static void seedNineCourses(CourseRepository repository) {
+        int day = 1;
+        int startPeriod = 1;
+        for (int i = 1; i <= 9; i++) {
+            Course seeded = course(i, "Seeded " + i);
+            seeded.dayOfWeek = day;
+            seeded.startPeriod = startPeriod;
+            seeded.endPeriod = startPeriod + 1;
+            repository.upsertCourse(seeded);
+            startPeriod += 2;
+            if (startPeriod > 11) {
+                startPeriod = 1;
+                day = day % 5 + 1;
+            }
+        }
     }
 
     /** One semester, two courses, one schedule. */

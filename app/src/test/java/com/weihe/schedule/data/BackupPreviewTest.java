@@ -452,16 +452,36 @@ public class BackupPreviewTest {
     /**
      * A repository whose store has already been written once.
      *
-     * <p>Reading is what seeds the sample timetable, so the store has to be read
-     * before the fingerprint is taken -- otherwise the comparison would be
-     * measuring the first read rather than the preview.</p>
+     * <p>A term starts empty now, so the nine courses the assertions below
+     * expect have to be written on purpose. The write is what puts a payload in
+     * the store, which is what makes the fingerprint comparison meaningful --
+     * otherwise it would be measuring an empty store rather than the preview.</p>
      */
     private static CourseRepository seededRepository(FakePreferences preferences) {
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         assertFalse(repository.getCourses().isEmpty());
         assertFalse(repository.getBellSchedules().isEmpty());
         assertFalse(repository.getSemesters().isEmpty());
         return repository;
+    }
+
+    /** Nine courses at ids 1..9, one per weekday-and-period slot. */
+    private static void seedNineCourses(CourseRepository repository) {
+        int day = 1;
+        int startPeriod = 1;
+        for (int i = 1; i <= 9; i++) {
+            Course seeded = course(i, "Seeded " + i);
+            seeded.dayOfWeek = day;
+            seeded.startPeriod = startPeriod;
+            seeded.endPeriod = startPeriod + 1;
+            repository.upsertCourse(seeded);
+            startPeriod += 2;
+            if (startPeriod > 11) {
+                startPeriod = 1;
+                day = day % 5 + 1;
+            }
+        }
     }
 
     private static void assertUnchanged(CourseRepository repository,

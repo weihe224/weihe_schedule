@@ -622,15 +622,17 @@ git rev-list --count origin/main..HEAD       # 0（无未推送提交）
 2. **核对 Git**（2026-10-13 实测值）：
    ```
    git branch --show-current                 # 期望 main
-   git log -2 --oneline                      # 期望 HEAD = 8ee1a04
-   git status --porcelain                    # 期望：0 行（工作区干净）
+   git log -2 --oneline                      # 期望 HEAD = 5e5f161（K 节之后仍是；如用户已提交则以实际为准）
+   git status --porcelain                    # K-6 列出的未提交改动仍在（若用户尚未提交）
    git rev-list --count origin/main..HEAD    # 期望 0（无未推送）
    ```
 3. **打开代码抽查**（不要只信文档）：`ui/Pickers`、`rule/CourseColorSync`、
    `EditCourseActivity` 的颜色选择器（单排 / `RADIUS_S` / 无 `ic_check`）、
    `model/BellSchedule` 的 `DEFAULT/MIN/MAX_PERIOD_MINUTES`、
    `WeekGridActivity` 的 `dayColumnRows`/`lastPeriodInUse`、`CourseRepository.recolorCourses`。
-4. **跑基线**（务必 `--rerun-tasks`）：期望 **980 项全通过 + lint `No issues found.`**。
+4. **跑基线**（务必 `--rerun-tasks`）：期望 **999 项全通过 + lint `0 errors, 2 warnings`
+   （仅 `IconXmlAndPng`）**。若 `processDebugResources` 报 `Error 15100`，
+   先看 K-1 —— 那是 AAPT2 路径含空格的老问题，修复在 `gradle.properties`。
    若不是，**先报告，不要在其上叠加改动**。
 5. **保护工作区**：见 H 节。**不得** reset / clean / 强制切分支 / 未经同意 add·commit·push。
 6. **暂停并向用户报告的情形**：
@@ -642,3 +644,142 @@ git rev-list --count origin/main..HEAD       # 0（无未推送提交）
 7. **不要**仅凭任何文档认定某功能已完成 —— **打开代码确认**。
 8. **每次完成任务后，更新本文件**（`AGENT_HANDOFF.md`）；逐轮开发日志请**追加到归档**，
    不要堆进本文件，也不要覆盖其他 Agent 的记录。
+
+---
+
+## K. 2026-10-15 接手轮：构建解封 + 优先级 2（新装空课表）
+
+> 本节记录**最新一轮**的实际改动，与 A–J 各节冲突时**以本节为准**。
+> 上一版判断的核验基线为 HEAD `f0995e4`；**实际 HEAD 已是 `5e5f161`**（文档滞后，已数次出现）。
+
+### K-1. 阻断项：`processDebugResources` 失败（已修复）
+
+**现象**：`--rerun-tasks testDebugUnitTest assembleDebug lintDebug` 在
+`:app:processDebugResources` 失败 —— `failed to load XML file: Error 15100 while retrieving message for error 13`。
+
+**根因（已用实验证实）**：AGP 从 Maven 解出的 AAPT2 位于
+`.gradle-local/home/caches/8.13/transforms/b0d4ad2d6eaada99e3f4a6e0d731fcfa/transformed/aapt2-8.13.0-13719691-windows/aapt2.exe`，
+该路径含**空格**（`D:/vibe coding\...`）。同一份字节
+（SHA-256 `6ccecfce7d1b1e2789dff9d6ac0ac2d07be7c98d8111ecc712aa4c0d3e0a0593`，5397504 字节）
+从**无空格**目录运行 rc=0 成功，从该缓存目录运行失败；SDK 自带的 aapt2 在任何路径都正常。
+**不是**清单内容、不是行尾、不是 argfile 内容问题。
+
+**修复**：`gradle.properties` 新增
+
+```properties
+android.aapt2FromMavenOverride=D\:\\\\Sdk\\\\build-tools\\\\35.0.0\\\\aapt2.exe
+```
+
+反斜杠与盘符冒号**双重转义**是必需的：`.properties` 解析一层，Gradle 作为 project property
+传给 AGP 时再解一层；少一层会被 lint 的 `PropertyEscape` 拒绝或得到坏路径。
+日志应出现 `AAPT2 35.0.0 Daemon #0: starting`（不再出现 `aapt2-8.13.0-13719691-windows`）。
+
+### K-2. 优先级 2：新安装课程表必须为空（已实现）
+
+**改动**：`data/CourseRepository.java`
+
+- `loadCourses()` 删除"首个学期自动播种 9 门示例课"分支 —— `raw == null` 直接返回空表
+- 删除 `seededSemesterId` 字段及 `migrateLegacyStorage()` 中的赋值
+- 删除 `createSampleCourses()` / `sample(...)`
+- 删除不再使用的 `import com.weihe.schedule.design.Palette`
+- 修正 `migrateLegacyStorage` 过期 javadoc
+
+**四种场景的区分**（未改变的部分）：
+
+| 场景 | 结果 | 依据 |
+|---|---|---|
+| 全新安装 | **空课表** ✅ | `raw == null` → 返回空表，且**不写任何键** |
+| 老版本升级 | **数据原样保留** ✅ | 该路径有 `courses:<id>` 键，`raw != null`，走 `readCourses` |
+| 新建学期 | **空课表** ✅ | 新学期无键 |
+| 恢复备份 | **以备份为准** ✅ | `restoreFrom` 用备份里的课程重建 |
+
+**测试同步**（用户选择"改代码 + 同步更新这些测试"）：删除播种后 **50 项测试失败**，
+全部依赖"默认有 9 门课"的隐含前提。按类补显式播种：
+
+| 测试类 | 失败数 | 处理 |
+|---|---|---|
+| `CourseRepositoryTest` | 9 | 新增 `seedNineCourses`；`aFirstRunWritesTheSampleCourses` → `aFirstRunStartsWithAnEmptyTimetable` |
+| `CourseRepositoryStorageTest` | 8 | 新增 `seedNineCourses`，逐个补播种 |
+| `RestoreProtocolTest` | 25 | 改 `seededRepository` 辅助方法内部播种 |
+| `BackupPreviewTest` | 4 | 同上 |
+| `BackupCodecTest` | 2 | 两处显式播种 |
+| `ActiveSemesterReloadTest` | 2 | 新增 `seed(...)` |
+
+播种数据统一为 **id 1..9、跨周一到周五、起始节次互不相同**，以复现旧示例课表的排序行为。
+
+### K-3. 优先级 3：默认作息表与备份文件（已核对一致）
+
+备份文件**已找到**：
+`C:/Users/tuchengcheng/xwechat_files/wxid_x32m652hoxn722_68bf/msg/file/2026-10/weihe-backup-20261014-1547.json`
+（6170 字节，mtime 2026-10-14 15:48）。逐字段校验结果：
+
+| 字段 | 备份值 | 代码现状 | 一致？ |
+|---|---|---|---|
+| format / version | `weihe-schedule-backup` / `1` | 同 | ✅ |
+| A/F 楼作息 id | **`schedule-standard`** | `BellSchedules.STANDARD_ID` | ✅ |
+| A/F 楼作息 名称 | **`A/F 楼作息`** | `STANDARD_NAME` | ✅ |
+| B/C 楼作息 id | `schedule-bc` | `BC_ID` | ✅ |
+| D/E 楼作息 id | `schedule-de` | `DE_ID` | ✅ |
+| **defaultScheduleId** | **`schedule-bc`** | `legacyDefaultId()` **BC 优先** | ✅ |
+| 三表 starts/ends | 与源码逐项相同，durationMinutes=40 | 同 | ✅ |
+
+**重要**：此前工作区未提交的 `STANDARD_ID = "schedule-af"` 改名是**错的**（备份证明应为
+`schedule-standard`），**已按用户确认改回**；`STANDARD_NAME = "A/F 楼作息"` 的改名**保留**。
+`DefaultScheduleTest` 同步更新一处内联 JSON 里的名称。
+
+### K-4. 优先级 1：上课提醒（已定位，结论如下）
+
+**排除了什么**：提醒链路**不是"代码缺失"**。已逐行核对
+`ReminderScheduler` / `ReminderReceiver` / `ReminderSchedule` / `ReminderNotifications` /
+`ReminderSettings` / `ReminderRestoreReceiver` / `AndroidManifest.xml` / `MainActivity` /
+`SettingsActivity` 的接线，内部自洽；`rule/ReminderPlanTest`(68) + `reminder/ReminderScheduleTest`(34)
+共 102 项计划计算测试全绿。
+
+**用真实生产类做的端到端探针**（JVM，`rule/` 无 Android 依赖）：
+
+- 正常周一（大一数学 1-2 节、大学英语 3-4 节），学期首日 07:00：
+  **产生 2 条提醒**，起始 08:15 / 09:55，提前量 10 分钟 → 08:05 / 09:45 ✅
+- 传入**空作息表**：0 条提醒 + `NO_SCHEDULES` 原因（刻意拒绝，而非静默）✅
+- 默认作息解析到 B/C 组（与备份一致）✅
+
+**结论**：**计划计算正确**。提醒不生效的原因**不在这一层**，但本环境
+（`adb devices` 为空，无设备）**无法验证**以下 Android 侧环节，需真机：
+`AlarmManager.setAndAllowWhileIdle` 实际注册、`PendingIntent` 身份、
+通知权限授予后 `canPost` 的翻转、厂商省电策略对非精确闹钟的抑制。
+
+**已知设计取舍（非缺陷）**：使用**非精确**闹钟（`setAndAllowWhileIdle`，无需
+`SCHEDULE_EXACT_ALARM`），代价是手机深度休眠时提醒可能**晚几分钟** —— 设置页已如实说明。
+
+### K-5. 本轮门禁（全绿）
+
+```
+gradlew.bat -Dorg.gradle.vfs.watch=false --rerun-tasks testDebugUnitTest assembleDebug lintDebug
+```
+
+| 项 | 结果 |
+|---|---|
+| 单元测试 | **999 项 / 0 失败 / 0 错误 / 0 跳过** ✅ |
+| `assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` **1,162,496 字节** ✅ |
+| `lintDebug` | **0 errors, 2 warnings**（仅既有 `IconXmlAndPng`）✅ |
+| 耗时 | BUILD SUCCESSFUL in 3m 1s（49 tasks） |
+
+### K-6. 本轮工作区状态（**未提交**）
+
+| 文件 | 说明 |
+|---|---|
+| `gradle.properties` | AAPT2 修复（+14） |
+| `data/CourseRepository.java` | 删除播种（+？/−101 行净减） |
+| `model/BellSchedules.java` | `STANDARD_NAME` 改名（未提交工作，保留） |
+| `data/DefaultScheduleTest.java` | 同步名称 |
+| 6 个测试类 | 播种同步 |
+| 未跟踪 | `.workbuddy-ai/`（记忆目录）、`app/release/` |
+
+**HEAD `5e5f161`；Agent 全程未 commit / 未 push。**
+
+### K-7. 交给下一轮
+
+1. **优先级 1 的真机验证**：需 `adb devices` 有设备后，开提醒 → 加一门当天稍后的课 →
+   观察 `adb shell dumpsys alarm | grep weihe` 是否有闹钟、以及通知是否到达。
+2. **优先级 4（数据安全审计）尚未开始**：`commit()` 失败、导入/恢复一致性、
+   损坏数据保留、`allowBackup` 隐私。
+3. 归档追加：本轮日志已写入 `.workbuddy-ai/memory/2026-10-15.md`。

@@ -15,7 +15,6 @@ import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
-import com.weihe.schedule.design.Palette;
 
 public class CourseRepository {
     private static final String PREFS = "weihe_schedule";
@@ -91,17 +90,6 @@ public class CourseRepository {
     private volatile List<Course> cachedCourses;
     private volatile List<BellSchedule> cachedSchedules;
     private volatile List<Semester> cachedSemesters;
-
-    /**
-     * Id of the one semester allowed to seed itself with the sample timetable.
-     *
-     * <p>Set once, when the install is created, and never moved: it is what
-     * separates "first run, show a filled timetable" from "this term simply has
-     * no courses yet". A flag that is cleared on some later event would break
-     * whichever code path reads before that event -- which is exactly what
-     * happened when it was cleared on creating a semester.</p>
-     */
-    private long seededSemesterId;
 
     /**
      * Id of the semester being read and written, or 0 when the storage is still
@@ -366,9 +354,9 @@ public class CourseRepository {
      *
      * <p>Runs once, before anything is read. The stored courses and start date
      * are copied onto the first semester and the legacy keys are then removed:
-     * leaving them behind would make a later fresh install read them instead of
-     * writing its own sample courses. The original payload is not lost -- it
-     * lives on under the semester's key, and the weekly copy to
+     * leaving them behind would make a later fresh install read the previous
+     * term's timetable as if it were its own. The original payload is not lost --
+     * it lives on under the semester's key, and the weekly copy to
      * {@link #KEY_COURSES_BACKUP} still applies to damaged data.</p>
      */
     private void migrateLegacyStorage() {
@@ -405,7 +393,6 @@ public class CourseRepository {
         }
         editor.apply();
         cachedSemesters = semesters;
-        seededSemesterId = first.id();
     }
 
     private long nextSemesterId(List<Semester> semesters) {
@@ -510,17 +497,14 @@ public class CourseRepository {
     private List<Course> loadCourses() {
         String raw = preferences.getString(coursesKey(), null);
         if (raw == null) {
-            // The sample timetable belongs to the semester the install was born
-            // with. Any other term starts empty -- inheriting nine example
-            // courses would be a bug, not a convenience.
-            if (semesterId == seededSemesterId) {
-                List<Course> samples = createSampleCourses();
-                saveCourses(samples);
-                for (Course course : samples) {
-                    applyTimeRange(course);
-                }
-                return samples;
-            }
+            // A term the user has not filled in yet is empty, and that is the
+            // whole answer -- a new install, a term created a minute ago, and a
+            // term emptied by deleting its last course all look the same here on
+            // purpose. The app used to seed the birth semester with nine example
+            // courses; that made "no timetable yet" indistinguishable from "a
+            // timetable", so a fresh install opened on someone else's Monday and
+            // every emptiness check downstream had to know about the exception.
+            // The empty state now carries the way in instead.
             return new ArrayList<>();
         }
         return readCourses(raw);
@@ -1621,69 +1605,6 @@ public class CourseRepository {
         return course;
     }
 
-    /**
-     * The timetable a fresh install starts from.
-     *
-     * <p>Placeholder content, but not arbitrary: the venues are named after the
-     * buildings the timetable actually distinguishes, so the sample week shows
-     * the per-venue hours working (a course in 教学楼 C runs to a different clock
-     * than one in 教学楼 A) instead of all of them looking alike.</p>
-     *
-     * <p>The colours come from {@link Palette#COURSE_COLORS} rather than from
-     * literals here. They used to be nine hard-coded hex values, which meant the
-     * first thing a new user saw was the one screen in the app that did not use
-     * the design system's palette.</p>
-     */
-    private List<Course> createSampleCourses() {
-        int[] colors = Palette.COURSE_COLORS;
-        List<Course> courses = new ArrayList<>();
-        courses.add(sample(1, "\u9AD8\u7B49\u6570\u5B66",
-                "\u5F20\u8001\u5E08", "\u6559\u5B66\u697C A203",
-                1, 1, 2, 1, 16, Course.PARITY_ALL, colors[0]));
-        courses.add(sample(2, "\u5927\u5B66\u82F1\u8BED",
-                "\u674E\u8001\u5E08", "\u6559\u5B66\u697C F305",
-                1, 3, 4, 1, 16, Course.PARITY_ALL, colors[1]));
-        courses.add(sample(3, "\u6570\u636E\u7ED3\u6784",
-                "\u738B\u8001\u5E08", "\u6559\u5B66\u697C C203",
-                2, 3, 4, 1, 8, Course.PARITY_ALL, colors[2]));
-        courses.add(sample(4, "\u7EBF\u6027\u4EE3\u6570",
-                "\u5218\u8001\u5E08", "\u6559\u5B66\u697C D102",
-                3, 1, 2, 9, 16, Course.PARITY_ALL, colors[3]));
-        courses.add(sample(5, "\u7A0B\u5E8F\u8BBE\u8BA1\u5B9E\u9A8C",
-                "\u9648\u8001\u5E08", "\u6559\u5B66\u697C E302",
-                3, 5, 6, 1, 16, Course.PARITY_ODD, colors[4]));
-        courses.add(sample(6, "\u5927\u5B66\u7269\u7406",
-                "\u8D75\u8001\u5E08", "\u6559\u5B66\u697C A201",
-                4, 1, 2, 1, 16, Course.PARITY_EVEN, colors[5]));
-        courses.add(sample(7, "\u4F53\u80B2",
-                "\u5B59\u8001\u5E08", "\u4E1C\u64CD\u573A",
-                5, 3, 4, 1, 16, Course.PARITY_ALL, colors[6]));
-        courses.add(sample(8, "\u5F62\u52BF\u4E0E\u653F\u7B56",
-                "\u5468\u8001\u5E08", "J301 \u5BA4",
-                5, 7, 8, 1, 8, Course.PARITY_EVEN, colors[7]));
-        courses.add(sample(9, "\u64CD\u4F5C\u7CFB\u7EDF",
-                "\u4F55\u8001\u5E08", "\u6559\u5B66\u697C E402",
-                6, 10, 11, 9, 16, Course.PARITY_ALL, colors[8]));
-        return courses;
-    }
-
-    private Course sample(long id, String name, String teacher, String location,
-            int day, int startPeriod, int endPeriod, int startWeek, int endWeek,
-            int parity, int color) {
-        Course course = new Course();
-        course.id = id;
-        course.name = name;
-        course.teacher = teacher;
-        course.location = location;
-        course.dayOfWeek = day;
-        course.startPeriod = startPeriod;
-        course.endPeriod = endPeriod;
-        course.startWeek = startWeek;
-        course.endWeek = endWeek;
-        course.parity = parity;
-        course.color = color;
-        return course;
-    }
     // --------------------------------------------------------------- restoring
 
     /**

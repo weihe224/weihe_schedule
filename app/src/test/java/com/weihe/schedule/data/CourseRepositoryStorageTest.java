@@ -53,6 +53,7 @@ public class CourseRepositoryStorageTest {
     public void deletingACourseRemovesItFromEveryRead() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         long victim = repository.getCourses().get(0).id;
 
         repository.deleteCourse(victim);
@@ -68,6 +69,7 @@ public class CourseRepositoryStorageTest {
     public void deletingOneCourseLeavesEveryOtherCourseExactlyAsItWas() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         List<Course> before = repository.getCourses();
         long victim = before.get(2).id;
         List<String> expected = new ArrayList<>();
@@ -93,6 +95,7 @@ public class CourseRepositoryStorageTest {
     public void aDeleteSurvivesAReopen() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         long victim = repository.getCourses().get(4).id;
 
         repository.deleteCourse(victim);
@@ -106,6 +109,7 @@ public class CourseRepositoryStorageTest {
     public void deletingACourseThatIsNotThereChangesNothing() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         List<Long> before = idsOf(repository.getCourses());
 
         repository.deleteCourse(999999L);
@@ -119,13 +123,14 @@ public class CourseRepositoryStorageTest {
     public void deletingEveryCourseLeavesATimetableThatStaysEmptyOnReopen() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         for (Long id : idsOf(repository.getCourses())) {
             repository.deleteCourse(id);
         }
 
         assertTrue(repository.getCourses().isEmpty());
-        // This semester was born holding the sample timetable. Reopening must not
-        // read "no payload" and seed the nine examples all over again.
+        // Deleting the last course must not be mistaken for "never written" --
+        // reopening must not read "no payload" and re-seed anything.
         assertTrue("an emptied semester must stay empty",
                 repositoryFor(preferences).getCourses().isEmpty());
     }
@@ -134,6 +139,7 @@ public class CourseRepositoryStorageTest {
     public void deletingInOneSemesterDoesNotTouchAnother() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Semester first = repository.getActiveSemester();
         List<Long> firstIds = idsOf(repository.getCourses());
 
@@ -360,6 +366,7 @@ public class CourseRepositoryStorageTest {
     public void editingACourseHandedOutByGetCoursesDoesNotReachTheRepository() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Course handedOut = repository.getCourses().get(0);
         String originalName = handedOut.name;
 
@@ -425,6 +432,7 @@ public class CourseRepositoryStorageTest {
     public void aDeleteIsVisibleToAReopenWithTheSameValues() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         long victim = repository.getCourses().get(1).id;
 
         repository.deleteCourse(victim);
@@ -447,8 +455,9 @@ public class CourseRepositoryStorageTest {
     public void importingReplacesTheTimetableAndUndoBringsItBack() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         List<String> before = descriptionsOf(repository.getCourses());
-        assertEquals("the sample timetable is the starting point", 9, before.size());
+        assertEquals("the seeded timetable is the starting point", 9, before.size());
 
         assertTrue(repository.replaceCourses(List.of(course("imported"))));
         assertEquals(1, repository.getCourses().size());
@@ -553,6 +562,7 @@ public class CourseRepositoryStorageTest {
     public void undoingWithNoSnapshotChangesNothing() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         List<String> before = descriptionsOf(repository.getCourses());
         assertFalse(repository.hasPreviousCourses());
 
@@ -568,6 +578,7 @@ public class CourseRepositoryStorageTest {
     public void aRefusedImportWriteIsNotReportedAsSuccess() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         int before = repository.getCourses().size();
         preferences.failCommitNumber(1);
 
@@ -672,6 +683,7 @@ public class CourseRepositoryStorageTest {
     public void undoingTwiceRestoresOnceAndThenRefuses() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Semester active = repository.getActiveSemester();
         String before = preferences.getString(coursesKeyOf(active), null);
         assertTrue(repository.replaceCourses(List.of(course("imported"))));
@@ -698,6 +710,7 @@ public class CourseRepositoryStorageTest {
     public void parsingAFileWritesNothingAndLeavesTheUndoEntryAlone() throws Exception {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         assertTrue(repository.replaceCourses(List.of(course("imported"))));
         assertTrue(repository.hasPreviousCourses());
         Map<String, Object> before = preferences.snapshot();
@@ -842,6 +855,32 @@ public class CourseRepositoryStorageTest {
     private static CourseRepository repositoryFor(FakePreferences preferences) {
         CourseRepository.useStoreForNextInstance(preferences);
         return new CourseRepository((Context) null);
+    }
+
+    /**
+     * Nine courses, one per weekday-and-period slot, ids 1..9.
+     *
+     * <p>A term starts empty now, so any test that counts or deletes courses has
+     * to put them there first. Nine keeps the arithmetic in those tests reading
+     * the same way it did when a fresh install seeded nine examples, and the ids
+     * and slot layout match what that timetable used.</p>
+     */
+    private static void seedNineCourses(CourseRepository repository) {
+        int day = 1;
+        int startPeriod = 1;
+        for (int i = 1; i <= 9; i++) {
+            Course seeded = course("Seeded " + i);
+            seeded.id = i;
+            seeded.dayOfWeek = day;
+            seeded.startPeriod = startPeriod;
+            seeded.endPeriod = startPeriod + 1;
+            repository.upsertCourse(seeded);
+            startPeriod += 2;
+            if (startPeriod > 11) {
+                startPeriod = 1;
+                day = day % 5 + 1;
+            }
+        }
     }
 
     /** Puts a single bell schedule into the store, replacing whatever is there. */

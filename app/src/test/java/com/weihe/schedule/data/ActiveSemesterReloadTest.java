@@ -30,8 +30,10 @@ import com.weihe.schedule.model.Semester;
  * overview, built after the switch, showed them. That is the report these tests
  * come from.</p>
  *
- * <p>The term an install begins with carries sample courses, so nothing here
- * assumes a term starts empty; the empty term is one the test creates.</p>
+ * <p>No term starts with courses any more -- a fresh install is empty -- so each
+ * test puts the courses it needs into the term it calls the populated one. The
+ * empty term is still the one the test creates, and the populated one is created
+ * the same way rather than assumed.</p>
  */
 public class ActiveSemesterReloadTest {
 
@@ -43,8 +45,8 @@ public class ActiveSemesterReloadTest {
         // The screen that stays open, holding its own repository.
         CourseRepository open = repositoryFor(preferences);
         Semester first = open.getActiveSemester();
-        int seeded = open.getCourses().size();
-        assertTrue("the first term is the seeded one", seeded > 0);
+        int seeded = seed(open, 9);
+        assertTrue("the first term is the populated one", seeded > 0);
 
         // Another screen switches to a second term and puts one course in it.
         CourseRepository elseWhere = repositoryFor(preferences);
@@ -66,6 +68,7 @@ public class ActiveSemesterReloadTest {
     public void anEmptyTermSwitchedToElsewhereIsNotShownAsTheOldTermsCourses() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository open = repositoryFor(preferences);
+        seed(open, 9);
         assertTrue(open.getCourses().size() > 0);
 
         // A second screen adds a term and switches to it, leaving it empty.
@@ -84,7 +87,7 @@ public class ActiveSemesterReloadTest {
         FakePreferences preferences = new FakePreferences();
         CourseRepository open = repositoryFor(preferences);
         Semester first = open.getActiveSemester();
-        int seeded = open.getCourses().size();
+        int seeded = seed(open, 9);
 
         CourseRepository elseWhere = repositoryFor(preferences);
         Semester second = elseWhere.addSemester(TERM_TWO, "");
@@ -153,6 +156,20 @@ public class ActiveSemesterReloadTest {
     private static CourseRepository repositoryFor(FakePreferences preferences) {
         CourseRepository.useStoreForNextInstance(preferences);
         return new CourseRepository((Context) null);
+    }
+
+    /**
+     * Puts {@code count} courses into whichever term is active.
+     *
+     * <p>A fresh install is now empty, so a test that needs "a term with courses"
+     * has to say so. The names are distinct so a test can tell one term's contents
+     * from another's.</p>
+     */
+    private static int seed(CourseRepository repository, int count) {
+        for (int i = 0; i < count; i++) {
+            repository.upsertCourse(course("Seeded " + i));
+        }
+        return count;
     }
 
     private static Course course(String name) {

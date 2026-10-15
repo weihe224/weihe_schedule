@@ -70,29 +70,85 @@ public class CourseRepositoryTest {
         throw new IllegalArgumentException("no schedule named " + name);
     }
 
+    /**
+     * Nine courses, so a test that needs a populated term has one.
+     *
+     * <p>A fresh install now starts empty -- that is the behaviour under test
+     * elsewhere -- so a test about copying, deleting or renaming has to put the
+     * courses there itself. This used to be free, because the repository seeded
+     * the birth semester; the count is still nine so the assertions that care
+     * about "a term with courses in it" read exactly as they did.</p>
+     *
+     * <p>Distinct weekdays and periods, so nothing depends on how ties are
+     * broken, and a mix of buildings so schedule resolution has something to
+     * resolve.</p>
+     */
+    /**
+     * Nine courses, one per weekday-and-period slot, ids 1..9.
+     *
+     * <p>A term starts empty now, so tests that count, sort or delete courses
+     * write these first. They are the timetable the app used to seed on a fresh
+     * install, reproduced field for field so those tests keep reading the way
+     * they were written -- in particular the ids and the order the repository
+     * sorts them into.</p>
+     */
+    private static void seedNineCourses(CourseRepository repository) {
+        int day = 1;
+        int startPeriod = 1;
+        for (int i = 1; i <= 9; i++) {
+            Course seeded = new Course();
+            seeded.id = i;
+            seeded.name = "Seeded " + i;
+            seeded.dayOfWeek = day;
+            seeded.startPeriod = startPeriod;
+            seeded.endPeriod = startPeriod + 1;
+            seeded.startWeek = 1;
+            seeded.endWeek = 16;
+            repository.upsertCourse(seeded);
+            // Walk the grid so every course sorts distinctly: five weekdays per
+            // round of periods, and no two courses share a start period on the
+            // same day.
+            startPeriod += 2;
+            if (startPeriod > 11) {
+                startPeriod = 1;
+                day = day % 5 + 1;
+            }
+        }
+    }
+
     private static FakePreferences preferencesWith(String key, String value) {
         FakePreferences preferences = new FakePreferences();
         preferences.edit().putString(key, value).apply();
         return preferences;
     }
 
+    /**
+     * A fresh install has no timetable of its own.
+     *
+     * <p>It used to be seeded with nine example courses, which meant the very
+     * first thing a user saw was a Monday that was not theirs, and every
+     * "is this term empty?" check downstream had to special-case the birth
+     * semester. The store must also stay untouched: writing a seeded payload is
+     * what made an empty term indistinguishable from a filled one.</p>
+     */
     @Test
-    public void aFirstRunWritesTheSampleCourses() {
+    public void aFirstRunStartsWithAnEmptyTimetable() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
 
         List<Course> courses = repository.getCourses();
 
-        assertEquals(9, courses.size());
-        assertNotNull(preferences.getString("courses:" + repository
-                .getActiveSemester().id(), null));
-        assertFalse(courses.get(0).timeRange.isEmpty());
+        assertEquals(0, courses.size());
+        assertNull("nothing may be written for a term that has no courses",
+                preferences.getString("courses:" + repository
+                        .getActiveSemester().id(), null));
     }
 
     @Test
     public void everyScheduleChoiceSurvivesAReopen() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository first = repositoryFor(preferences);
+        seedNineCourses(first);
         Course course = first.getCourses().get(0);
         course.name = "\u6539\u8FC7\u7684\u540D\u5B57";
         course.scheduleName = BellSchedules.DE_NAME;
@@ -134,6 +190,7 @@ public class CourseRepositoryTest {
     public void renamingAScheduleRepointsTheCoursesThatChoseIt() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Course course = repository.getCourses().get(0);
         course.scheduleName = BellSchedules.DE_NAME;
         repository.upsertCourse(course);
@@ -421,6 +478,7 @@ public class CourseRepositoryTest {
     public void clearingAScheduleReferenceFallsBackToTheVenue() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Course course = repository.getCourses().get(0);
         course.location = "\u6559\u5B66\u697CF\u697C F420";
         course.scheduleName = BellSchedules.DE_NAME;
@@ -499,13 +557,14 @@ public class CourseRepositoryTest {
     public void eachSemesterKeepsItsOwnCourses() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         assertEquals(9, repository.getCourses().size());
 
         Semester spring = repository.addSemester(LocalDate.of(2027, 2, 22));
         repository.setActiveSemester(spring);
 
-        // A semester the user created starts empty: the sample courses are a
-        // first-run thing and must not be inherited.
+        // A semester the user created starts empty: nothing is inherited, from
+        // the sample timetable that used to exist or from the term before it.
         assertEquals(0, repository.getCourses().size());
         Course added = new Course();
         added.name = "\u6625\u5B63\u8BFE";
@@ -601,6 +660,7 @@ public class CourseRepositoryTest {
     public void aNewSemesterIsEmptyUnlessCoursesAreCarriedOver() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Semester source = repository.getActiveSemester();
         assertEquals(9, repository.countCoursesOf(source));
 
@@ -626,6 +686,7 @@ public class CourseRepositoryTest {
     public void carryingCoursesOverDoesNotChangeTheActiveSemester() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Semester source = repository.getActiveSemester();
         Semester target = repository.addSemester(LocalDate.of(2027, 2, 22), "");
 
@@ -640,6 +701,7 @@ public class CourseRepositoryTest {
     public void copyingASemesterOntoItselfDoesNothing() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Semester source = repository.getActiveSemester();
 
         assertEquals(0, repository.copyCourses(source, source));
@@ -650,6 +712,7 @@ public class CourseRepositoryTest {
     public void deletingASemesterTakesItsCoursesWithIt() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        seedNineCourses(repository);
         Semester previous = repository.getActiveSemester();
         assertEquals(9, repository.countCoursesOf(previous));
 

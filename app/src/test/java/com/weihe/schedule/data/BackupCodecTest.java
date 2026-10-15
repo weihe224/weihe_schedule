@@ -303,8 +303,9 @@ public class BackupCodecTest {
     public void theCourseFieldsMatchWhatTheStoreWritesExactly() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
-        // A fresh install seeds the sample timetable on the first read, which
-        // is what puts a courses:<id> payload in the store to compare against.
+        // A term starts empty, so the payload to compare against has to be put
+        // there deliberately -- one course is all this test needs.
+        repository.upsertCourse(course(1L, "\u9AD8\u7B49\u6570\u5B66"));
         assertFalse(repository.getCourses().isEmpty());
         String stored = preferences.getString(
                 "courses:" + repository.getActiveSemester().id(), null);
@@ -751,6 +752,22 @@ public class BackupCodecTest {
     public void checkingABadFileChangesNothingInStorage() {
         FakePreferences preferences = new FakePreferences();
         CourseRepository repository = repositoryFor(preferences);
+        // The file being checked here came from a filled-in term, so fill this
+        // one in first: nine courses, so the count below has something to prove.
+        int day = 1;
+        int startPeriod = 1;
+        for (int i = 1; i <= 9; i++) {
+            Course seeded = course(i, "Seeded " + i);
+            seeded.dayOfWeek = day;
+            seeded.startPeriod = startPeriod;
+            seeded.endPeriod = startPeriod + 1;
+            repository.upsertCourse(seeded);
+            startPeriod += 2;
+            if (startPeriod > 11) {
+                startPeriod = 1;
+                day = day % 5 + 1;
+            }
+        }
         Map<String, Object> before = preferences.snapshot();
 
         String good = BackupCodec.write(sampleDocument());

@@ -425,7 +425,7 @@ public class DefaultScheduleTest {
         FakePreferences preferences = new FakePreferences();
         preferences.edit()
                 .putString("bell_schedules",
-                        "[{\"name\":\"\u6559\u5B66\u697C\u4F5C\u606F\""
+                        "[{\"name\":\"A/F \u697C\u4F5C\u606F\""
                                 + ",\"starts\":[495,535],\"ends\":[535,575]"
                                 + ",\"keywords\":[\"a\u697C\"]}"
                                 + ",{\"name\":\"B/C \u697C\u4F5C\u606F\""
