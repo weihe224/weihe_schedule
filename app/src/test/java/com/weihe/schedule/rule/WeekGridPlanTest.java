@@ -282,4 +282,154 @@ public class WeekGridPlanTest {
 
         assertEquals(2, WeekGridPlan.maxLaneCount(week));
     }
+
+    // ---------------------------------------------------- courses that stack
+
+    /**
+     * Two courses in different weeks at one slot take one lane between them.
+     *
+     * <p>This is the behaviour the whole feature exists for: before it they each
+     * took a lane, and the day column was split into two strips too narrow to
+     * read a name in.</p>
+     */
+    @Test
+    public void twoCoursesInDifferentWeeksShareOneLane() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 9), inWeeks(2, 1, 3, 4, 10, 18));
+
+        WeekGridPlan.Cell cell = cellAt(week, 1, 3);
+
+        assertEquals("the slot needs one lane, not one per course", 1,
+                cell.laneCount());
+        assertEquals(1, cell.blocks().size());
+        WeekGridPlan.Block block = cell.blocks().get(0);
+        assertEquals(2, block.courseCount());
+        assertTrue(block.isStack());
+        assertEquals("led by the course that starts term", 1L, block.course().id);
+        assertEquals(Arrays.asList(1L, 2L), idsOf(block.courses()));
+        assertFalse(block.sharesColumn());
+    }
+
+    @Test
+    public void threeAlternativesShareOneLaneAndStillShowTheCount() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 1, 2, 5, 8), inWeeks(2, 1, 1, 2, 1, 4),
+                inWeeks(3, 1, 1, 2, 9, 12));
+
+        WeekGridPlan.Block block = cellAt(week, 1, 1).blocks().get(0);
+
+        assertEquals(3, block.courseCount());
+        assertEquals("two are hidden behind the card", 2, block.courseCount() - 1);
+        assertEquals(Arrays.asList(2L, 1L, 3L), idsOf(block.courses()));
+        assertEquals(1, cellAt(week, 1, 1).laneCount());
+    }
+
+    @Test
+    public void aClashStillTakesItsOwnLane() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 9), inWeeks(2, 1, 3, 4, 9, 18));
+
+        WeekGridPlan.Cell cell = cellAt(week, 1, 3);
+
+        assertEquals("a clash is a clash", 2, cell.laneCount());
+        assertEquals(2, cell.blocks().size());
+        for (WeekGridPlan.Block block : cell.blocks()) {
+            assertFalse("a clash must not be folded into a stack",
+                    block.isStack());
+        }
+    }
+
+    @Test
+    public void anAlternativePairAndAClashTakeTwoLanesNotThree() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 4), inWeeks(2, 1, 3, 4, 5, 9),
+                inWeeks(3, 1, 3, 4, 3, 6));
+
+        WeekGridPlan.Cell cell = cellAt(week, 1, 3);
+
+        assertEquals(2, cell.laneCount());
+        assertEquals(2, cell.blocks().size());
+        WeekGridPlan.Block stack = cell.blocks().get(0);
+        assertEquals(2, stack.courseCount());
+        assertTrue(stack.isStack());
+        WeekGridPlan.Block clash = cell.blocks().get(1);
+        assertEquals(1, clash.courseCount());
+        assertFalse(clash.isStack());
+        assertTrue("the two must not sit on the same lane",
+                stack.lane() != clash.lane());
+    }
+
+    @Test
+    public void oddAndEvenWeeksShareOneLane() {
+        Course odd = inWeeks(1, 1, 1, 2, 1, 18);
+        odd.parity = Course.PARITY_ODD;
+        Course even = inWeeks(2, 1, 1, 2, 1, 18);
+        even.parity = Course.PARITY_EVEN;
+
+        WeekGridPlan.Cell cell = cellAt(Arrays.asList(odd, even), 1, 1);
+
+        assertEquals(1, cell.laneCount());
+        assertEquals(2, cell.blocks().get(0).courseCount());
+    }
+
+    @Test
+    public void stackingNeverDropsACourse() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 1, 2, 1, 4), inWeeks(2, 1, 1, 2, 5, 9),
+                inWeeks(3, 1, 1, 2, 3, 6), inWeeks(4, 1, 3, 4, 1, 18),
+                inWeeks(5, 1, 3, 4, 1, 4), inWeeks(6, 1, 3, 4, 5, 18),
+                inWeeks(7, 2, 1, 2, 2, 8), inWeeks(8, 2, 1, 2, 9, 15));
+
+        List<Long> drawn = new ArrayList<>();
+        for (WeekGridPlan.Block block : WeekGridPlan.blocks(week)) {
+            for (Course course : block.courses()) {
+                drawn.add(Long.valueOf(course.id));
+            }
+        }
+        java.util.Collections.sort(drawn);
+
+        assertEquals(week.size(), drawn.size());
+        assertEquals("and none of them twice", week.size(),
+                new java.util.HashSet<>(drawn).size());
+        assertEquals(Arrays.asList(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L), drawn);
+    }
+
+    @Test
+    public void aStackKeepsThePeriodRangeOfItsSlot() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 5, 6, 1, 4), inWeeks(2, 1, 5, 6, 5, 9));
+
+        WeekGridPlan.Block block = cellAt(week, 1, 5).blocks().get(0);
+
+        assertEquals(5, block.startPeriod());
+        assertEquals(6, block.endPeriod());
+        assertEquals(2, block.periodSpan());
+    }
+
+    @Test
+    public void coursesThatShareASlotButNotAWeekStackAndTheGridStillFitsTheWeek() {
+        // The whole reason for stacking: the widest column in the term.
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 6), inWeeks(2, 1, 3, 4, 7, 12),
+                inWeeks(3, 1, 3, 4, 13, 18));
+
+        assertEquals("one column for all three", 1,
+                WeekGridPlan.maxLaneCount(week));
+    }
+
+    private static Course inWeeks(long id, int day, int startPeriod, int endPeriod,
+            int startWeek, int endWeek) {
+        Course course = course(id, day, startPeriod, endPeriod);
+        course.startWeek = startWeek;
+        course.endWeek = endWeek;
+        return course;
+    }
+
+    private static List<Long> idsOf(List<Course> courses) {
+        List<Long> ids = new ArrayList<>();
+        for (Course course : courses) {
+            ids.add(Long.valueOf(course.id));
+        }
+        return ids;
+    }
 }

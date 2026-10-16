@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
@@ -98,6 +99,20 @@ public class WeekGridActivity extends Activity {
     private static final int GRID_PAD_DP = 6;
     /** Room under the last row for the floating button to sit over. */
     private static final int FAB_CLEARANCE_DP = 78;
+
+    /**
+     * The course block's own metrics.
+     *
+     * <p>Corner radius and the two text sizes, named rather than repeated: the
+     * block is the only place in the app where a course is drawn at this size,
+     * and a literal in each of the three call sites is how the name and the week
+     * rule end up on different scales.</p>
+     */
+    private static final int BLOCK_RADIUS_DP = 4;
+    private static final float BLOCK_NAME_SP = 11f;
+    private static final float BLOCK_META_SP = 9f;
+    /** The "+N" that says how many courses a stack is hiding. */
+    private static final float BADGE_TEXT_SP = 10f;
 
     /**
      * Rows drawn when nothing needs more.
@@ -1216,38 +1231,61 @@ public class WeekGridActivity extends Activity {
         return frame;
     }
 
+    /**
+     * One block: the course drawn on top, and -- when the block stands for
+     * several -- an edge of the cards behind it and a count of what is hidden.
+     *
+     * <p>A stack is drawn inside its own cell, inset on the left and top, so it
+     * never reaches over a neighbouring day column or the next period row. It
+     * takes the width its lane was already given, which is what keeps the seven
+     * day columns the same size however many alternatives a slot holds.</p>
+     */
     private View courseBlock(final WeekGridPlan.Block block, int span,
             boolean sharedCell) {
         final Course course = block.course();
+        boolean stacked = block.isStack();
         LinearLayout blockView = new LinearLayout(this);
         blockView.setOrientation(LinearLayout.VERTICAL);
         blockView.setPadding(dp(6), dp(5), dp(5), dp(5));
         // The same derived colours the home screen's cards use. They used to be
         // blended here with three literals of their own, which made one course
         // draw at two slightly different tints on two screens.
-        blockView.setBackground(UiKit.outline(this, UiKit.courseTint(course.color), 4,
-                UiKit.courseBorder(course.color), 1));
+        blockView.setBackground(UiKit.outline(this, UiKit.courseTint(course.color),
+                BLOCK_RADIUS_DP, UiKit.courseBorder(course.color), 1));
 
-        TextView name = UiKit.text(this, course.name, 11,
+        TextView name = UiKit.text(this, course.name, BLOCK_NAME_SP,
                 UiKit.courseInk(course.color), true);
         name.setMaxLines(sharedCell || span == 1 ? 1 : 2);
+        name.setEllipsize(TextUtils.TruncateAt.END);
         blockView.addView(name);
 
-        TextView rule = UiKit.text(this, cellNote(course),
-                9, Palette.ON_SURFACE_VARIANT, false);
+        TextView rule = UiKit.text(this, cellNote(course), BLOCK_META_SP,
+                Palette.ON_SURFACE_VARIANT, false);
         rule.setMaxLines(span >= 2 ? 2 : 1);
+        rule.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams ruleParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         ruleParams.topMargin = dp(2);
         blockView.addView(rule, ruleParams);
 
+        if (stacked) {
+            // The count stands in for the courses behind the card, and it takes
+            // the place of the venue line: a slot holding several courses has no
+            // room for it at seven columns, and knowing there are three more
+            // courses there matters more than whose classroom the first one is in.
+            blockView.addView(countBadge(block.courseCount() - 1));
+            blockView.setOnClickListener(view -> showStack(block));
+            return stackedBlock(block, blockView);
+        }
+
         if (!sharedCell && span >= 2) {
             String detailText = blockDetail(course);
             if (!detailText.isEmpty()) {
-                TextView detail = UiKit.text(this, detailText, 9,
+                TextView detail = UiKit.text(this, detailText, BLOCK_META_SP,
                         Palette.ON_SURFACE_VARIANT, false);
                 detail.setMaxLines(1);
+                detail.setEllipsize(TextUtils.TruncateAt.END);
                 LinearLayout.LayoutParams detailParams =
                         new LinearLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1259,6 +1297,164 @@ public class WeekGridActivity extends Activity {
 
         blockView.setOnClickListener(view -> showDetails(course));
         return blockView;
+    }
+
+    /**
+     * The edge of the cards a stack stands for.
+     *
+     * <p>Inset on the left and top rather than the right and bottom: an edge
+     * drawn to the right would reach over the next day column and one drawn below
+     * would reach over the next period, and both are the kind of overlap that
+     * makes a slot unreadable. One edge, not one per hidden course -- two offset
+     * strips read as a stack, and a dozen would read as a comb; the badge carries
+     * the number.</p>
+     */
+    private View stackedBlock(final WeekGridPlan.Block block, View card) {
+        final Course course = block.course();
+        FrameLayout stack = new FrameLayout(this);
+        stack.setClipChildren(true);
+
+        View behind = new View(this);
+        behind.setBackground(UiKit.outline(this, UiKit.courseTint(course.color),
+                BLOCK_RADIUS_DP, UiKit.courseBorder(course.color), 1));
+        stack.addView(behind, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        FrameLayout.LayoutParams front = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        int peek = stackPeekPx();
+        front.leftMargin = peek;
+        front.topMargin = peek;
+        stack.addView(card, front);
+        return stack;
+    }
+
+    /**
+     * How far the card behind shows at the edge, in pixels.
+     *
+     * <p>Scaled with the row height rather than fixed, so the stack is still
+     * visible when the grid is zoomed out and does not swallow the card when it
+     * is zoomed in.</p>
+     */
+    private int stackPeekPx() {
+        return Math.max(dp(2), Math.min(dp(8), rowHeightPx / 12));
+    }
+
+    /** The "+N" that says how many courses a stack is hiding. */
+    private View countBadge(int hidden) {
+        TextView badge = UiKit.text(this, "+" + hidden, BADGE_TEXT_SP,
+                Palette.ON_SURFACE_VARIANT, true);
+        badge.setIncludeFontPadding(false);
+        badge.setGravity(Gravity.END);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.END;
+        params.topMargin = dp(1);
+        badge.setLayoutParams(params);
+        return badge;
+    }
+
+    /**
+     * Lists every course behind a stacked card.
+     *
+     * <p>A sheet rather than a jump straight into one course: the card stands for
+     * several, and which one the user wants is their decision, not the
+     * renderer's.</p>
+     */
+    private void showStack(WeekGridPlan.Block block) {
+        List<Course> courses = block.courses();
+        Course lead = block.course();
+        String title = ScheduleUtils.dayName(lead.dayOfWeek)
+                + " · " + periodRangeLabel(lead);
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_XS),
+                dp(UiTokens.SPACE_L), 0);
+
+        TextView caption = UiKit.text(this,
+                courses.size() + " \u95E8\u8BFE\u7A0B\uFF0C\u5206\u5C5E\u4E0D\u540C\u5468\u6B21",
+                UiTokens.Type.LABEL_MEDIUM, Palette.ON_SURFACE_VARIANT, false);
+        LinearLayout.LayoutParams captionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        captionParams.bottomMargin = dp(UiTokens.SPACE_XS);
+        list.addView(caption, captionParams);
+
+        // The dialog does not exist yet while the rows are built, so it is handed
+        // to them through a holder that is filled in before any of them can be
+        // tapped.
+        final android.app.Dialog[] sheet = new android.app.Dialog[1];
+        boolean first = true;
+        for (Course course : courses) {
+            list.addView(stackRow(course, first, sheet),
+                    stackRowParams(first));
+            first = false;
+        }
+
+        sheet[0] = UiKit.bottomSheet(this, title, list);
+    }
+
+    /** "第 3—4 节", or "第 5 节" for a single period. */
+    private static String periodRangeLabel(Course course) {
+        return course.startPeriod == course.endPeriod
+                ? "\u7B2C " + course.startPeriod + " \u8282"
+                : "\u7B2C " + course.startPeriod + "\u2014" + course.endPeriod
+                        + " \u8282";
+    }
+
+    private LinearLayout.LayoutParams stackRowParams(boolean first) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(first ? UiTokens.SPACE_XS : 2);
+        return params;
+    }
+
+    /**
+     * One course in a stack's list: its name and its week rule.
+     *
+     * <p>Nothing else. Teacher and venue belong on the course's own page, and a
+     * list that repeated them for every alternative would be wider than the sheet
+     * it is in.</p>
+     */
+    private View stackRow(final Course course, boolean isLead,
+            final android.app.Dialog[] sheet) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(UiTokens.SPACE_M), dp(UiTokens.SPACE_S),
+                dp(UiTokens.SPACE_M), dp(UiTokens.SPACE_S));
+        row.setBackground(UiKit.outline(this, isLead
+                ? UiKit.courseTint(course.color) : Palette.SURFACE_CONTAINER,
+                UiTokens.RADIUS_S, Palette.OUTLINE_VARIANT,
+                UiTokens.STROKE_HAIRLINE));
+
+        TextView name = UiKit.text(this, course.name, UiTokens.Type.BODY_LARGE,
+                UiKit.courseInk(course.color), true);
+        name.setMaxLines(2);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        row.addView(name);
+
+        TextView weeks = UiKit.text(this, ScheduleUtils.weekRule(course),
+                UiTokens.Type.LABEL_MEDIUM, Palette.ON_SURFACE_VARIANT, false);
+        weeks.setMaxLines(2);
+        weeks.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams weeksParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        weeksParams.topMargin = dp(2);
+        row.addView(weeks, weeksParams);
+
+        row.setOnClickListener(view -> {
+            if (sheet[0] != null) {
+                sheet[0].dismiss();
+            }
+            showDetails(course);
+        });
+        return row;
     }
 
     /**

@@ -31,6 +31,12 @@ import com.weihe.schedule.model.Course;
  * by its start period. Courses that run past a cluster's last start period keep
  * their own height, which is why a two-period course drawn next to a
  * four-period one stays two periods tall.</p>
+ *
+ * <p>The unit the lanes are packed from is not always one course. Courses that
+ * share a slot and never share a week are alternatives for it, so they arrive
+ * here already grouped into one unit by {@link CourseStacking} and take one lane
+ * between them. Two courses that really do clash are separate units and keep
+ * separate lanes.</p>
  */
 public final class WeekGridPlan {
 
@@ -172,18 +178,29 @@ public final class WeekGridPlan {
         }
     }
 
-    /** One course inside a cell. */
+    /**
+     * One course, or a stack of alternatives for it, inside a cell.
+     *
+     * <p>A stack is several courses that never share a week -- see
+     * {@link CourseStacking}. They are one unit here because they occupy one
+     * period range and belong on one card; before that they each took a lane of
+     * their own, which is what made the day columns too narrow to read.</p>
+     */
     public static final class Block {
-        private final Course course;
+
+        private final List<Course> courses;
         private final int day;
         private final int startPeriod;
         private final int endPeriod;
         private final int lane;
         private final int laneCount;
 
-        Block(Course course, int day, int startPeriod, int endPeriod,
+        Block(List<Course> courses, int day, int startPeriod, int endPeriod,
                 int lane, int laneCount) {
-            this.course = course;
+            if (courses == null || courses.isEmpty()) {
+                throw new IllegalArgumentException("a block needs a course");
+            }
+            this.courses = Collections.unmodifiableList(new ArrayList<>(courses));
             this.day = day;
             this.startPeriod = startPeriod;
             this.endPeriod = endPeriod;
@@ -191,8 +208,35 @@ public final class WeekGridPlan {
             this.laneCount = laneCount;
         }
 
+        /**
+         * The course the block is drawn from: the first of its stack.
+         *
+         * <p>Kept as a single course because that is what drawing needs -- the
+         * name, the colour, the week rule -- and it is the course the stack is led
+         * by. Use {@link #courses()} when the ones behind the card matter.</p>
+         */
         public Course course() {
-            return course;
+            return courses.get(0);
+        }
+
+        /**
+         * Every course the block stands for, the drawn one first.
+         *
+         * <p>Never empty. More than one entry means the courses are alternatives
+         * for one slot and are drawn stacked rather than side by side.</p>
+         */
+        public List<Course> courses() {
+            return courses;
+        }
+
+        /** How many courses the block stands for. */
+        public int courseCount() {
+            return courses.size();
+        }
+
+        /** True when the block stands for more than one course. */
+        public boolean isStack() {
+            return courses.size() > 1;
         }
 
         /** Weekday, 1 = Monday. */
@@ -232,7 +276,10 @@ public final class WeekGridPlan {
 
         @Override
         public String toString() {
-            return course.name + " d" + day + " p" + startPeriod + "-" + endPeriod
+            String label = isStack()
+                    ? courses.size() + " courses led by " + courses.get(0).name
+                    : courses.get(0).name;
+            return label + " d" + day + " p" + startPeriod + "-" + endPeriod
                     + " lane " + lane + "/" + laneCount;
         }
     }
@@ -318,21 +365,29 @@ public final class WeekGridPlan {
     }
 
     /**
-     * Assigns lanes inside one cluster, then groups the courses into cells.
+     * Assigns lanes inside one cluster, then groups the units into cells.
      *
-     * <p>A course takes the first lane whose last course ends before it starts,
-     * and a new lane when none is free. Lanes are handed out in start order, so
-     * this is sequential greedy packing rather than optimal: it can need one
-     * lane more than strictly necessary, which is the price of an implementation
-     * simple enough to be tested.</p>
+     * <p>The packing sees {@link CourseStacking#unitsOf}, not the raw courses: a
+     * course takes the first lane whose last course ends before it starts, and a
+     * new lane when none is free. Two courses that are alternatives for one slot
+     * have already become one unit by then, so they take one lane and are drawn
+     * stacked -- while two that genuinely clash stay separate units and keep
+     * separate lanes.</p>
+     *
+     * <p>Lanes are handed out in start order, so this is sequential greedy packing
+     * rather than optimal: it can need one lane more than strictly necessary,
+     * which is the price of an implementation simple enough to be tested.</p>
      */
     private static Cluster clusterOf(List<Course> cluster, int day, int endPeriod) {
+        List<List<Course>> units = CourseStacking.unitsOf(cluster);
+
         List<Integer> laneEnds = new ArrayList<>();
-        List<Integer> laneOfCourse = new ArrayList<>();
-        for (Course course : cluster) {
+        List<Integer> laneOfUnit = new ArrayList<>();
+        for (List<Course> unit : units) {
+            int start = unit.get(0).startPeriod;
             int chosen = -1;
             for (int lane = 0; lane < laneEnds.size(); lane++) {
-                if (laneEnds.get(lane) < course.startPeriod) {
+                if (laneEnds.get(lane) < start) {
                     chosen = lane;
                     break;
                 }
@@ -341,24 +396,25 @@ public final class WeekGridPlan {
                 laneEnds.add(0);
                 chosen = laneEnds.size() - 1;
             }
-            laneEnds.set(chosen, Math.max(laneEnds.get(chosen), course.endPeriod));
-            laneOfCourse.add(chosen);
+            laneEnds.set(chosen,
+                    Math.max(laneEnds.get(chosen), unit.get(0).endPeriod));
+            laneOfUnit.add(chosen);
         }
         int laneCount = Math.max(1, laneEnds.size());
 
         // One cell per distinct start period, in ascending order.
         List<Cell> cells = new ArrayList<>();
         int index = 0;
-        while (index < cluster.size()) {
-            int startPeriod = cluster.get(index).startPeriod;
+        while (index < units.size()) {
+            int startPeriod = units.get(index).get(0).startPeriod;
             List<Block> blocks = new ArrayList<>();
             int cellEnd = startPeriod;
-            while (index < cluster.size()
-                    && cluster.get(index).startPeriod == startPeriod) {
-                Course course = cluster.get(index);
-                blocks.add(new Block(course, day, course.startPeriod,
-                        course.endPeriod, laneOfCourse.get(index), laneCount));
-                cellEnd = Math.max(cellEnd, course.endPeriod);
+            while (index < units.size()
+                    && units.get(index).get(0).startPeriod == startPeriod) {
+                List<Course> unit = units.get(index);
+                blocks.add(new Block(unit, day, startPeriod,
+                        unit.get(0).endPeriod, laneOfUnit.get(index), laneCount));
+                cellEnd = Math.max(cellEnd, unit.get(0).endPeriod);
                 index++;
             }
             blocks.sort(Comparator.comparingInt(Block::lane));
