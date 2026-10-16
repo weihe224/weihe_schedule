@@ -131,4 +131,74 @@ public final class GridZoom {
         }
         return gridPadPx + dayWidthPx * dayCount > viewportWidthPx;
     }
+
+    // ------------------------------------------------- the course block's scale
+
+    /**
+     * What a course block is made of at {@link #FIT}.
+     *
+     * <p>These are the sizes the block had before zooming existed. Everything a
+     * zoom multiplies is expressed as one of these times the scale, so the block
+     * grows as one piece instead of the background growing while the words stay
+     * the same size -- which is what made a magnified timetable look like a
+     * small label floating in a large box.</p>
+     */
+    public static final float BASE_BLOCK_NAME_SP = 11f;
+    public static final float BASE_BLOCK_META_SP = 9f;
+    public static final float BASE_BLOCK_BADGE_SP = 10f;
+    public static final int BASE_BLOCK_PADDING_DP = 5;
+    public static final float BASE_BLOCK_RADIUS_DP = 4f;
+
+    /**
+     * The smallest sizes the block accepts.
+     *
+     * <p>Below these a name is no longer readable, so the text stops shrinking
+     * even if the grid does. They do not bind at today's range -- the zoom floor
+     * is {@link #FIT}, where the sizes are exactly the base ones -- and they are
+     * here so that lowering the floor later cannot quietly turn the timetable
+     * into an unreadable smear.</p>
+     */
+    public static final float MIN_BLOCK_NAME_SP = 8f;
+    public static final float MIN_BLOCK_META_SP = 7f;
+    public static final float MIN_BLOCK_BADGE_SP = 7f;
+    /** The block's inner padding never collapses entirely, at any scale. */
+    public static final int MIN_BLOCK_PADDING_DP = 2;
+
+    /**
+     * The course name's size in sp at {@code zoom}.
+     *
+     * <p>The largest of the block's three sizes, because the name is the block:
+     * the week rule and the count are read after it, and never at the same
+     * weight.</p>
+     */
+    public static float blockNameSp(float zoom) {
+        return Math.max(MIN_BLOCK_NAME_SP, BASE_BLOCK_NAME_SP * clamp(zoom));
+    }
+
+    /** The week rule's size in sp at {@code zoom}: one step under the name. */
+    public static float blockMetaSp(float zoom) {
+        return Math.max(MIN_BLOCK_META_SP, BASE_BLOCK_META_SP * clamp(zoom));
+    }
+
+    /** The "+N" count's size in sp at {@code zoom}. */
+    public static float blockBadgeSp(float zoom) {
+        return Math.max(MIN_BLOCK_BADGE_SP, BASE_BLOCK_BADGE_SP * clamp(zoom));
+    }
+
+    /**
+     * The block's inner padding in dp at {@code zoom}.
+     *
+     * <p>One value drives the card's whole internal rhythm -- its padding and the
+     * gap between its lines -- so the text never crowds the edge at one scale and
+     * floats in the middle of it at another.</p>
+     */
+    public static int blockPaddingDp(float zoom) {
+        return Math.max(MIN_BLOCK_PADDING_DP,
+                Math.round(BASE_BLOCK_PADDING_DP * clamp(zoom)));
+    }
+
+    /** The block's corner radius in dp at {@code zoom}. */
+    public static float blockRadiusDp(float zoom) {
+        return Math.max(2f, BASE_BLOCK_RADIUS_DP * clamp(zoom));
+    }
 }

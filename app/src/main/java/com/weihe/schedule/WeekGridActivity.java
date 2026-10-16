@@ -101,20 +101,6 @@ public class WeekGridActivity extends Activity {
     private static final int FAB_CLEARANCE_DP = 78;
 
     /**
-     * The course block's own metrics.
-     *
-     * <p>Corner radius and the two text sizes, named rather than repeated: the
-     * block is the only place in the app where a course is drawn at this size,
-     * and a literal in each of the three call sites is how the name and the week
-     * rule end up on different scales.</p>
-     */
-    private static final int BLOCK_RADIUS_DP = 4;
-    private static final float BLOCK_NAME_SP = 11f;
-    private static final float BLOCK_META_SP = 9f;
-    /** The "+N" that says how many courses a stack is hiding. */
-    private static final float BADGE_TEXT_SP = 10f;
-
-    /**
      * Rows drawn when nothing needs more.
      *
      * <p>A day with fewer periods than this still gets a full-looking grid, and
@@ -151,6 +137,20 @@ public class WeekGridActivity extends Activity {
 
     /** Period row height in pixels, at the current zoom. */
     private int rowHeightPx = 1;
+
+    /**
+     * The course block's own sizes at the current zoom.
+     *
+     * <p>Fields rather than constants because they are recomputed from
+     * {@link #zoom} in {@link #applyZoomPixels} along with the geometry. Before
+     * they were fields, magnifying the timetable made the card bigger and left the
+     * words the same size, which read as a small label floating in a large box.</p>
+     */
+    private float nameSp = GridZoom.BASE_BLOCK_NAME_SP;
+    private float metaSp = GridZoom.BASE_BLOCK_META_SP;
+    private float badgeSp = GridZoom.BASE_BLOCK_BADGE_SP;
+    private int blockPaddingPx;
+    private float blockRadiusDp = GridZoom.BASE_BLOCK_RADIUS_DP;
 
     /** Top edge of each row in pixels, so cells and blocks share the same grid. */
     private int[] rowTopPx = new int[2];
@@ -714,10 +714,23 @@ public class WeekGridActivity extends Activity {
         applyZoomPixels();
     }
 
-    /** Turns {@link #zoom} into the pixel sizes every part of the grid is built from. */
+    /**
+     * Turns {@link #zoom} into the sizes every part of the grid is built from.
+     *
+     * <p>Both the geometry and the block's internal scale come out of here, which
+     * is what keeps them together: a card and the words on it are derived from the
+     * same number, so neither can be left behind when the scale changes. Every
+     * value is recomputed from {@link #zoom} rather than multiplied into whatever
+     * was there, so zooming in and out cannot accumulate.</p>
+     */
     private void applyZoomPixels() {
         dayWidthPx = GridZoom.dayWidthPx(baseDayWidthPx, zoom);
         rowHeightPx = GridZoom.rowHeightPx(dp(BASE_ROW_HEIGHT_DP), zoom);
+        nameSp = GridZoom.blockNameSp(zoom);
+        metaSp = GridZoom.blockMetaSp(zoom);
+        badgeSp = GridZoom.blockBadgeSp(zoom);
+        blockPaddingPx = dp(GridZoom.blockPaddingDp(zoom));
+        blockRadiusDp = GridZoom.blockRadiusDp(zoom);
         rebuildRowTops();
     }
 
@@ -900,11 +913,18 @@ public class WeekGridActivity extends Activity {
         // is one frame that spans every row, with its clusters positioned by
         // period. That is what lets a course starting at period 2 sit beside one
         // spanning periods 1-4 in the same columns.
+        //
+        // The current semester week goes in as well, so a stack of alternatives is
+        // led by the course the user has to attend this week rather than by the
+        // one that happens to start term earliest. In the single-week view every
+        // course on screen runs in the selected week already, so the week passed
+        // is that one and nothing about the ordering changes.
         List<List<WeekGridPlan.Cluster>> perDay = new ArrayList<>();
-        for (int day = 0; day < 7; day++) {
+        for (int day = 0; day < DAY_COUNT; day++) {
             perDay.add(new ArrayList<WeekGridPlan.Cluster>());
         }
-        for (WeekGridPlan.Cluster cluster : WeekGridPlan.plan(shown)) {
+        int leadWeek = wholeSemester ? currentWeek : selectedWeek;
+        for (WeekGridPlan.Cluster cluster : WeekGridPlan.plan(shown, leadWeek)) {
             perDay.get(cluster.day() - 1).add(cluster);
         }
 
@@ -1239,6 +1259,9 @@ public class WeekGridActivity extends Activity {
      * never reaches over a neighbouring day column or the next period row. It
      * takes the width its lane was already given, which is what keeps the seven
      * day columns the same size however many alternatives a slot holds.</p>
+     *
+     * <p>Every size here comes from {@link #applyZoomPixels} rather than from a
+     * literal, so the card and the words on it grow and shrink as one piece.</p>
      */
     private View courseBlock(final WeekGridPlan.Block block, int span,
             boolean sharedCell) {
@@ -1246,27 +1269,28 @@ public class WeekGridActivity extends Activity {
         boolean stacked = block.isStack();
         LinearLayout blockView = new LinearLayout(this);
         blockView.setOrientation(LinearLayout.VERTICAL);
-        blockView.setPadding(dp(6), dp(5), dp(5), dp(5));
+        blockView.setPadding(blockPaddingPx, blockPaddingPx,
+                blockPaddingPx, blockPaddingPx);
         // The same derived colours the home screen's cards use. They used to be
         // blended here with three literals of their own, which made one course
         // draw at two slightly different tints on two screens.
         blockView.setBackground(UiKit.outline(this, UiKit.courseTint(course.color),
-                BLOCK_RADIUS_DP, UiKit.courseBorder(course.color), 1));
+                blockRadiusDp, UiKit.courseBorder(course.color), 1));
 
-        TextView name = UiKit.text(this, course.name, BLOCK_NAME_SP,
+        TextView name = UiKit.text(this, course.name, nameSp,
                 UiKit.courseInk(course.color), true);
         name.setMaxLines(sharedCell || span == 1 ? 1 : 2);
         name.setEllipsize(TextUtils.TruncateAt.END);
         blockView.addView(name);
 
-        TextView rule = UiKit.text(this, cellNote(course), BLOCK_META_SP,
+        TextView rule = UiKit.text(this, cellNote(course), metaSp,
                 Palette.ON_SURFACE_VARIANT, false);
         rule.setMaxLines(span >= 2 ? 2 : 1);
         rule.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams ruleParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        ruleParams.topMargin = dp(2);
+        ruleParams.topMargin = blockPaddingPx / 2;
         blockView.addView(rule, ruleParams);
 
         if (stacked) {
@@ -1279,10 +1303,15 @@ public class WeekGridActivity extends Activity {
             return stackedBlock(block, blockView);
         }
 
-        if (!sharedCell && span >= 2) {
+        // The single-week view keeps the venue, because that is what tells the
+        // user which building's bells apply this week. The overview drops it: it
+        // has the whole term on screen and the card is only wide enough for the
+        // name and the week rule, which are the two things that say where a
+        // course sits in the week.
+        if (!wholeSemester && !sharedCell && span >= 2) {
             String detailText = blockDetail(course);
             if (!detailText.isEmpty()) {
-                TextView detail = UiKit.text(this, detailText, BLOCK_META_SP,
+                TextView detail = UiKit.text(this, detailText, metaSp,
                         Palette.ON_SURFACE_VARIANT, false);
                 detail.setMaxLines(1);
                 detail.setEllipsize(TextUtils.TruncateAt.END);
@@ -1290,7 +1319,7 @@ public class WeekGridActivity extends Activity {
                         new LinearLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT);
-                detailParams.topMargin = dp(1);
+                detailParams.topMargin = blockPaddingPx / 2;
                 blockView.addView(detail, detailParams);
             }
         }
@@ -1316,7 +1345,7 @@ public class WeekGridActivity extends Activity {
 
         View behind = new View(this);
         behind.setBackground(UiKit.outline(this, UiKit.courseTint(course.color),
-                BLOCK_RADIUS_DP, UiKit.courseBorder(course.color), 1));
+                blockRadiusDp, UiKit.courseBorder(course.color), 1));
         stack.addView(behind, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
@@ -1342,9 +1371,15 @@ public class WeekGridActivity extends Activity {
         return Math.max(dp(2), Math.min(dp(8), rowHeightPx / 12));
     }
 
-    /** The "+N" that says how many courses a stack is hiding. */
+    /**
+     * The "+N" that says how many courses a stack is hiding.
+     *
+     * <p>Its size comes from the zoom like everything else on the card, so the
+     * count stays legible on a magnified timetable instead of becoming a speck in
+     * the corner of a large block.</p>
+     */
     private View countBadge(int hidden) {
-        TextView badge = UiKit.text(this, "+" + hidden, BADGE_TEXT_SP,
+        TextView badge = UiKit.text(this, "+" + hidden, badgeSp,
                 Palette.ON_SURFACE_VARIANT, true);
         badge.setIncludeFontPadding(false);
         badge.setGravity(Gravity.END);
@@ -1352,7 +1387,7 @@ public class WeekGridActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         params.gravity = Gravity.END;
-        params.topMargin = dp(1);
+        params.topMargin = Math.max(1, blockPaddingPx / 2);
         badge.setLayoutParams(params);
         return badge;
     }
@@ -1458,22 +1493,14 @@ public class WeekGridActivity extends Activity {
     }
 
     /**
-     * The line under the block's second line, chosen per view.
+     * The third line of a single-week block: who teaches it.
      *
-     * <p>The two views put different things on the second line, so this cannot be
-     * a fixed "venue and teacher" string: the whole-semester view has the week
-     * rule up there, while the single-week view has the venue. Repeating the
-     * venue in both lines is what a shared implementation produced, and it made
-     * every block on the single-week grid read the venue twice.</p>
+     * <p>Only the single-week view has this line. The overview stopped drawing it
+     * because a card seven columns wide has room for the name and the week rule
+     * and nothing else, and the venue is still one tap away on the course's own
+     * page. The data is untouched -- it is simply not shown here.</p>
      */
     private String blockDetail(Course course) {
-        if (wholeSemester) {
-            if (course.location.isEmpty()) {
-                return course.teacher;
-            }
-            return course.teacher.isEmpty() ? course.location
-                    : course.location + " \u00B7 " + course.teacher;
-        }
         return course.teacher;
     }
 

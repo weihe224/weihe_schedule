@@ -971,3 +971,103 @@ gradlew.bat -Dorg.gradle.vfs.watch=false --rerun-tasks testDebugUnitTest assembl
 `rule/CourseStackingTest.java`(新)、`rule/WeekGridPlanTest.java`、本文件、`AGENT_HANDOFF_ARCHIVE.md`。
 未跟踪：`.workbuddy-ai/`、`app/release/`（均为本轮之前就有）。
 **Agent 未 commit / 未 push。**（本轮改动之前，缩放功能已由用户提交为 `cc3b0c4`。）
+
+---
+
+## N. 2026-10-16 缩放同步放大文字 / 总课表精简信息 / 当前周置顶（当前状态）
+
+> 与 A–M 各节冲突时**以本节为准**。逐轮细节见 `AGENT_HANDOFF_ARCHIVE.md` 的 **S 节**。
+> 开工前 HEAD `b29dc2f`（叠放功能已提交）、工作区干净，直接在其上修复。
+
+### N-1. 三项改动
+
+**① 卡片文字随缩放同步放大。** 改前只有网格几何（列宽/行高）随缩放变，卡片内文字
+字号、内边距、圆角、行间距全是写死的 —— 放大后"大卡片套小字"。
+
+现在 `applyZoomPixels()` 一次性算出**几何 + 卡片内部全部尺寸**：
+列宽、行高、课名字号、周次字号、`+N` 字号、卡片内边距、圆角。
+计算公式集中在 `rule/GridZoom.java`（`blockNameSp` / `blockMetaSp` / `blockBadgeSp` /
+`blockPaddingDp` / `blockRadiusDp`），全是"基准值 × 缩放"，可 JVM 直测。
+
+**关键：每个值都由 `zoom` 重新算出，而不是在上次值上累乘**，所以反复缩放不会累积、
+「适应」能把文字也一并复位（实测：放大 ×3 后点适应，课名高度回到 90px = 基准值）。
+
+**② 总课表隐藏地点与教师，只留课名 + 周次。** 总课表卡片现在只有两行：
+课程名称 + 周次规则（`ScheduleUtils.weekRule` = "第2-9周 · 每周"，已含单周/双周/每周）。
+地点与教师那行**只保留在单周课表**（那里"哪个楼的铃"是有用信息）。
+**数据一行未删**，课程详情页也照旧。
+
+**③ 当前周课程置顶。** 叠放组内，**当前学期周次正在上课的那门**排最上层（即主卡片）。
+当前周取自 `ScheduleUtils.currentWeek(semesterStart, 今天)` —— 与 App 其它地方同一个口径，
+不是自然周号。判断"这门课这周是否上课"用 `ScheduleUtils.occursInWeek`，因此周次范围与
+单双周都算进去。
+
+### N-2. 判定与排序
+
+**叠放条件不变**（星期相同 + 起止节次完全相同 + 周次互不重叠）。
+
+排序键改为：**当前周在上课的排最前** → 其余按开课周次升序 → 结束周次 → id。
+末三项是稳定次序的保证，所以"没有当前周课程"时顺序可预测、刷新不变。
+
+- 当前周落在所有课程范围之外（学期未开始/已结束）→ 没有课程"当前周在上课"，
+  自动退回按周次序，**不会乱认一门**。
+- 一个叠放组里**最多一门**课程在任一给定周次上课（这是"周次互不重叠"的直接推论），
+  所以"当前周那门"是唯一答案，不存在平票。已加测试逐周验证。
+- 同一时段**真有多门同时上课**时，它们是两条子列（冲突），**都不会被藏起来**；
+  点叠放区仍可"查看全部"。
+
+### N-3. 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `rule/GridZoom.java` | +`blockNameSp`/`blockMetaSp`/`blockBadgeSp`/`blockPaddingDp`/`blockRadiusDp` 及基准/下限常量 |
+| `rule/CourseStacking.java` | `partition`/`unitsOf` 增加 `currentWeek` 参数；新增 `runsIn()`；排序键改为"当前周优先" |
+| `rule/WeekGridPlan.java` | 新增 `plan(courses, currentWeek)` 重载（原 `plan(courses)` 委托 `NO_WEEK`） |
+| `WeekGridActivity.java` | 新增 5 个字段存当前缩放下的小尺寸，在 `applyZoomPixels()` 中赋值；总课表删地点/教师行；`blockDetail` 简化为只返回教师；`render()` 传入 `leadWeek` |
+| `rule/GridZoomTest.java` | +5 项 |
+| `rule/CourseStackingTest.java` | +7 项 |
+| `rule/WeekGridPlanTest.java` | +6 项 |
+
+**未动**：课程数据与任何课程记录、起止节次/周次/教室/教师、颜色持久化与 `CourseColorSync`、
+新增/编辑/删除/导入/备份恢复/提醒、冲突检测、七天列宽、`[−] [适应] [+]` 与缩放范围 `[1.0, 2.4]`、
+叠放判定规则、底部面板、单周课表的展示。
+
+### N-4. 门禁（全绿）
+
+```
+gradlew.bat -Dorg.gradle.vfs.watch=false --rerun-tasks testDebugUnitTest assembleDebug lintDebug
+```
+
+| 项 | 结果 |
+|---|---|
+| 单元测试 | **1065 项 / 0 失败 / 0 错误 / 0 跳过**（上一轮 1047，+18） |
+| `assembleDebug` | `app-debug.apk` **1,170,872 字节** |
+| `lintDebug` | **0 errors, 2 warnings**（仅既有 `IconXmlAndPng`） |
+
+### N-5. 设备验证（模拟器 `emulator-5554`，1080×2424 @420）
+
+| 验收项 | 结果 |
+|---|---|
+| 总课表不再显示地点/教师 | ✅ 逐个文本检查，0 处残留 |
+| 周次范围与单双周 | ✅ 「第2-17周 · 单周」「第2-9周 · 每周」等准确 |
+| 文字随缩放同步放大 | ✅ 课名 90px → 146px、周次 77px → 117px（缩放 1.0 → 1.5625） |
+| 放大 ×3 后点「适应」 | ✅ 课名高度回到 **90px**（基准值），无累积、无漂移 |
+| 叠放徽标 | ✅ `+1`/`+2` 仍在，且随缩放变大 |
+| 当前周课程置顶 | ✅ 周五 8–9 组面板顺序为「自然辩证法概论(第2-9周)」在前 —— 第5周正在上这门 |
+| 单周课表 | ✅ 地点+教师照旧显示，无 `+N` 徽标，上一周/下一周正常 |
+
+### N-6. 已知问题 / 未验证
+
+1. **双指捏合手势仍未真机验证**（`adb root` 在生产版模拟器不可用）。
+2. **默认（适应宽度）下课名仍会被截断**：411dp 屏每列约 51dp，中文一行 3–4 字。
+   缩放只是等比放大，不改变一行能放几个字。
+3. 极小屏、横屏、平板未验证；缩放倍数未持久化（有意）。
+4. 字号下限（`MIN_BLOCK_*`）在当前缩放范围 `[1.0, 2.4]` 内**不会触发** —— 是为将来
+   调低下限预留的保护，非当前行为。
+
+### N-7. 工作区状态
+
+改动：`rule/GridZoom.java`、`rule/CourseStacking.java`、`rule/WeekGridPlan.java`、
+`WeekGridActivity.java`、3 个测试类、本文件、`AGENT_HANDOFF_ARCHIVE.md`。
+未跟踪：`.workbuddy-ai/`、`app/release/`（均为本轮之前就有）。
+**Agent 未 commit / 未 push。**

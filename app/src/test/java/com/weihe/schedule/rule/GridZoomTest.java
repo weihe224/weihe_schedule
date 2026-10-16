@@ -201,4 +201,71 @@ public class GridZoomTest {
     public void aGridWithNoDaysNeverNeedsScrolling() {
         assertFalse(GridZoom.needsHorizontalScroll(200, 0, 16, 100));
     }
+
+    // ------------------------------------------------- the block's own scale
+
+    @Test
+    public void theBlocksTextAndPaddingScaleWithTheGrid() {
+        // The whole point of this section: the card and the words on it must grow
+        // together, or a magnified timetable looks like a small label floating in
+        // a large box.
+        assertEquals(GridZoom.BASE_BLOCK_NAME_SP, GridZoom.blockNameSp(1f), 0.0001f);
+        assertEquals(GridZoom.BASE_BLOCK_META_SP, GridZoom.blockMetaSp(1f), 0.0001f);
+
+        float big = 2f;
+        assertTrue(GridZoom.blockNameSp(big) > GridZoom.blockNameSp(1f));
+        assertTrue(GridZoom.blockMetaSp(big) > GridZoom.blockMetaSp(1f));
+        assertTrue(GridZoom.blockBadgeSp(big) > GridZoom.blockBadgeSp(1f));
+        assertTrue(GridZoom.blockPaddingDp(big) > GridZoom.blockPaddingDp(1f));
+        assertTrue(GridZoom.blockRadiusDp(big) > GridZoom.blockRadiusDp(1f));
+        // Exactly the scale, so the proportions are the ones that were designed.
+        assertEquals(GridZoom.BASE_BLOCK_NAME_SP * big, GridZoom.blockNameSp(big),
+                0.0001f);
+    }
+
+    @Test
+    public void theBlocksScaleTracksTheColumnWidth() {
+        // The card's width and the text on it come out of the same number, so the
+        // ratio between them never changes as the user zooms.
+        int baseColumn = GridZoom.dayWidthPx(100, 1f);
+        for (float zoom : new float[] {1f, 1.25f, 1.6f, 2f, 2.4f}) {
+            int column = GridZoom.dayWidthPx(100, zoom);
+            assertEquals(Math.round(baseColumn * zoom), column);
+            // And the padding never eats the card it is inside.
+            assertTrue("padding must leave room for the words at " + zoom,
+                    GridZoom.blockPaddingDp(zoom) * 2 < column);
+        }
+    }
+
+    @Test
+    public void theNameStaysBiggerThanTheWeekRule() {
+        // The hierarchy has to hold at every scale: the name is the block, the
+        // week rule is read after it.
+        for (float zoom : new float[] {1f, 1.25f, 2f, 2.4f}) {
+            assertTrue("name must lead at " + zoom,
+                    GridZoom.blockNameSp(zoom) > GridZoom.blockMetaSp(zoom));
+            assertTrue("the rule must lead the count at " + zoom,
+                    GridZoom.blockMetaSp(zoom) < GridZoom.blockBadgeSp(zoom));
+        }
+    }
+
+    @Test
+    public void theBlockNeverShrinksBelowWhatIsReadable() {
+        // The floors do not bind at today's range -- the zoom floor is the fit
+        // scale, where the sizes are exactly the base ones -- and they are here so
+        // that lowering it later cannot turn the block into an unreadable smear.
+        assertEquals(GridZoom.blockNameSp(GridZoom.MIN), GridZoom.BASE_BLOCK_NAME_SP,
+                0.0001f);
+        assertTrue(GridZoom.blockNameSp(0.01f) >= GridZoom.MIN_BLOCK_NAME_SP);
+        assertTrue(GridZoom.blockMetaSp(0.01f) >= GridZoom.MIN_BLOCK_META_SP);
+        assertTrue(GridZoom.blockBadgeSp(0.01f) >= GridZoom.MIN_BLOCK_BADGE_SP);
+        assertTrue(GridZoom.blockPaddingDp(0.01f) >= GridZoom.MIN_BLOCK_PADDING_DP);
+    }
+
+    @Test
+    public void anUndecidableScaleLeavesTheBlockAtItsDesignedSize() {
+        assertEquals(GridZoom.BASE_BLOCK_NAME_SP, GridZoom.blockNameSp(Float.NaN),
+                0.0001f);
+        assertEquals(GridZoom.BASE_BLOCK_PADDING_DP, GridZoom.blockPaddingDp(Float.NaN));
+    }
 }

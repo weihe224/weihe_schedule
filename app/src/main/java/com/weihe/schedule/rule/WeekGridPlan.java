@@ -296,10 +296,30 @@ public final class WeekGridPlan {
      * Every cluster of {@code courses}, ordered by weekday and then by start
      * period.
      *
+     * <p>No week leads any stack: the caller has no notion of "this week", so a
+     * stack is ordered by the course that starts term earliest.</p>
+     *
      * @param courses courses of a single week, as returned by
      *                {@link CourseQuery#inWeek(List, int)}
      */
     public static List<Cluster> plan(List<Course> courses) {
+        return plan(courses, CourseStacking.NO_WEEK);
+    }
+
+    /**
+     * Every cluster of {@code courses}, with the courses taught in
+     * {@code currentWeek} leading their stacks.
+     *
+     * <p>The overview is where the week matters: it draws a whole term at once, so
+     * the course the user has to attend this week should be the one on top of the
+     * stack rather than the one that happens to start term earliest. The lane
+     * count is unaffected -- only the order inside a stack -- so nothing about the
+     * layout changes, only which name is drawn where.</p>
+     *
+     * @param currentWeek the semester week to lead with, or
+     *                    {@link CourseStacking#NO_WEEK}
+     */
+    public static List<Cluster> plan(List<Course> courses, int currentWeek) {
         List<Cluster> clusters = new ArrayList<>();
         if (courses == null || courses.isEmpty()) {
             return clusters;
@@ -315,7 +335,7 @@ public final class WeekGridPlan {
                 continue;
             }
             ofDay.sort(BY_START_THEN_END);
-            clusters.addAll(clustersOfDay(ofDay, day));
+            clusters.addAll(clustersOfDay(ofDay, day, currentWeek));
         }
         return clusters;
     }
@@ -347,7 +367,8 @@ public final class WeekGridPlan {
      * lane counts stay local and a quiet afternoon does not inherit the width of
      * a busy morning.</p>
      */
-    private static List<Cluster> clustersOfDay(List<Course> ofDay, int day) {
+    private static List<Cluster> clustersOfDay(List<Course> ofDay, int day,
+            int currentWeek) {
         List<Cluster> clusters = new ArrayList<>();
         int index = 0;
         while (index < ofDay.size()) {
@@ -358,7 +379,8 @@ public final class WeekGridPlan {
                 clusterEnd++;
                 reached = Math.max(reached, ofDay.get(clusterEnd).endPeriod);
             }
-            clusters.add(clusterOf(ofDay.subList(index, clusterEnd + 1), day, reached));
+            clusters.add(clusterOf(ofDay.subList(index, clusterEnd + 1), day,
+                    reached, currentWeek));
             index = clusterEnd + 1;
         }
         return clusters;
@@ -378,8 +400,9 @@ public final class WeekGridPlan {
      * rather than optimal: it can need one lane more than strictly necessary,
      * which is the price of an implementation simple enough to be tested.</p>
      */
-    private static Cluster clusterOf(List<Course> cluster, int day, int endPeriod) {
-        List<List<Course>> units = CourseStacking.unitsOf(cluster);
+    private static Cluster clusterOf(List<Course> cluster, int day, int endPeriod,
+            int currentWeek) {
+        List<List<Course>> units = CourseStacking.unitsOf(cluster, currentWeek);
 
         List<Integer> laneEnds = new ArrayList<>();
         List<Integer> laneOfUnit = new ArrayList<>();

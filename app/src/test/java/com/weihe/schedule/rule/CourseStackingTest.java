@@ -11,6 +11,7 @@ import java.util.List;
 import org.junit.Test;
 
 import com.weihe.schedule.model.Course;
+import com.weihe.schedule.model.ScheduleUtils;
 
 /**
  * Which courses may share one stacked card.
@@ -153,7 +154,7 @@ public class CourseStackingTest {
     @Test
     public void oneCourseIsOneStack() {
         List<List<Course>> stacks = CourseStacking.partition(Arrays.asList(
-                inWeeks(1, 1, 1, 2, 1, 18)));
+                inWeeks(1, 1, 1, 2, 1, 18)), CourseStacking.NO_WEEK);
 
         assertEquals(1, stacks.size());
         assertEquals(1, stacks.get(0).size());
@@ -163,7 +164,7 @@ public class CourseStackingTest {
     public void twoAlternativesBecomeOneStack() {
         List<List<Course>> stacks = CourseStacking.partition(Arrays.asList(
                 inWeeks(1, 1, 3, 4, 10, 18),
-                inWeeks(2, 1, 3, 4, 1, 9)));
+                inWeeks(2, 1, 3, 4, 1, 9)), CourseStacking.NO_WEEK);
 
         assertEquals(1, stacks.size());
         assertEquals(2, stacks.get(0).size());
@@ -177,7 +178,7 @@ public class CourseStackingTest {
         List<List<Course>> stacks = CourseStacking.partition(Arrays.asList(
                 inWeeks(1, 1, 1, 2, 9, 12),
                 inWeeks(2, 1, 1, 2, 13, 18),
-                inWeeks(3, 1, 1, 2, 1, 8)));
+                inWeeks(3, 1, 1, 2, 1, 8)), CourseStacking.NO_WEEK);
 
         assertEquals(1, stacks.size());
         assertEquals(3, stacks.get(0).size());
@@ -188,7 +189,7 @@ public class CourseStackingTest {
     public void aClashingPairStaysTwoStacks() {
         List<List<Course>> stacks = CourseStacking.partition(Arrays.asList(
                 inWeeks(1, 1, 1, 2, 1, 9),
-                inWeeks(2, 1, 1, 2, 9, 18)));
+                inWeeks(2, 1, 1, 2, 9, 18)), CourseStacking.NO_WEEK);
 
         assertEquals(2, stacks.size());
         assertEquals(1, stacks.get(0).size());
@@ -201,7 +202,7 @@ public class CourseStackingTest {
         List<List<Course>> stacks = CourseStacking.partition(Arrays.asList(
                 inWeeks(1, 1, 1, 2, 1, 4),
                 inWeeks(2, 1, 1, 2, 5, 9),
-                inWeeks(3, 1, 1, 2, 2, 6)));
+                inWeeks(3, 1, 1, 2, 2, 6)), CourseStacking.NO_WEEK);
 
         assertEquals(2, stacks.size());
         assertEquals(2, stacks.get(0).size());
@@ -216,7 +217,7 @@ public class CourseStackingTest {
                 inWeeks(3, 1, 1, 2, 2, 3), inWeeks(4, 1, 1, 2, 5, 6),
                 inWeeks(5, 1, 1, 2, 4, 5));
 
-        List<List<Course>> stacks = CourseStacking.partition(slot);
+        List<List<Course>> stacks = CourseStacking.partition(slot, CourseStacking.NO_WEEK);
         int placed = 0;
         List<Long> seen = new ArrayList<>();
         for (List<Course> stack : stacks) {
@@ -231,8 +232,8 @@ public class CourseStackingTest {
 
     @Test
     public void nothingIsAStackOfNothing() {
-        assertTrue(CourseStacking.partition(null).isEmpty());
-        assertTrue(CourseStacking.partition(new ArrayList<Course>()).isEmpty());
+        assertTrue(CourseStacking.partition(null, CourseStacking.NO_WEEK).isEmpty());
+        assertTrue(CourseStacking.partition(new ArrayList<Course>(), CourseStacking.NO_WEEK).isEmpty());
     }
 
     // ------------------------------------------------------------------- units
@@ -243,7 +244,7 @@ public class CourseStackingTest {
                 inWeeks(1, 1, 3, 4, 1, 4), inWeeks(2, 1, 3, 4, 5, 9),
                 inWeeks(3, 1, 5, 6, 1, 18));
 
-        List<List<Course>> units = CourseStacking.unitsOf(cluster);
+        List<List<Course>> units = CourseStacking.unitsOf(cluster, CourseStacking.NO_WEEK);
 
         assertEquals(2, units.size());
         assertEquals(2, units.get(0).size());
@@ -260,7 +261,7 @@ public class CourseStackingTest {
         List<Course> cluster = Arrays.asList(
                 inWeeks(1, 1, 3, 4, 1, 18), inWeeks(2, 1, 3, 5, 1, 18));
 
-        List<List<Course>> units = CourseStacking.unitsOf(cluster);
+        List<List<Course>> units = CourseStacking.unitsOf(cluster, CourseStacking.NO_WEEK);
 
         assertEquals(2, units.size());
         assertEquals(1, units.get(0).size());
@@ -274,7 +275,7 @@ public class CourseStackingTest {
                 inWeeks(3, 1, 1, 2, 2, 6), inWeeks(4, 1, 3, 4, 1, 18),
                 inWeeks(5, 1, 3, 4, 1, 18));
 
-        List<List<Course>> units = CourseStacking.unitsOf(cluster);
+        List<List<Course>> units = CourseStacking.unitsOf(cluster, CourseStacking.NO_WEEK);
 
         int total = 0;
         for (List<Course> unit : units) {
@@ -285,8 +286,8 @@ public class CourseStackingTest {
 
     @Test
     public void nothingIsAUnitOfNothing() {
-        assertTrue(CourseStacking.unitsOf(null).isEmpty());
-        assertTrue(CourseStacking.unitsOf(new ArrayList<Course>()).isEmpty());
+        assertTrue(CourseStacking.unitsOf(null, CourseStacking.NO_WEEK).isEmpty());
+        assertTrue(CourseStacking.unitsOf(new ArrayList<Course>(), CourseStacking.NO_WEEK).isEmpty());
     }
 
     private static List<Long> ids(List<Course> courses) {
@@ -295,5 +296,110 @@ public class CourseStackingTest {
             ids.add(Long.valueOf(course.id));
         }
         return ids;
+    }
+
+    // -------------------------------------------------- the current week leads
+
+    @Test
+    public void theCourseTaughtThisWeekLeadsItsStack() {
+        // The later half of term is under way, so the second course is the one the
+        // user has to attend -- and it must be the one drawn on top.
+        List<List<Course>> stacks = CourseStacking.partition(Arrays.asList(
+                inWeeks(1, 1, 1, 2, 1, 8), inWeeks(2, 1, 1, 2, 9, 16)), 12);
+
+        assertEquals(1, stacks.size());
+        assertEquals(2L, stacks.get(0).get(0).id);
+        assertEquals(Arrays.asList(2L, 1L), ids(stacks.get(0)));
+    }
+
+    @Test
+    public void theEarliestCourseLeadsWhenNoWeekIsGiven() {
+        List<List<Course>> stacks = CourseStacking.partition(Arrays.asList(
+                inWeeks(1, 1, 1, 2, 1, 8), inWeeks(2, 1, 1, 2, 9, 16)),
+                CourseStacking.NO_WEEK);
+
+        assertEquals(1L, stacks.get(0).get(0).id);
+    }
+
+    @Test
+    public void theParityCourseTaughtThisWeekLeads() {
+        // Both run the whole term, but only one of them is on this week.
+        Course odd = inWeeks(1, 1, 1, 2, 1, 18);
+        odd.parity = Course.PARITY_ODD;
+        Course even = inWeeks(2, 1, 1, 2, 1, 18);
+        even.parity = Course.PARITY_EVEN;
+
+        List<List<Course>> stacks = CourseStacking.partition(
+                Arrays.asList(odd, even), 6);
+
+        assertEquals(1, stacks.size());
+        assertEquals(2L, stacks.get(0).get(0).id);
+    }
+
+    @Test
+    public void aWeekOutsideEveryCourseFallsBackToWeekOrder() {
+        // Week 30 is past the end of the term, so nothing is "this week" and the
+        // order is the plain one rather than an arbitrary pick.
+        List<List<Course>> stacks = CourseStacking.partition(Arrays.asList(
+                inWeeks(1, 1, 1, 2, 9, 16), inWeeks(2, 1, 1, 2, 1, 8)), 30);
+
+        assertEquals(1, stacks.size());
+        assertEquals(2L, stacks.get(0).get(0).id);
+    }
+
+    @Test
+    public void atMostOneCourseInAStackRunsInAnyOneWeek() {
+        // The invariant the ordering rests on: because a stack only holds courses
+        // that never share a week, "the course running this week" is a single
+        // unambiguous answer and never a tie to break.
+        List<Course> slot = Arrays.asList(
+                inWeeks(1, 1, 1, 2, 1, 3), inWeeks(2, 1, 1, 2, 4, 6),
+                inWeeks(3, 1, 1, 2, 7, 9), inWeeks(4, 1, 1, 2, 10, 12));
+
+        for (int week = 1; week <= ScheduleUtils.SEMESTER_WEEKS; week++) {
+            for (List<Course> stack : CourseStacking.partition(slot, week)) {
+                int running = 0;
+                for (Course course : stack) {
+                    if (CourseStacking.runsIn(course, week)) {
+                        running++;
+                    }
+                }
+                assertTrue("week " + week + " has " + running
+                                + " courses running in one stack",
+                        running <= 1);
+            }
+        }
+    }
+
+    @Test
+    public void runsInReadsTheWeekRangeAndTheParity() {
+        Course all = inWeeks(1, 1, 1, 2, 5, 9);
+        assertTrue(CourseStacking.runsIn(all, 5));
+        assertTrue(CourseStacking.runsIn(all, 9));
+        assertFalse(CourseStacking.runsIn(all, 4));
+        assertFalse(CourseStacking.runsIn(all, 10));
+
+        Course odd = inWeeks(2, 1, 1, 2, 1, 18);
+        odd.parity = Course.PARITY_ODD;
+        assertTrue(CourseStacking.runsIn(odd, 3));
+        assertFalse(CourseStacking.runsIn(odd, 4));
+
+        assertFalse("no week means nothing is running",
+                CourseStacking.runsIn(all, CourseStacking.NO_WEEK));
+        assertFalse(CourseStacking.runsIn(null, 5));
+    }
+
+    @Test
+    public void theCurrentWeekDoesNotChangeHowManyStacksThereAre() {
+        // Ordering only, not grouping: the stacks are the same units whatever week
+        // leads them.
+        List<Course> slot = Arrays.asList(
+                inWeeks(1, 1, 1, 2, 1, 4), inWeeks(2, 1, 1, 2, 5, 9),
+                inWeeks(3, 1, 1, 2, 3, 6));
+
+        assertEquals(2, CourseStacking.partition(slot, 1).size());
+        assertEquals(2, CourseStacking.partition(slot, 5).size());
+        assertEquals(2, CourseStacking.partition(slot, 8).size());
+        assertEquals(2, CourseStacking.partition(slot, 30).size());
     }
 }

@@ -432,4 +432,91 @@ public class WeekGridPlanTest {
         }
         return ids;
     }
+
+    // ------------------------------------------------- the current week leads
+
+    @Test
+    public void theCourseRunningThisWeekIsDrawnOnTop() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 8), inWeeks(2, 1, 3, 4, 9, 16));
+
+        // Week 12 is in the second course's range, and that is the one the card
+        // leads with -- not the one that starts term earliest. Read through the
+        // week-aware plan, because cellAt has no week to ask.
+        WeekGridPlan.Block block = WeekGridPlan.plan(week, 12).get(0)
+                .cells().get(0).blocks().get(0);
+
+        assertEquals(2L, block.course().id);
+        assertEquals(Arrays.asList(2L, 1L), idsOf(block.courses()));
+    }
+
+    @Test
+    public void theLeadFollowsTheWeek() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 8), inWeeks(2, 1, 3, 4, 9, 16));
+
+        assertEquals(1L, WeekGridPlan.plan(week, 3).get(0)
+                .cells().get(0).blocks().get(0).course().id);
+        assertEquals(2L, WeekGridPlan.plan(week, 12).get(0)
+                .cells().get(0).blocks().get(0).course().id);
+    }
+
+    @Test
+    public void theWeekChangesTheOrderAndNotTheLayout() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 8), inWeeks(2, 1, 3, 4, 9, 16));
+
+        assertEquals(1, WeekGridPlan.plan(week, 1).get(0).laneCount());
+        assertEquals(1, WeekGridPlan.plan(week, 12).get(0).laneCount());
+        assertEquals(1, WeekGridPlan.plan(week, 30).get(0).laneCount());
+    }
+
+    @Test
+    public void aClashInTheCurrentWeekKeepsBothLanesAndBothCourses() {
+        // Both are taught this week, so they are a real clash: neither may be
+        // pushed behind the other or dropped.
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 9), inWeeks(2, 1, 3, 4, 9, 18));
+
+        WeekGridPlan.Cell cell = cellAt(week, 1, 3);
+
+        assertEquals(2, cell.laneCount());
+        assertEquals(2, cell.blocks().size());
+        List<Long> drawn = new ArrayList<>();
+        for (WeekGridPlan.Block block : cell.blocks()) {
+            for (Course course : block.courses()) {
+                drawn.add(Long.valueOf(course.id));
+            }
+        }
+        assertEquals(Arrays.asList(1L, 2L), drawn);
+    }
+
+    @Test
+    public void withNoWeekTheEarliestCourseLeads() {
+        List<Course> week = Arrays.asList(
+                inWeeks(1, 1, 3, 4, 1, 8), inWeeks(2, 1, 3, 4, 9, 16));
+
+        assertEquals(1L, cellAt(week, 1, 3).blocks().get(0).course().id);
+    }
+
+    @Test
+    public void theParityCourseRunningThisWeekLeads() {
+        // Both run the whole term, but only one of them is on any given week.
+        Course odd = inWeeks(1, 1, 1, 2, 1, 18);
+        odd.parity = Course.PARITY_ODD;
+        Course even = inWeeks(2, 1, 1, 2, 1, 18);
+        even.parity = Course.PARITY_EVEN;
+        List<Course> week = Arrays.asList(odd, even);
+
+        assertEquals("week 5 is an odd week", 1L,
+                leadCourseId(week, 5));
+        assertEquals("week 6 is an even week", 2L,
+                leadCourseId(week, 6));
+    }
+
+    /** The course drawn on top of the first cluster's first cell. */
+    private static long leadCourseId(List<Course> week, int currentWeek) {
+        return WeekGridPlan.plan(week, currentWeek).get(0)
+                .cells().get(0).blocks().get(0).course().id;
+    }
 }

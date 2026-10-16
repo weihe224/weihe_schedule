@@ -30,16 +30,46 @@ import com.weihe.schedule.model.ScheduleUtils;
  */
 public final class CourseStacking {
 
+    /** No week leads a stack: the caller has no notion of "this week". */
+    public static final int NO_WEEK = 0;
+
     private CourseStacking() {
     }
 
     /**
-     * Earliest week first, so a stack is led by the course that starts term.
+     * Whether {@code course} is actually taught in {@code currentWeek}.
+     *
+     * <p>Answered through {@link ScheduleUtils#occursInWeek} like everything else,
+     * so the week range and the odd/even rule are both honoured. A
+     * {@code currentWeek} of {@link #NO_WEEK} -- or one outside the course's own
+     * range -- reads as "not this week", which is what makes a term that has not
+     * started fall back to plain week order rather than picking a course at
+     * random.</p>
      */
-    private static final Comparator<Course> BY_WEEK =
-            Comparator.comparingInt((Course course) -> course.startWeek)
-                    .thenComparingInt(course -> course.endWeek)
-                    .thenComparingLong(course -> course.id);
+    public static boolean runsIn(Course course, int currentWeek) {
+        if (course == null || currentWeek < 1) {
+            return false;
+        }
+        return ScheduleUtils.occursInWeek(course, currentWeek);
+    }
+
+    /**
+     * Earliest week first, and any course taught in {@code currentWeek} ahead of
+     * all of them.
+     *
+     * <p>The stack is drawn with its first course on top, so this is the order the
+     * user sees: the lesson they have this week, and behind it the ones they do
+     * not. The remaining tie-breaks keep the order stable from one render to the
+     * next, so nothing shuffles as the user scrolls.</p>
+     */
+    private static Comparator<Course> byLead(int currentWeek) {
+        return Comparator
+                .comparingInt((Course course) -> runsIn(course, currentWeek)
+                        ? 0 : 1)
+                .thenComparingInt(course -> course.startWeek)
+                .thenComparingInt(course -> course.endWeek)
+                .thenComparingLong(course -> course.id);
+    }
 
     /** Whether two courses describe the same weekday and the same period range. */
     public static boolean sameSlot(Course a, Course b) {
@@ -87,18 +117,22 @@ public final class CourseStacking {
      * difference to show.</p>
      *
      * <p>A course whose weeks meet every existing stack starts a new one, so two
-     * lessons that genuinely clash are never folded into one card.</p>
+     * lessons that genuinely clash are never folded into one card. Within one
+     * stack that also means at most one course can be running in any given week,
+     * which is what makes "the current week's lesson leads the stack" a single
+     * unambiguous answer rather than a tie to break.</p>
      *
-     * @param slot courses that all describe the same slot, in any order
-     * @return the stacks, each led by the course that starts term earliest
+     * @param slot        courses that all describe the same slot, in any order
+     * @param currentWeek the semester week to lead with, or {@link #NO_WEEK}
+     * @return the stacks, each led by the course the user should see first
      */
-    public static List<List<Course>> partition(List<Course> slot) {
+    public static List<List<Course>> partition(List<Course> slot, int currentWeek) {
         List<List<Course>> stacks = new ArrayList<>();
         if (slot == null || slot.isEmpty()) {
             return stacks;
         }
         List<Course> ordered = new ArrayList<>(slot);
-        Collections.sort(ordered, BY_WEEK);
+        Collections.sort(ordered, byLead(currentWeek));
         for (Course course : ordered) {
             List<Course> host = null;
             for (List<Course> stack : stacks) {
@@ -133,10 +167,12 @@ public final class CourseStacking {
      * treat a stack as one thing: a stack takes the lane its slot needs, instead
      * of a lane per course, which is the whole point.</p>
      *
-     * @param courses one cluster's courses, sorted by start period then end period
+     * @param courses     one cluster's courses, sorted by start period then end period
+     * @param currentWeek the semester week to lead each stack with, or
+     *                    {@link #NO_WEEK}
      * @return the units, in the order the courses came in
      */
-    public static List<List<Course>> unitsOf(List<Course> courses) {
+    public static List<List<Course>> unitsOf(List<Course> courses, int currentWeek) {
         List<List<Course>> units = new ArrayList<>();
         if (courses == null || courses.isEmpty()) {
             return units;
@@ -152,7 +188,7 @@ public final class CourseStacking {
                     && sameSlot(courses.get(index), courses.get(runEnd))) {
                 runEnd++;
             }
-            units.addAll(partition(courses.subList(index, runEnd)));
+            units.addAll(partition(courses.subList(index, runEnd), currentWeek));
             index = runEnd;
         }
         return units;
