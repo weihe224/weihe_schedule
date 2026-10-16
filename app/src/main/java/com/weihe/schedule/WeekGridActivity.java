@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.GridLayout;
@@ -22,6 +24,7 @@ import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.CourseQuery;
+import com.weihe.schedule.rule.GridZoom;
 import com.weihe.schedule.rule.WeekGridPlan;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.ui.Insets;
@@ -39,6 +42,23 @@ import com.weihe.schedule.ui.UiTokens;
  * class only turns blocks into views. Overlapping courses are therefore laid out
  * side by side, and a course that starts inside another one keeps its own start
  * period instead of being swallowed by the block above it.</p>
+ *
+ * <h2>The week fits the screen, and the user can change their mind</h2>
+ *
+ * <p>At {@link GridZoom#FIT} the seven day columns divide the width the body
+ * actually has, so opening the screen shows the whole week without any sideways
+ * dragging. That is a default, not a rule: a pinch or the zoom buttons multiply
+ * the column width and the row height, which is how a name that is too cramped
+ * at seven-across is read. Everything is derived from the viewport and the
+ * scale, so a rotation re-fits the week and then re-applies the scale -- see
+ * {@link GridZoom} for the arithmetic, which is kept out of this class so it can
+ * be tested without a device.</p>
+ *
+ * <p>Zooming is a real layout change rather than a transform on the finished
+ * picture: the cells and the blocks are rebuilt at the new sizes, so the text is
+ * drawn at its final size instead of being stretched, and a tap lands on the
+ * block it looks like it lands on. The cost is that the grid is rebuilt during
+ * the gesture, which {@link #queueRender} keeps to once a frame.</p>
  */
 public class WeekGridActivity extends Activity {
     public static final String EXTRA_WEEK = "week";
@@ -46,16 +66,33 @@ public class WeekGridActivity extends Activity {
     /**
      * Grid metrics.
      *
-     * <p>The label column holds a period number and nothing else, so it is sized
-     * for "15" rather than for a clock time. The rows follow from what a block
-     * has to show: a name line, and below it either the week rule or the venue.
-     * School timetables leave gaps in the day, so a comfortable two-period block
-     * matters more than seeing all fifteen at once.</p>
+     * <p>Only two sizes are still fixed: the height a period row has at the
+     * default scale, and the height of the weekday heading. The column widths
+     * come from the viewport, because a fixed day width is exactly what used to
+     * force the week off the side of the screen.</p>
+     *
+     * <p>The rows follow from what a block has to show: a name line, and below it
+     * either the week rule or the venue. School timetables leave gaps in the day,
+     * so a comfortable two-period block matters more than seeing all fifteen at
+     * once -- which is what the "whole day" control is for.</p>
      */
-    private static final int ROW_HEIGHT_DP = 54;
+    private static final int BASE_ROW_HEIGHT_DP = 54;
     private static final int HEADER_HEIGHT_DP = 50;
-    private static final int LABEL_WIDTH_DP = 42;
-    private static final int DAY_WIDTH_DP = 118;
+
+    /**
+     * The period column, sized from the screen rather than fixed.
+     *
+     * <p>It holds a period number and nothing else, so it only has to be as wide
+     * as "15" -- that is what the floor is for. Above that it takes a tenth of
+     * the width, which on a normal phone lands within a dp of the 42dp this used
+     * to be a constant, and on a narrow one hands the seven day columns a few
+     * more dp each. The ceiling stops a tablet spending a wide strip on two
+     * digits.</p>
+     */
+    private static final int MIN_LABEL_WIDTH_DP = 26;
+    private static final int MAX_LABEL_WIDTH_DP = 42;
+    private static final float LABEL_WIDTH_FRACTION = 0.10f;
+
     private static final int LANE_GAP_DP = 2;
     /** Inset around the grid, so the first cell does not touch the screen edge. */
     private static final int GRID_PAD_DP = 6;
@@ -71,6 +108,9 @@ public class WeekGridActivity extends Activity {
     private static final int MIN_ROWS = 10;
     /** Days in the grid, and therefore day columns in the header. */
     private static final int DAY_COUNT = 7;
+    /** No scroll position waiting to be applied. */
+    private static final int NO_SCROLL = Integer.MIN_VALUE;
+
     private CourseRepository repository;
     private LocalDate semesterStart;
     private int currentWeek;
@@ -94,7 +134,7 @@ public class WeekGridActivity extends Activity {
     /** Gap between two lanes, in pixels; resolved in onCreate. */
     private int laneGapPx = 2;
 
-    /** Row height in pixels, resolved once in onCreate. */
+    /** Period row height in pixels, at the current zoom. */
     private int rowHeightPx = 1;
 
     /** Top edge of each row in pixels, so cells and blocks share the same grid. */
@@ -110,36 +150,121 @@ public class WeekGridActivity extends Activity {
      */
     private int labelColumnWidthPx = 1;
 
+    /** Width of a period cell, in pixels; the column adds the grid's inset. */
+    private int labelWidthPx = 1;
+
+    /** The scale the user is at, as a multiple of {@link GridZoom#FIT}. */
+    private float zoom = GridZoom.FIT;
+
+    /**
+     * One day column's width at {@link GridZoom#FIT}, in pixels.
+     *
+     * <p>The baseline everything else is a multiple of. It is recomputed from the
+     * viewport whenever that changes, which is what makes "fit the screen" mean
+     * the screen in front of the user rather than a number baked in at build
+     * time.</p>
+     */
+    private int baseDayWidthPx = 1;
+
+    /** One day column's width at the current zoom, in pixels. */
+    private int dayWidthPx = 1;
+
+    /** The body's measured size, or 0 before the first layout. */
+    private int viewportWidthPx;
+    private int viewportHeightPx;
+
+    /** Set by a pinch so the rebuild can restore the point under the fingers. */
+    private int pendingScrollX = NO_SCROLL;
+
+    /** True while a rebuild is already queued for this frame. */
+    private boolean renderQueued;
+
+    /** True from the second finger of a pinch until the gesture ends. */
+    private boolean pinching;
+
+    private ScaleGestureDetector scaleDetector;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         laneGapPx = Math.max(1, UiKit.dp(this, LANE_GAP_DP));
-        rowHeightPx = Math.max(1, UiKit.dp(this, ROW_HEIGHT_DP));
-        labelColumnWidthPx = Math.max(1,
-                UiKit.dp(this, LABEL_WIDTH_DP + GRID_PAD_DP));
-        // Computed cumulatively instead of as dp(period * height): rounding each
-        // row separately would let the block edges drift away from the cell
-        // lines further down the day.
-        //
-        // Sized from MAX_PERIODS, not from the default fifteen, because the offset
-        // table has to cover whatever lastPeriodInUse can return -- it is indexed by
-        // period, and a twenty-period day whose table stopped at seventeen would
-        // clamp its last three rows onto row seventeen.
-        int rows = ScheduleUtils.MAX_PERIODS + 2;
-        rowTopPx = new int[rows];
-        for (int period = 1; period < rows; period++) {
-            rowTopPx[period] = UiKit.dp(this, (period - 1) * (float) ROW_HEIGHT_DP);
-        }
+        updateLabelWidth();
+        recomputeGeometry();
         repository = new CourseRepository(this);
         semesterStart = repository.getSemesterStart();
         currentWeek = ScheduleUtils.currentWeek(semesterStart, LocalDate.now());
         selectedWeek = Math.max(1, Math.min(ScheduleUtils.SEMESTER_WEEKS,
                 getIntent().getIntExtra(EXTRA_WEEK, currentWeek)));
+        // A pinch scales around the point between the fingers, so the day being
+        // looked at stays under them instead of sliding off the edge.
+        scaleDetector = new ScaleGestureDetector(this,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScale(ScaleGestureDetector detector) {
+                        setZoomAround(zoom * detector.getScaleFactor(),
+                                detector.getFocusX() - horizontalLeftOnScreen());
+                        return true;
+                    }
+                });
         // The app bar is the page surface, so both system bars take that colour and
         // keep dark icons on it; see Insets for why this cannot live in the theme.
         Insets.applyBrandedSystemBars(this);
         setContentView(buildRoot());
         render();
+    }
+
+    /**
+     * Watches every touch for a pinch before anything else sees it.
+     *
+     * <p>On the Activity rather than on the grid, because the grid is a tree of
+     * clickable blocks and scroll views and whichever of them consumed the down
+     * event would be the only one to see the rest -- a {@code ScaleGestureDetector}
+     * attached lower down would simply never receive the second finger. Here it
+     * sees the whole stream whatever happens to it afterwards.</p>
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (scaleDetector != null) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                pinching = false;
+            }
+            if (event.getPointerCount() > 1) {
+                // A pinch is not a drag. While a second finger is down, neither
+                // scroll view is allowed to claim the gesture; the framework
+                // clears the flag on the next finger-down, so an ordinary
+                // one-finger drag afterwards still scrolls as it always did.
+                pinching = true;
+                disallowScrollIntercept(true);
+            } else if (action == MotionEvent.ACTION_POINTER_UP) {
+                // The last of the two fingers has gone: hand the grid back to the
+                // scroll views without waiting for the finger to be lifted.
+                disallowScrollIntercept(false);
+            }
+            scaleDetector.onTouchEvent(event);
+            if (pinching && (action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_CANCEL)) {
+                // A pinch is not a tap either. The finger that landed last would
+                // otherwise be read as a click on whatever block it happened to
+                // be over, and open a course the user was only zooming around.
+                pinching = false;
+                MotionEvent cancelled = MotionEvent.obtain(event);
+                cancelled.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancelled);
+                cancelled.recycle();
+                return true;
+            }
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void disallowScrollIntercept(boolean disallow) {
+        if (horizontal != null) {
+            horizontal.requestDisallowInterceptTouchEvent(disallow);
+        }
+        if (vertical != null) {
+            vertical.requestDisallowInterceptTouchEvent(disallow);
+        }
     }
 
     @Override
@@ -224,6 +349,29 @@ public class WeekGridActivity extends Activity {
         vertical.addView(horizontal, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
+        // The body's size is what the day width and the row height are worked out
+        // from, and it is not known until the first layout. Recomputing here is
+        // also what keeps the week fitting the screen through a rotation or a
+        // window resize. Guarded on the size actually changing, so it settles in
+        // one extra pass rather than looping.
+        vertical.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View view, int left, int top, int right,
+                    int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                int width = right - left;
+                int height = bottom - top;
+                if (width <= 0 || height <= 0) {
+                    return;
+                }
+                if (width == viewportWidthPx && height == viewportHeightPx) {
+                    return;
+                }
+                viewportWidthPx = width;
+                viewportHeightPx = height;
+                recomputeGeometry();
+                render();
+            }
+        });
 
         headerRow.setBackgroundColor(Palette.SURFACE);
 
@@ -268,13 +416,7 @@ public class WeekGridActivity extends Activity {
             @Override
             public void onLayoutChange(View view, int left, int top, int right,
                     int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                int viewport = right - left;
-                int wanted = viewport + maxHorizontalScroll();
-                ViewGroup.LayoutParams params = headerRow.getLayoutParams();
-                if (viewport > 0 && params.width != wanted) {
-                    params.width = wanted;
-                    headerRow.setLayoutParams(params);
-                }
+                syncHeaderWidth();
             }
         });
 
@@ -308,7 +450,82 @@ public class WeekGridActivity extends Activity {
         fabParams.setMargins(0, 0, dp(UiTokens.SPACE_L + 2),
                 dp(UiTokens.SPACE_XL - 2));
         frame.addView(add, fabParams);
+
+        // The zoom controls share the band the grid already reserves under its
+        // last row -- the floating button sits at the other end of it -- so they
+        // cover no lesson and cost the timetable no height.
+        FrameLayout.LayoutParams zoomParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.START | Gravity.BOTTOM);
+        zoomParams.setMargins(dp(UiTokens.SPACE_L), 0, 0, dp(UiTokens.SPACE_L));
+        frame.addView(zoomControls(), zoomParams);
         return frame;
+    }
+
+    /**
+     * The zoom stepper and the fit control, as one compact pill.
+     *
+     * <p>Kept off the app bar on purpose: that bar is already carrying the week
+     * stepper, and a second row of controls above the grid would come straight
+     * off the number of periods that fit. Down here it shares the band the
+     * floating button already reserves.</p>
+     *
+     * <p>There is no "whole day" control: the zoom floor is already the
+     * fit-the-week scale, so a button that shrank the grid further would be a
+     * second way to do the one thing {@code MIN} refuses.</p>
+     */
+    private View zoomControls() {
+        LinearLayout pill = new LinearLayout(this);
+        pill.setOrientation(LinearLayout.HORIZONTAL);
+        pill.setGravity(Gravity.CENTER_VERTICAL);
+        pill.setPadding(dp(4), dp(4), dp(4), dp(4));
+        UiKit.setRoundedBackground(pill, Palette.SURFACE_CONTAINER,
+                UiTokens.RADIUS_FULL, Palette.OUTLINE_VARIANT,
+                UiTokens.STROKE_HAIRLINE);
+        UiKit.elevate(pill, UiTokens.RADIUS_FULL, UiTokens.ELEVATION_MEDIUM);
+
+        pill.addView(zoomIconButton(R.drawable.ic_remove,
+                "\u7F29\u5C0F\u8BFE\u8868", this::zoomOut));
+        pill.addView(zoomTextButton("\u9002\u5E94",
+                "\u9002\u5E94\u5C4F\u5E55\uFF0C\u4E03\u5929\u5B8C\u6574\u663E\u793A",
+                this::fitWidth));
+        pill.addView(zoomIconButton(R.drawable.ic_add,
+                "\u653E\u5927\u8BFE\u8868", this::zoomIn));
+        return pill;
+    }
+
+    /** One square icon in the zoom pill. */
+    private View zoomIconButton(int icon, String description, Runnable action) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(icon);
+        button.setColorFilter(Palette.ON_SURFACE);
+        button.setBackground(UiKit.fill(this, Color.TRANSPARENT, UiTokens.RADIUS_FULL));
+        button.setPadding(dp(7), dp(7), dp(7), dp(7));
+        button.setContentDescription(description);
+        button.setOnClickListener(view -> action.run());
+        button.setLayoutParams(zoomButtonParams());
+        return button;
+    }
+
+    /** One labelled control in the zoom pill. */
+    private View zoomTextButton(String label, String description, Runnable action) {
+        TextView button = UiKit.text(this, label, UiTokens.Type.LABEL_LARGE,
+                Palette.ON_SURFACE, true);
+        button.setGravity(Gravity.CENTER);
+        button.setSingleLine(true);
+        button.setContentDescription(description);
+        button.setBackground(UiKit.fill(this, Color.TRANSPARENT, UiTokens.RADIUS_FULL));
+        button.setOnClickListener(view -> action.run());
+        button.setLayoutParams(zoomButtonParams());
+        return button;
+    }
+
+    private LinearLayout.LayoutParams zoomButtonParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                dp(38), dp(38));
+        params.leftMargin = dp(2);
+        return params;
     }
 
     /**
@@ -441,6 +658,208 @@ public class WeekGridActivity extends Activity {
         render();
     }
 
+    // ------------------------------------------------------------------ zoom
+
+    /**
+     * Sizes the period column from the screen.
+     *
+     * <p>Worked out from the display rather than from the measured layout,
+     * deliberately: the column's width decides how much is left for the body, so
+     * deriving it from the body would be a circle. The display width does not
+     * depend on either, which is what makes the measurement converge in one
+     * pass.</p>
+     */
+    private void updateLabelWidth() {
+        int screen = getResources().getDisplayMetrics().widthPixels;
+        int wanted = Math.round(screen * LABEL_WIDTH_FRACTION);
+        labelWidthPx = Math.min(dp(MAX_LABEL_WIDTH_DP),
+                Math.max(dp(MIN_LABEL_WIDTH_DP), wanted));
+        labelColumnWidthPx = Math.max(1, labelWidthPx + dp(GRID_PAD_DP));
+    }
+
+    /**
+     * Recomputes the fit-the-week baseline for the current viewport.
+     *
+     * <p>Called at startup and whenever the body is resized. The zoom the user
+     * chose is deliberately kept: it is a multiple of this baseline, so a
+     * rotation re-fits the week and then re-applies how far in or out they
+     * were.</p>
+     */
+    private void recomputeGeometry() {
+        // Before the first layout the body has no measured width, so it is worked
+        // out from the display instead: the root fills the window and the period
+        // column is a known slice of it, which makes this the same number the
+        // first layout pass will report. Guessing low would show a mis-sized week
+        // for one frame; guessing high would show one that does not fit.
+        int viewport = viewportWidthPx > 0
+                ? viewportWidthPx
+                : Math.max(1, getResources().getDisplayMetrics().widthPixels
+                        - labelColumnWidthPx);
+        baseDayWidthPx = GridZoom.fitWidthDayPx(viewport, dp(GRID_PAD_DP), DAY_COUNT);
+        applyZoomPixels();
+    }
+
+    /** Turns {@link #zoom} into the pixel sizes every part of the grid is built from. */
+    private void applyZoomPixels() {
+        dayWidthPx = GridZoom.dayWidthPx(baseDayWidthPx, zoom);
+        rowHeightPx = GridZoom.rowHeightPx(dp(BASE_ROW_HEIGHT_DP), zoom);
+        rebuildRowTops();
+    }
+
+    /**
+     * Rebuilds the row offset table from the current row height.
+     *
+     * <p>Computed cumulatively instead of as {@code dp(period * height)}: rounding
+     * each row separately would let the block edges drift away from the cell
+     * lines further down the day. Rebuilt whenever the zoom changes, because the
+     * cells and the blocks both read this one table and a stale one would place
+     * them on two different grids.</p>
+     *
+     * <p>Sized from {@link ScheduleUtils#MAX_PERIODS}, not from the default
+     * fifteen: the table is indexed by period, and a twenty-period day whose
+     * table stopped at seventeen would clamp its last three rows onto row
+     * seventeen.</p>
+     */
+    private void rebuildRowTops() {
+        int rows = ScheduleUtils.MAX_PERIODS + 2;
+        rowTopPx = new int[rows];
+        for (int period = 1; period < rows; period++) {
+            rowTopPx[period] = (period - 1) * rowHeightPx;
+        }
+    }
+
+    private void zoomIn() {
+        setZoom(GridZoom.zoomIn(zoom));
+    }
+
+    private void zoomOut() {
+        setZoom(GridZoom.zoomOut(zoom));
+    }
+
+    /**
+     * Back to the default: seven days across the screen.
+     *
+     * <p>Recomputes the baseline rather than assigning a number of dp, which is
+     * what makes this "fit <em>this</em> screen" instead of "reset to a constant
+     * that happened to be right on the phone it was written on". It is also the
+     * far end of the range, so this and zooming all the way out agree.</p>
+     */
+    private void fitWidth() {
+        recomputeGeometry();
+        setZoom(GridZoom.FIT);
+        render();
+    }
+
+    /** Applies a scale, rebuilding the grid at the new sizes. */
+    private void setZoom(float wanted) {
+        float next = GridZoom.clamp(wanted);
+        if (next == zoom) {
+            return;
+        }
+        zoom = next;
+        applyZoomPixels();
+        queueRender();
+    }
+
+    /**
+     * Applies a scale while keeping the point under the fingers where it is.
+     *
+     * <p>Without this, pinching in from the right-hand side of the week drags the
+     * day being looked at off the screen, which reads as the grid jumping rather
+     * than as the grid growing.</p>
+     *
+     * @param focusInViewport the pinch centre, measured from the body's left edge
+     */
+    private void setZoomAround(float wanted, float focusInViewport) {
+        float next = GridZoom.clamp(wanted);
+        if (next == zoom) {
+            return;
+        }
+        int previousDayWidth = dayWidthPx;
+        int previousScroll = horizontal == null ? 0 : horizontal.getScrollX();
+        zoom = next;
+        applyZoomPixels();
+        if (previousDayWidth > 0 && horizontal != null) {
+            float grew = dayWidthPx / (float) previousDayWidth;
+            pendingScrollX = Math.max(0,
+                    Math.round((previousScroll + focusInViewport) * grew
+                            - focusInViewport));
+        }
+        queueRender();
+    }
+
+    /**
+     * Rebuilds the grid once per frame at most.
+     *
+     * <p>A pinch delivers several events per frame, and rebuilding is not free --
+     * it re-creates every block. Coalescing them changes nothing that is drawn,
+     * because the last scale of the frame is the one that wins; it only stops the
+     * same work being done three times before the frame it belongs to.</p>
+     */
+    private void queueRender() {
+        if (renderQueued) {
+            return;
+        }
+        renderQueued = true;
+        // On the decor view rather than on the grid: this is a "next frame" hook,
+        // and the decor view is the one that always exists.
+        getWindow().getDecorView().postOnAnimation(new Runnable() {
+            @Override
+            public void run() {
+                renderQueued = false;
+                render();
+            }
+        });
+    }
+
+    /** Where the body's left edge sits on screen, for mapping a pinch centre. */
+    private float horizontalLeftOnScreen() {
+        if (horizontal == null) {
+            return 0f;
+        }
+        int[] position = new int[2];
+        horizontal.getLocationOnScreen(position);
+        return position[0];
+    }
+
+    /**
+     * Gives the day-name row the full scrollable width.
+     *
+     * <p>It has to span the viewport plus everything the body can be dragged
+     * past, or sliding left moves the later days outside the clip and the week
+     * simply ends. Recomputed after every rebuild, because zooming in widens
+     * what there is to scroll through.</p>
+     */
+    private void syncHeaderWidth() {
+        if (headerClip == null || headerRow == null) {
+            return;
+        }
+        int viewport = headerClip.getWidth();
+        if (viewport <= 0) {
+            return;
+        }
+        int wanted = viewport + maxHorizontalScroll();
+        ViewGroup.LayoutParams params = headerRow.getLayoutParams();
+        if (params != null && params.width != wanted) {
+            params.width = wanted;
+            headerRow.setLayoutParams(params);
+        }
+    }
+
+    /**
+     * The courses the current mode shows.
+     *
+     * <p>Split out because the zoom controls need the same answer the grid is
+     * drawn from: "show the whole day" has to count the periods of the week on
+     * screen, not of every course in the term.</p>
+     */
+    private List<Course> shownCourses() {
+        List<Course> stored = repository.getCourses();
+        return wholeSemester
+                ? CourseQuery.all(stored)
+                : CourseQuery.inWeek(stored, selectedWeek);
+    }
+
     private void render() {
         styleChip(semesterChip, wholeSemester);
         styleChip(weekChip, !wholeSemester);
@@ -448,10 +867,7 @@ public class WeekGridActivity extends Activity {
         weekNav.setVisibility(wholeSemester ? View.GONE : View.VISIBLE);
         todayChip.setVisibility(wholeSemester ? View.GONE : View.VISIBLE);
 
-        List<Course> stored = repository.getCourses();
-        List<Course> shown = wholeSemester
-                ? CourseQuery.all(stored)
-                : CourseQuery.inWeek(stored, selectedWeek);
+        List<Course> shown = shownCourses();
 
         if (wholeSemester) {
             subtitle.setText(repository.getActiveSemester().label() + " \u00B7 "
@@ -505,16 +921,38 @@ public class WeekGridActivity extends Activity {
         addDayHeaders();
         for (int period = 1; period <= periods; period++) {
             labelColumn.addView(periodCell(period),
-                    cellParamsPx(period - 1, 0, 1, dp(LABEL_WIDTH_DP), rowHeight()));
+                    cellParamsPx(period - 1, 0, 1, labelWidthPx, rowHeight()));
         }
         // Each day spans every row in one cell, so the column has to be as tall as
         // the rows it positions -- dayColumnRows, not rowTop, which is the top
         // *edge* of the last row.
         for (int day = 1; day <= 7; day++) {
             grid.addView(dayColumn(perDay.get(day - 1), day >= 6, periods),
-                    cellParamsPx(0, day - 1, rows, dp(DAY_WIDTH_DP),
+                    cellParamsPx(0, day - 1, rows, dayWidthPx,
                             rowSpan(dayColumnRows(periods))));
         }
+
+        // The day names span whatever there now is to scroll through, and the
+        // pending scroll of a pinch is applied only once the new widths have been
+        // measured -- scrolling before that would be clamped against the old
+        // range and land in the wrong place.
+        syncHeaderWidth();
+        applyPendingScroll();
+    }
+
+    /** Applies a scroll a pinch asked for, after the rebuild it belongs to. */
+    private void applyPendingScroll() {
+        final int target = pendingScrollX;
+        pendingScrollX = NO_SCROLL;
+        if (target == NO_SCROLL || horizontal == null) {
+            return;
+        }
+        horizontal.post(new Runnable() {
+            @Override
+            public void run() {
+                horizontal.scrollTo(target, 0);
+            }
+        });
     }
 
     /**
@@ -578,7 +1016,7 @@ public class WeekGridActivity extends Activity {
         if (clusters == null || clusters.isEmpty()) {
             return column;
         }
-        int columnWidth = dp(DAY_WIDTH_DP);
+        int columnWidth = dayWidthPx;
         for (WeekGridPlan.Cluster cluster : clusters) {
             int top = rowTop(cluster.startPeriod());
             int height = rowSpan(cluster.periodSpan());
@@ -601,10 +1039,17 @@ public class WeekGridActivity extends Activity {
         return rowTopPx[index];
     }
 
-    /** Height of {@code periods} rows, in pixels, using the same grid as rowTop. */
+    /**
+     * Height of {@code periods} rows, in pixels, using the same grid as rowTop.
+     *
+     * <p>Multiplied out rather than converted from dp a second time: {@link #rowTop}
+     * already carries the rounding of the current row height, and converting the
+     * total separately is how a block edge drifts a pixel away from the cell line
+     * further down the day.</p>
+     */
     private int rowSpan(int periods) {
         int last = Math.max(1, Math.min(ScheduleUtils.MAX_PERIODS, periods));
-        return UiKit.dp(this, last * (float) ROW_HEIGHT_DP);
+        return last * rowHeightPx;
     }
 
     /**
@@ -626,7 +1071,7 @@ public class WeekGridActivity extends Activity {
                 isToday = value.equals(today);
             }
             headerRow.addView(dayHeader(day, date, isToday, day >= 6),
-                    cellParamsPx(0, day - 1, 1, dp(DAY_WIDTH_DP), dp(HEADER_HEIGHT_DP)));
+                    cellParamsPx(0, day - 1, 1, dayWidthPx, dp(HEADER_HEIGHT_DP)));
         }
     }
 
@@ -911,7 +1356,7 @@ public class WeekGridActivity extends Activity {
         if (grid == null || horizontal == null) {
             return 0;
         }
-        int content = dp(GRID_PAD_DP) + DAY_COUNT * dp(DAY_WIDTH_DP);
+        int content = dp(GRID_PAD_DP) + DAY_COUNT * dayWidthPx;
         int viewport = horizontal.getWidth();
         return Math.max(0, content - viewport);
     }

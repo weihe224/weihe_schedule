@@ -2521,3 +2521,92 @@ API 26 与 API 34 上的权限弹窗、SAF 选择器与状态栏。**完整表�
 - **Release APK**：866 KB `app-release-unsigned.apk`，**未签名、装不上**（`release {}` 无 `signingConfig`）。
 - 因 `minifyEnabled false` 两边一致，Debug 包与 Release 行为相同。
 - **换签名必须卸载重装，而卸载会清空课表** → 已要求用户先「导出备份」。
+
+---
+
+## Q. 追加记录 — 2026-10-16：课表总览的自适应宽度与双指缩放
+
+### Q-1 需求
+
+「课表总览」默认把周一至周日七列完整显示在手机可用宽度内，并加双指缩放与缩放按钮，
+让用户能放大看清课名。**不重新设计课表 UI**，保留卡片风格/颜色/文字规则/交互。
+
+### Q-2 先做的事：确认回退已完成
+
+任务开始前先查 `git status` / `git diff` / `git log`：分支 `main`、HEAD `0ef0f82`、
+工作区干净（只有既有的未跟踪项 `.workbuddy-ai/`、`app/release/`）、无暂存、无 stash。
+`WeekGridActivity.java` 是 961 行的原实现（`DAY_WIDTH_DP = 118`、`HorizontalScrollView` 都在）。
+→ 上一次紧凑化改造确已完全回退，可以直接在其上开发，无需保护其他未提交改动。
+
+### Q-3 定位：改的是哪一层
+
+课表用 **View 布局**（`GridLayout` + `FrameLayout` + `TextView`），不是 Canvas 自绘。
+所以缩放有两条路：对成品做变换，或按新尺寸真实重排。**选了后者**：
+
+- 变换（`setScaleX`）在放大时文字是拉伸的，糊；而「放大是为了看清课名」，糊就白放了。
+- 真实重排后文字按最终字号绘制，且**触点命中与视觉天然一致**（没有变换需要反算）。
+
+代价是缩放期间要重建视图，用 `postOnAnimation` 把一帧内的多次 `onScale` 合并成一次重建。
+
+### Q-4 改动清单
+
+| 文件 | 改动 |
+|---|---|
+| `app/src/main/java/com/weihe/schedule/rule/GridZoom.java` | **新增**。纯几何：缩放范围/步进、按视口算列宽、按缩放算列宽与行高、是否需要横滚 |
+| `app/src/test/java/com/weihe/schedule/rule/GridZoomTest.java` | **新增** 18 项 |
+| `app/src/main/res/drawable/ic_remove.xml` | **新增**，缩小图标（与 `ic_add` 同款字形） |
+| `app/src/main/java/com/weihe/schedule/WeekGridActivity.java` | 列宽/行高改为视口驱动；`ScaleGestureDetector`；缩放按钮胶囊 `[−] [适应] [+]` |
+
+> **2026-10-16 追加修改（用户要求）**：删掉「整表」按钮，
+> `GridZoom.MIN` 由 `0.6` 改为 `= FIT`（1.0），同时删除 `zoomToFitPeriods()` 及其 4 项测试。
+> 理由：下限就是「适应屏幕」，再小没有任何可看的东西 —— 七列已经铺满宽度，
+> 更小只会让行矮到读不动课名。控件只剩 `[−] [适应] [+]`，「缩小」按到底也只是回到七天同屏。
+
+**未动**：数据格式、模型、其他规则层文件、配色常量、卡片内容与字体、点击行为、
+提醒、导入、备份恢复、单周课表的数据与周次逻辑。
+
+### Q-5 关键实现点（给下一轮的坑）
+
+1. `ScaleGestureDetector` **必须挂在 Activity 的 `dispatchTouchEvent`**。挂在网格上时，
+   某个消费了 DOWN 的课程块或 ScrollView 会把后续事件吃掉，检测器永远收不到第二根手指。
+2. 双指落下时 `requestDisallowInterceptTouchEvent(true)` 阻止两个 ScrollView 抢手势
+   （框架在下一个 DOWN 自动清标志，所以单指拖动不受影响）；手势结束补发 `ACTION_CANCEL`，
+   否则最后一根手指抬起会被当成点击、误开课程。
+3. **视口宽度用「屏宽 − 节次栏」估算**，不要用视口自身去算节次栏宽度 —— 那是个环。
+   首帧用估算值，`OnLayoutChangeListener` 拿到实测值后重算，守卫是宽度真的变了。
+4. `rowSpan()` 由 `dp(n * 行高)` 改成 `n * rowHeightPx`。原来的写法在行高变化后会与
+   `rowTop()` 的取整不一致，让块边缘相对格线漂移。
+5. 表头行宽 = 视口 + `maxHorizontalScroll()`，**缩放后要重算**（放大后能滚动的范围变大了），
+   否则左滑时后面的星期会被裁掉。
+
+### Q-6 门禁与设备验证
+
+```
+gradlew.bat -Dorg.gradle.vfs.watch=false --rerun-tasks testDebugUnitTest assembleDebug lintDebug
+```
+
+- **1017 项 / 0 失败 / 0 错误 / 0 跳过**（999 + 18 新增）
+- `app-debug.apk` **1,167,008 字节**；lint **0 errors, 2 warnings**（仅既有 `IconXmlAndPng`）
+
+模拟器 `emulator-5554`（1080×2424 @420）实测：
+
+| 项 | 结果 |
+|---|---|
+| 默认七天同屏 | ✅ 列头 x 边界 140/274/408/542/676/810/944/1078 → 正好铺满 1080px |
+| 放大 ×4 | ✅ 列宽 134→322px（1.25⁴），显示 3 天，卡片恢复完整三行 |
+| 再连按缩小 ×8 | ✅ **停在 134px × 7、七天同屏，不会比「适应屏幕」更小** |
+| 缩放后点课程 | ✅ 命中准确，打开对应课程详情 |
+| 单周课表 / 上下一周 / 回到本周 / 模式切换 | ✅ 全部正常 |
+
+### Q-7 未验证与已知问题
+
+1. **双指捏合手势本身没在设备上真跑过。** `adb root` 在生产版模拟器上不可用
+   （`adbd cannot run as root in production builds`），无法用 `sendevent` 注入两指事件。
+   按钮走的是同一条几何路径（已实测），但**手势识别本身需要用户手测**。
+2. **默认（适应宽度）下课名会被截断**：411dp 屏每列约 51dp，中文一行只放 3–4 字；
+   两门课重叠共用一列时每道约 25dp，名字被截到 1 个字。放大即可读全。
+   这是「七天同屏」的必然结果，不是实现缺陷。若要默认就好读，需让**卡片文字随列宽自适应**
+   （窄列只显示课名），但那会改到「文字规则」，本轮按要求未动。
+3. 极小屏、横屏、平板未验证。缩放倍数未持久化（有意）。
+4. **纵向一定会滚动**：行高 = 54dp × 缩放，已删除「整表」这种压矮行高的档位。
+   13 节的数据在默认比例下末两节需滚动可见。
