@@ -97,8 +97,25 @@ public class WeekGridActivity extends Activity {
     private static final int LANE_GAP_DP = 2;
     /** Inset around the grid, so the first cell does not touch the screen edge. */
     private static final int GRID_PAD_DP = 6;
-    /** Room under the last row for the floating button to sit over. */
-    private static final int FAB_CLEARANCE_DP = 78;
+
+    /**
+     * Room under the last row for the floating actions to sit over.
+     *
+     * <p>Both of them, stacked: the "back to this week" button and the add button
+     * below it. It has to cover the whole stack, or the lower one would come to
+     * rest on top of the last period once the grid is scrolled to the end. This is
+     * padding on the scrollable content, so the last lessons stay reachable by
+     * scrolling -- nothing is hidden, and no column, row height or scale is given
+     * up to make the room.</p>
+     *
+     * <p>Sized from the stack itself rather than guessed: the bottom margin, the
+     * two buttons and the gap between them come to
+     * {@code SPACE_M + FAB_SIZE + ACTION_GAP_DP + FAB_SIZE}
+     * = 12 + 56 + 8 + 56 = 132dp, and this is that plus a small margin.</p>
+     */
+    private static final int ACTION_CLEARANCE_DP = 136;
+    /** Space between the two floating actions. */
+    private static final int ACTION_GAP_DP = 8;
 
     /**
      * Rows drawn when nothing needs more.
@@ -123,7 +140,15 @@ public class WeekGridActivity extends Activity {
     private TextView subtitle;
     private TextView semesterChip;
     private TextView weekChip;
-    private TextView todayChip;
+    /**
+     * The floating "back to this week" button.
+     *
+     * <p>An ordinary {@link UiKit#fab}, so it is the same circle, the same size,
+     * the same fill, the same shadow and the same ripple as the add button below
+     * it -- only the icon inside differs. The label is gone; the icon carries the
+     * meaning and the accessible name is set on the button itself.</p>
+     */
+    private android.widget.ImageButton todayFab;
     private LinearLayout weekNav;
     private GridLayout grid;
     /** Day names, pinned above the body and slid sideways with it. */
@@ -330,7 +355,7 @@ public class WeekGridActivity extends Activity {
         labelColumn.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
         labelColumn.setUseDefaultMargins(false);
         labelColumn.setBackgroundColor(Palette.SURFACE);
-        labelColumn.setPadding(dp(GRID_PAD_DP), 0, 0, dp(GRID_PAD_DP + FAB_CLEARANCE_DP));
+        labelColumn.setPadding(dp(GRID_PAD_DP), 0, 0, dp(GRID_PAD_DP + ACTION_CLEARANCE_DP));
 
         // Only the body scrolls; everything else follows it.
         //
@@ -352,7 +377,7 @@ public class WeekGridActivity extends Activity {
         grid.setRowCount(MIN_ROWS + 1);
         grid.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
         grid.setUseDefaultMargins(false);
-        grid.setPadding(dp(GRID_PAD_DP), 0, 0, dp(GRID_PAD_DP + FAB_CLEARANCE_DP));
+        grid.setPadding(dp(GRID_PAD_DP), 0, 0, dp(GRID_PAD_DP + ACTION_CLEARANCE_DP));
         grid.setBackgroundColor(Palette.SURFACE);
         horizontal.addView(grid, new HorizontalScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -455,20 +480,39 @@ public class WeekGridActivity extends Activity {
         root.addView(bodyRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        // Adding a course belongs here: this is the screen where you can see
-        // what is missing from the week.
+        // One floating group rather than two buttons placed against the corner
+        // independently: stacking them in a single column with a fixed gap is what
+        // keeps them aligned and apart however wide either turns out to be. Both
+        // are plain UiKit.fab calls, so they come out the same circle at the same
+        // size -- the only difference between them is the icon inside.
+        todayFab = UiKit.fab(this, R.drawable.ic_today,
+                "\u56DE\u5230\u672C\u5468", view -> backToThisWeek());
         ImageButton add = UiKit.fab(this, R.drawable.ic_add,
                 "\u6DFB\u52A0\u8BFE\u7A0B", view -> openEditor(null));
-        FrameLayout.LayoutParams fabParams = new FrameLayout.LayoutParams(
-                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE),
-                Gravity.END | Gravity.BOTTOM);
-        fabParams.setMargins(0, 0, dp(UiTokens.SPACE_L + 2),
-                dp(UiTokens.SPACE_XL - 2));
-        frame.addView(add, fabParams);
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
+                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE));
+        addParams.topMargin = dp(ACTION_GAP_DP);
 
-        // The zoom controls share the band the grid already reserves under its
-        // last row -- the floating button sits at the other end of it -- so they
-        // cover no lesson and cost the timetable no height.
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.VERTICAL);
+        actions.setGravity(Gravity.END);
+        actions.setClipChildren(false);
+        actions.setClipToPadding(false);
+        actions.addView(todayFab, new LinearLayout.LayoutParams(
+                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE)));
+        actions.addView(add, addParams);
+
+        FrameLayout.LayoutParams actionParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.END | Gravity.BOTTOM);
+        actionParams.setMargins(0, 0, dp(UiTokens.SPACE_M), dp(UiTokens.SPACE_M));
+        frame.addView(actions, actionParams);
+
+        // The zoom controls sit at the other end of the same band, so the two
+        // groups share the room the grid already reserves and neither covers a
+        // lesson. The buttons are a fixed 56dp each and the band is sized for the
+        // pair of them, so their touch areas cannot collide with these.
         FrameLayout.LayoutParams zoomParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -476,6 +520,24 @@ public class WeekGridActivity extends Activity {
         zoomParams.setMargins(dp(UiTokens.SPACE_L), 0, 0, dp(UiTokens.SPACE_L));
         frame.addView(zoomControls(), zoomParams);
         return frame;
+    }
+
+    /**
+     * Switches the single-week view to the week today falls in.
+     *
+     * <p>The week comes from {@link ScheduleUtils#currentWeek}, which is the same
+     * arithmetic the header readout and the day strip use -- the semester week, not
+     * the calendar's own week number. The mode is switched too, because "this week"
+     * only means anything in the single-week view, and the render is what moves the
+     * data: without it the title would change and the grid would not.</p>
+     */
+    private void backToThisWeek() {
+        boolean changed = !wholeSemester || selectedWeek != currentWeek;
+        wholeSemester = false;
+        selectedWeek = currentWeek;
+        if (changed) {
+            render();
+        }
     }
 
     /**
@@ -621,28 +683,19 @@ public class WeekGridActivity extends Activity {
         bar.setPadding(dp(4), dp(4), dp(4), dp(4));
         bar.setBackground(UiKit.fill(this, Palette.SURFACE_CONTAINER_HIGH, UiTokens.RADIUS_M));
 
+        // Two switches and nothing else. "Back to this week" used to sit here as a
+        // third, which is what crowded the top of the screen; it is a floating
+        // action now, next to the button it belongs with.
         semesterChip = modeChip("\u603B\u8BFE\u8868");
         weekChip = modeChip("\u5355\u5468\u8BFE\u8868");
-        todayChip = modeChip("\u56DE\u5230\u672C\u5468");
         semesterChip.setOnClickListener(view -> setWholeSemester(true));
         weekChip.setOnClickListener(view -> setWholeSemester(false));
-        todayChip.setOnClickListener(view -> {
-            setWholeSemester(false);
-            if (selectedWeek != currentWeek) {
-                selectedWeek = currentWeek;
-                render();
-            }
-        });
 
         bar.addView(semesterChip, new LinearLayout.LayoutParams(0, dp(38), 1f));
         LinearLayout.LayoutParams weekParams = new LinearLayout.LayoutParams(
                 0, dp(38), 1f);
         weekParams.leftMargin = dp(4);
         bar.addView(weekChip, weekParams);
-        LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
-        todayParams.leftMargin = dp(4);
-        bar.addView(todayChip, todayParams);
         wrap.addView(bar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
         return wrap;
@@ -891,9 +944,11 @@ public class WeekGridActivity extends Activity {
     private void render() {
         styleChip(semesterChip, wholeSemester);
         styleChip(weekChip, !wholeSemester);
-        styleTodayChip();
+        styleTodayButton();
         weekNav.setVisibility(wholeSemester ? View.GONE : View.VISIBLE);
-        todayChip.setVisibility(wholeSemester ? View.GONE : View.VISIBLE);
+        // Hidden with the week stepper: the whole-semester view has no week to be
+        // "back" to. The add button takes the corner on its own in that mode.
+        todayFab.setVisibility(wholeSemester ? View.GONE : View.VISIBLE);
 
         List<Course> shown = shownCourses();
 
@@ -1555,12 +1610,33 @@ public class WeekGridActivity extends Activity {
         chip.setElevation(selected ? dp(1) : 0);
     }
 
-    private void styleTodayChip() {
-        boolean current = selectedWeek == currentWeek;
-        todayChip.setTextColor(current ? Palette.ON_SURFACE_VARIANT : Palette.ON_ACCENT_CONTAINER);
-        todayChip.setBackground(UiKit.fill(this,
-                current ? Color.TRANSPARENT : Palette.ACCENT_CONTAINER, 8));
-        todayChip.setEnabled(!current);
+    /**
+     * Restyles the floating "back to this week" button for the state it is in.
+     *
+     * <p>Three states, because there are three things to say: there is no week to
+     * return to in the whole-semester view; the view is already on this week; or the
+     * user has wandered off and the button is the way back.</p>
+     *
+     * <p>When it is live it is left exactly as {@link UiKit#fab} built it -- the
+     * filled brand circle, the white icon and its shadow, the same as the add
+     * button below -- so the two read as one family. The two states where pressing
+     * it would do nothing are flattened and greyed instead, which is the only
+     * thing that distinguishes them: the circle, the size and the position never
+     * change, so the button does not move under the user's thumb.</p>
+     */
+    private void styleTodayButton() {
+        boolean live = !wholeSemester && selectedWeek != currentWeek;
+        if (todayFab == null) {
+            return;
+        }
+        todayFab.setEnabled(live);
+        todayFab.setClickable(live);
+        todayFab.setColorFilter(live ? Palette.ON_PRIMARY : Palette.ON_SURFACE_VARIANT);
+        todayFab.setBackground(UiKit.fill(this,
+                live ? Palette.PRIMARY : Palette.SURFACE_CONTAINER_HIGH,
+                UiTokens.FAB_SIZE / 2f));
+        UiKit.elevate(todayFab, UiTokens.FAB_SIZE / 2f,
+                live ? UiTokens.ELEVATION_HIGH : UiTokens.ELEVATION_NONE);
     }
 
     private int dp(float value) {

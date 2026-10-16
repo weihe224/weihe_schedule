@@ -59,6 +59,21 @@ import com.weihe.schedule.ui.UiTokens;
 public class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_TIMETABLE = 1001;
 
+    /** Space between the two floating buttons. */
+    private static final int FAB_GAP_DP = 10;
+
+    /**
+     * Room under the last card for the floating pair to sit over.
+     *
+     * <p>Both of them, stacked: the bottom margin, the overview button, the gap and
+     * the "back to today" button come to
+     * {@code SPACE_L + FAB_SIZE + FAB_GAP_DP + FAB_SIZE}
+     * = 16 + 56 + 10 + 56 = 138dp, and this is that plus a small margin. It is
+     * padding on the scrolling content, so the last card stays reachable -- no card
+     * is hidden and nothing else on the screen gives up room for it.</p>
+     */
+    private static final int FAB_CLEARANCE_DP = 150;
+
     private CourseRepository repository;
     private LocalDate semesterStart;
     private int currentWeek;
@@ -81,8 +96,8 @@ public class MainActivity extends Activity {
     private TextView semesterChip;
     private TextView dayTitle;
     private TextView dayCountPill;
-    private View todayChip;
-    private View backToThisWeek;
+    /** The floating "back to today" button, above the overview button. */
+    private android.widget.ImageButton todayFab;
 
     @Override
     @android.annotation.SuppressLint("ClickableViewAccessibility")
@@ -181,11 +196,10 @@ public class MainActivity extends Activity {
         scroll.setClipToPadding(false);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
-        // The bottom padding clears the floating buttons, so the last course card
-        // can always be scrolled out from under them.
+        // The bottom padding clears the floating pair, so the last course card can
+        // always be scrolled out from under them.
         body.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_L),
-                dp(UiTokens.SPACE_L),
-                dp(UiTokens.FAB_SIZE + UiTokens.SPACE_XXL));
+                dp(UiTokens.SPACE_L), dp(FAB_CLEARANCE_DP));
 
         body.addView(createWeekCard());
         body.addView(createDayBar());
@@ -208,29 +222,47 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * The one floating button: the timetable overview.
+     * The floating pair: back to today, and the timetable overview.
      *
-     * <p>There used to be two, and the second was a calendar that jumped back to
-     * today. It is gone, for three reasons. Its glyph was the same calendar as the
-     * brand mark in the bar above it, so the screen showed one picture meaning two
-     * things. It sat over the bottom of the course list. And it duplicated a
-     * control the date header now carries, where "back to today" can sit beside the
-     * date it returns to instead of in a corner away from it. Nothing it did has
-     * been lost: the day header calls the same method.</p>
+     * <p>The calendar button was once removed from here, for three reasons -- its
+     * glyph was the same calendar as the brand mark above it, it sat over the
+     * bottom of the course list, and it duplicated the control the date header
+     * carried. It is back, because a return action belongs with the other floating
+     * action rather than inside the header it is undoing, and the reasons it left
+     * are each answered rather than ignored: it is one of a matched pair now
+     * instead of a lone circle, the list reserves room for both of them, and the
+     * header no longer carries a second copy of it.</p>
      *
-     * <p>The overview stays floating because it is the way to the whole term from
-     * any week, and it is the only control on the screen that is about the
-     * timetable rather than about the day being shown.</p>
+     * <p>Both are plain {@link UiKit#fab} calls, so the circle, the size, the
+     * colour and the shadow come from one piece of code and the only difference
+     * between them is the icon. They sit in one column, right-aligned, so neither
+     * can drift into the other however wide the screen is.</p>
      */
     private View createFloatingActions() {
+        todayFab = UiKit.fab(this, R.drawable.ic_today,
+                "\u56DE\u5230\u4ECA\u5929", view -> goToToday());
         ImageButton overview = UiKit.fab(this, R.drawable.ic_grid,
                 "\u8BFE\u8868\u603B\u89C8", view -> openOverview());
+        LinearLayout.LayoutParams overviewParams = new LinearLayout.LayoutParams(
+                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE));
+        overviewParams.topMargin = dp(FAB_GAP_DP);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.VERTICAL);
+        actions.setGravity(Gravity.END);
+        actions.setClipChildren(false);
+        actions.setClipToPadding(false);
+        actions.addView(todayFab, new LinearLayout.LayoutParams(
+                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE)));
+        actions.addView(overview, overviewParams);
+
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                dp(UiTokens.FAB_SIZE), dp(UiTokens.FAB_SIZE),
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.END | Gravity.BOTTOM);
         params.setMargins(0, 0, dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_L));
-        overview.setLayoutParams(params);
-        return overview;
+        actions.setLayoutParams(params);
+        return actions;
     }
 
     /**
@@ -267,21 +299,19 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Keeps the two "get back" controls in step with what is on screen.
+     * Keeps the "get back" controls in step with what is on screen.
      *
      * <p>Called from every path that can change the selected day or week, which is
      * the point of having it in one place: when it lived inline in
      * {@link #refreshAll()} the day-change path silently skipped it.</p>
      */
     private void syncReturnControls() {
-        if (todayChip != null) {
+        if (todayFab != null) {
             // Hidden while the screen already shows today: a control that would do
-            // nothing is noise, and the day header is already reading "today".
-            todayChip.setVisibility(isShowingToday() ? View.GONE : View.VISIBLE);
-        }
-        if (backToThisWeek != null) {
-            backToThisWeek.setVisibility(
-                    selectedWeek == currentWeek ? View.GONE : View.VISIBLE);
+            // nothing is noise, and the date header is already reading "today".
+            // The container is bottom-aligned, so hiding this one does not move the
+            // overview button below it.
+            todayFab.setVisibility(isShowingToday() ? View.GONE : View.VISIBLE);
         }
     }
 
@@ -627,32 +657,19 @@ public class MainActivity extends Activity {
         pillParams.leftMargin = dp(UiTokens.SPACE_S);
         card.addView(parityPill, pillParams);
 
-        backToThisWeek = navChip("\u56DE\u5230\u672C\u5468", view -> {
-            motionDirection = Integer.signum(currentWeek - selectedWeek);
-            selectedWeek = currentWeek;
-            // The weekday deliberately stays where it is. This chip says "this
-            // week", and the weekday being looked at is the one worth seeing in
-            // it: week 12's Wednesday becomes week 6's Wednesday, which is the
-            // comparison the chip is for. It used to move the day to today as
-            // well, which made it the same action as the "back to today" button
-            // under a different name, and left no way to reach the current
-            // week's same weekday at all.
-            refreshAll();
-            UiKit.swapIn(courseContainer, motionDirection);
-        });
-        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT));
-        backParams.leftMargin = dp(UiTokens.SPACE_S);
-        card.addView(backToThisWeek, backParams);
-
+        // There was a "back to this week" chip here, between the week label and the
+        // steppers. It is gone: the card now reads as one row -- which week, its
+        // dates, then the two arrows that move through them -- instead of three
+        // controls competing for the same line. The way back to the current week is
+        // the floating calendar button in the corner, which returns to this week and
+        // today's weekday together; the old chip deliberately kept the weekday where
+        // it was, and that distinction is the one thing this removal gives up.
         card.addView(stepButton(R.drawable.ic_chevron_left, "\u4E0A\u4E00\u5468",
                 view -> stepWeek(-1)));
         card.addView(stepButton(R.drawable.ic_chevron_right, "\u4E0B\u4E00\u5468",
                 view -> stepWeek(1)));
         return card;
     }
-
-    /** Previous / next week, plus a way back to the current one. */
 
     /** A round icon button for stepping one week, matching the chip height. */
     private View stepButton(int icon, String description,
@@ -665,20 +682,6 @@ public class MainActivity extends Activity {
                 button.getLayoutParams();
         params.leftMargin = dp(UiTokens.SPACE_S);
         return button;
-    }
-
-    private TextView navChip(String label, View.OnClickListener listener) {
-        TextView chip = UiKit.text(this, label, UiTokens.Type.LABEL_LARGE,
-                Palette.PRIMARY, Typeface.BOLD);
-        chip.setGravity(Gravity.CENTER);
-        chip.setPadding(dp(UiTokens.SPACE_M), 0, dp(UiTokens.SPACE_M), 0);
-        UiKit.setRoundedBackground(chip, Palette.PRIMARY_CONTAINER,
-                UiTokens.RADIUS_FULL, Color.TRANSPARENT, 0f);
-        chip.setOnClickListener(listener);
-        // The chip's own feedback, so a text control does not feel inert next to
-        // the icon buttons either side of it.
-        UiKit.ripple(chip, UiTokens.RADIUS_FULL, false);
-        return chip;
     }
 
     private View createDayBar() {
@@ -718,15 +721,9 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         pillParams.leftMargin = dp(UiTokens.SPACE_S);
         dayHeader.addView(dayCountPill, pillParams);
-        // The way back to today, beside the date it returns to rather than in a
-        // corner: the header is where the screen says which day it is showing, so
-        // it is where "not this one" can be undone. Hidden while this is today.
-        todayChip = navChip("\u56DE\u5230\u4ECA\u5929", view -> goToToday());
-        todayChip.setContentDescription("\u56DE\u5230\u4ECA\u5929");
-        LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(UiTokens.CHIP_HEIGHT));
-        todayParams.leftMargin = dp(UiTokens.SPACE_S);
-        dayHeader.addView(todayChip, todayParams);
+        // The way back to today is a floating button now, not a chip here. It used
+        // to sit beside the date it returns to, which read well but crowded the
+        // header and gave the same action two homes on one screen.
         LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
