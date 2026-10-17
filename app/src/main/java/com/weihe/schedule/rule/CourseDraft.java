@@ -56,6 +56,7 @@ public final class CourseDraft {
     private final int parityIndex;
     private final int scheduleIndex;
     private final int color;
+    private final String note;
 
     /**
      * @param name              typed course name, or null when not carried
@@ -69,10 +70,12 @@ public final class CourseDraft {
      * @param parityIndex       every/odd/even radio position, or {@link #NO_INDEX}
      * @param scheduleIndex     bell-schedule spinner position, or {@link #NO_INDEX}
      * @param color             chosen colour, or {@link #NO_COLOR}
+     * @param note              typed course note, or null when not carried
      */
     public CourseDraft(String name, String teacher, String location,
             String startWeek, String endWeek, int dayIndex, int startPeriodIndex,
-            int endPeriodIndex, int parityIndex, int scheduleIndex, int color) {
+            int endPeriodIndex, int parityIndex, int scheduleIndex, int color,
+            String note) {
         this.name = name;
         this.teacher = teacher;
         this.location = location;
@@ -84,6 +87,7 @@ public final class CourseDraft {
         this.parityIndex = parityIndex;
         this.scheduleIndex = scheduleIndex;
         this.color = color;
+        this.note = note;
     }
 
     /**
@@ -154,5 +158,16 @@ public final class CourseDraft {
     /** Whether the state carried a colour at all. */
     public boolean hasColor() {
         return color != NO_COLOR;
+    }
+
+    /**
+     * Typed course note, or null when the state did not carry one.
+     *
+     * <p>Carried like the other text fields, and for the same reason: it is one of
+     * the things the form is holding, so a rotation that lost it would leave a
+     * form whose fields came back from two different moments.</p>
+     */
+    public String note() {
+        return note;
     }
 }

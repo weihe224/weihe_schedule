@@ -1490,3 +1490,205 @@ gradlew.bat -Dorg.gradle.vfs.watch=false --rerun-tasks testDebugUnitTest assembl
 改动：`MainActivity.java`、`WeekGridActivity.java`（前几轮遗留的未提交改动）、
 本文件、`AGENT_HANDOFF_ARCHIVE.md`。未跟踪：`.workbuddy-ai/`、`app/release/`。
 **Agent 未 commit / 未 push。**
+
+---
+
+## T. 2026-10-17 课程共享备注（当前状态）
+
+> 与 A–S 各节冲突时**以本节为准**。逐轮细节见 `AGENT_HANDOFF_ARCHIVE.md` 的 **Y 节**。
+
+### T-1. 课程身份：复用既有规则，不另造一套
+
+**同一门课 = 同一学期内、去掉首尾空格后名称完全相同** —— 就是 `CourseColorSync.sameCourseAs`
+已经在用的那条规则（`CourseColorSync.normalize`）。星期、节次、周次、教室、教师**刻意不参与**
+匹配，因为那些差异正是同一门课被拆成多条记录的原因。仓库的 `getCourses()` 只返回当前学期，
+所以跨学期天然隔离，不需要额外判断。
+
+### T-2. 备注存在哪：每条记录上，由仓库一次写全组
+
+`Course.note` 是记录字段（和 `color` 完全一样的做法）。仓库新增两个方法：
+
+| 方法 | 作用 |
+|---|---|
+| `noteOf(Course)` | 读这门课的备注：自己的非空就用，否则取同名兄弟的第一个非空 |
+| `saveCourse(Course, String note)` | **一次提交**写入记录 + 把备注同步到所有同名安排 |
+
+**为什么不做"按课程名建一张备注表"**：改名会把一门课拆成两组，按名字建的表会让刚改名的
+那条记录指向一个已不存在的键，**备注当场丢失**。存在记录上则改名时备注跟着走，
+留在原处的安排保留自己那份，谁都不会静默丢东西。这也让备份、删除、学期隔离
+全部无需特殊处理。
+
+同步时只动 `note`，**其余字段一个不碰** —— 改备注绝不会移动一节课。
+
+### T-3. 保存语义（防误清空）
+
+`CourseNotes.noteToStore(typed, groupNote, isNew)`：
+
+- 字段有内容 → 存它（首尾空白裁掉，**中间换行保留**）
+- 字段为空 **且是编辑已有记录** → 存空（用户是看着预填内容主动清掉的）
+- 字段为空 **且是新建记录** → 若该课已有备注则**沿用**（新安排打开时字段本来就是空的，
+  把这份"空"写下去等于抹掉用户没看见的备注）
+
+### T-4. 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `model/Course.java` | 新增 `note` 字段 + `copy()` 带上 |
+| `rule/CourseNotes.java` | **新增**（纯逻辑）：`isBlank` / `groupNote` / `noteToStore` |
+| `data/CourseRepository.java` | 新增 `noteOf` / `saveCourse`；`toJson`/`fromJson` 读写 `note`；新增对 `rule` 的依赖（方向正确：rule 保持纯净） |
+| `data/BackupCodec.java` | `courseToJson` / 读取 补 `note`（**与仓库的映射必须逐字段一致**） |
+| `rule/CourseDraft.java` | 新增 `note`（表单内容的一部分，旋转后不丢） |
+| `EditCourseActivity.java` | 新增「课程备注」多行输入区；预填 `noteOf`；草稿存取；保存改走 `saveCourse` |
+| `CourseDetailActivity.java` | 新增「课程备注」卡片（有备注才显示） |
+| `rule/CourseNotesTest.java` | **新增** 11 项 |
+| `data/CourseNoteStorageTest.java` | **新增** 15 项 |
+| `rule/CourseDraftTest.java` | 9 处构造补 `null` 参数 |
+
+**存储兼容**：`note` **仅在非空时写入**。所以没有备注的课程存出来的 JSON 与改动前逐字节相同，
+旧备份（没有 `note` 键）照常读取为空，不会被拒绝。
+
+### T-5. 删除与备份
+
+- 删一条安排 → 备注在记录上，其他安排不受影响
+- 删最后一条 → 备注随记录一起消失，**无残留元数据**（因为没有独立的元数据）
+- 备份导出/恢复 → `note` 随课程字段走，同名安排恢复后仍是同一组
+- 旧备份（无 `note`）→ 恢复为空备注，不报错
+
+### T-6. 门禁（全绿）
+
+| 项 | 结果 |
+|---|---|
+| 单元测试 | **1091 项 / 0 失败 / 0 错误 / 0 跳过**（上一轮 1065，+26） |
+| `assembleDebug` | `app-debug.apk` **1,171,940 字节** |
+| `lintDebug` | **0 errors, 2 warnings**（仅既有 `IconXmlAndPng`） |
+
+### T-7. 设备验证（模拟器 `emulator-5554`，**只用 `install -r`**）
+
+| 验收项 | 结果 |
+|---|---|
+| 编辑页有独立多行备注区 | ✅ 「课程备注」+ 提示「记录作业、考试安排、学习资料等」，3 行高 |
+| 键盘弹出时仍可保存 | ✅ 输入时「保存课程」仍在键盘上方可见 |
+| 换行能输入 | ✅ dump 中为 `hw1－ch3&#10;final－nov20`（`&#10;` 即换行） |
+| 详情页展示备注 | ✅ 「课程备注」卡片显示两行原文 |
+| **同课程另一安排共享** | ✅ 周四 1-2 节写入 → 周一 2-3 节（不同星期/节次/教室）详情页读到同样内容 |
+| 重启后仍在 | ✅ `force-stop` + 重启 + 重新进入，备注仍在 |
+| 编辑页预填 | ✅ 打开编辑页时备注框已填好 |
+| 课表卡片不含备注 | ✅ 总课表、单周课表全文搜索 0 处 |
+| 清空备注 | ✅ 清空保存后，两条安排的备注卡片都消失 |
+| 其他功能 | ✅ 23 门课程、周次、颜色、叠放均正常 |
+
+### T-8. 未验证 / 限制
+
+1. **中文备注没有在设备上实打实输入过** —— `adb shell input text` 无法输入非 ASCII，
+   设备上验的是 ASCII + 换行；中文、标点、多行的存取由 `CourseNoteStorageTest`
+   的中文/特殊字符用例覆盖。
+2. 极小屏、横屏、平板未验证。
+3. 复制课程（`复制课程`）会复制备注——因为备注是记录字段。这是符合"备注属于课程"的预期，
+   但没有单独做设备验证。
+
+### T-9. 工作区状态
+
+改动：`model/Course.java`、`rule/CourseNotes.java`(新)、`data/CourseRepository.java`、
+`data/BackupCodec.java`、`rule/CourseDraft.java`、`EditCourseActivity.java`、
+`CourseDetailActivity.java`、3 个测试类、本文件、`AGENT_HANDOFF_ARCHIVE.md`。
+未跟踪：`.workbuddy-ai/`、`app/release/`。**Agent 未 commit / 未 push。**
+
+---
+
+## U. 2026-10-18 课程详情页备注区常显 + 一键定位到备注框（当前状态）
+
+> 与 A–T 各节冲突时**以本节为准**。逐轮细节见 `AGENT_HANDOFF_ARCHIVE.md` 的 **Z 节**。
+> **只改展示与交互，备注的共享/持久化/备份逻辑一行未动**（见 T 节）。
+
+### U-1. 改了什么
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| 备注卡片是否显示 | **只有备注非空才显示** | **始终显示** |
+| 空备注 | 整块卡片不存在 | 标题 + 「添加备注」+ 「暂无备注」+ 提示 |
+| 有备注 | 标题 + 正文 | 标题 + 「编辑」+ 正文（换行保留） |
+| 进入编辑页 | 从表单顶部开始 | 点「添加备注」/「编辑」→ **直接滚到备注框、聚焦、弹键盘** |
+
+### U-2. 空状态与有备注状态
+
+两者共用一张卡片，**只有标题右侧的按钮和标题下方的内容不同**：
+
+```
+空：  课程备注                        添加备注
+      暂无备注
+      可记录作业、考试安排、学习资料等
+
+有：  课程备注                        编辑
+      <备注原文，保留换行>
+```
+
+- 入口用 `UiKit.textButton`（项目里最轻的按钮样式），**不用实心按钮** ——
+  这一屏唯一的主操作仍然是「编辑课程」
+- 空状态整卡约 130dp，不是大块留白；「暂无备注」用 `ON_SURFACE_VARIANT`，
+  提示用更小一号的 `LABEL_MEDIUM` + `OUTLINE`（编辑器里 hint 用的同一色）
+- 有备注时**不显示「暂无备注」**，也不显示提示语
+
+### U-3. 一键定位到备注框
+
+新增 `EditCourseActivity.EXTRA_FOCUS_NOTE`（只决定光标落在哪，不影响读写）：
+
+- `CourseDetailActivity.openEditor(true)` 带上它
+- `EditCourseActivity.focusNote()` 在 `formScroll.post(...)` 里：`requestFocus()` →
+  按**两者在窗口中的实际位置**算出滚动偏移（不是 `getTop()`，那是相对父容器的，
+  会被上方几个分区的高度带偏）→ `smoothScrollTo` → `showSoftInput`
+
+复用的是**同一个编辑页、同一个输入框、同一套保存逻辑**，没有新建备注专用界面。
+
+### U-4. 刷新与失败处理
+
+- 详情页 `onResume()` 本来就 `repository.reload()` + `render()`，
+  所以从编辑页返回会立刻显示新备注 —— 未新增任何刷新机制
+- 保存失败沿用既有路径：`commitSave` 里只有真写到仓库才提示成功，失败走原有错误处理
+- 取消（返回不保存）不会碰备注 —— 实测验证
+
+### U-5. 改了什么（文件）
+
+| 文件 | 改动 |
+|---|---|
+| `CourseDetailActivity.java` | 备注卡片改为常显并分两态；`openEditor(boolean focusNote)` |
+| `EditCourseActivity.java` | 新增 `EXTRA_FOCUS_NOTE`、`formScroll` 字段、`focusNote()` |
+
+**未动**：`Course.note`、`CourseNotes`、`CourseRepository.noteOf/saveCourse`、
+`BackupCodec`、`CourseDraft`、课表/缩放/叠放/颜色/周次/提醒/导入/备份。
+
+### U-6. 门禁（全绿）
+
+| 项 | 结果 |
+|---|---|
+| 单元测试 | **1091 项 / 0 失败 / 0 错误 / 0 跳过**（纯 UI 改动，未新增规则逻辑，测试数不变） |
+| `assembleDebug` | `app-debug.apk` **1,172,804 字节** |
+| `lintDebug` | **0 errors, 2 warnings**（仅既有 `IconXmlAndPng`） |
+
+### U-7. 设备验证（模拟器 `emulator-5554`，**只用 `install -r`**）
+
+| 验收项 | 结果 |
+|---|---|
+| 空备注仍显示备注区 | ✅ 「课程备注 / 添加备注 / 暂无备注 / 可记录…」四项齐全 |
+| 点「添加备注」直达备注框 | ✅ 进入编辑页即**已滚到备注框、EditText `focused=true`、键盘弹出** |
+| 保存后详情页立即刷新 | ✅ 两行备注立刻出现，「暂无备注」消失，出现「编辑」 |
+| 有备注时显示内容 + 编辑入口 | ✅ 换行保留（dump 中 `&#10;`） |
+| 取消编辑不覆盖 | ✅ 返回详情页备注原样 |
+| 清空后回到空状态 | ✅ 保存空备注后回到「暂无备注 + 添加备注」 |
+| 跨安排共享 | ✅ 周一 2-3 节写入 → 周四 1-2 节详情页同样内容 |
+| 重启后仍在 | ✅ `force-stop` 重启后仍在 |
+| 长/多行备注 | ✅ 两行正常换行，卡片高度自适应，无错位 |
+
+**清理**：验证用的测试备注已清空，设备数据恢复原状。
+
+### U-8. 未验证
+
+1. 本轮**没有**在设备上重新验证「不同课程备注互不覆盖」与「长备注（十几行）」——
+   前者是仓库同一段代码、上一轮已验并有单元测试覆盖；后者只验了两行。
+2. 极小屏、横屏、平板未验证。
+3. `adb` 无法输入中文，设备上验的是 ASCII + 换行；中文由单元测试覆盖。
+
+### U-9. 工作区状态
+
+改动：`CourseDetailActivity.java`、`EditCourseActivity.java`（含 T 节遗留的未提交改动）、
+本文件、`AGENT_HANDOFF_ARCHIVE.md`。未跟踪：`.workbuddy-ai/`、`app/release/`、
+`rule/CourseNotes.java`、两个新测试类。**Agent 未 commit / 未 push。**

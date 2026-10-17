@@ -42,6 +42,21 @@ public class Course implements Serializable {
     public String scheduleName = "";
 
     /**
+     * Free-text notes for the <em>course</em>, not for this arrangement of it.
+     *
+     * <p>A subject that meets twice a week is stored as two records, so a note
+     * kept on only one of them would be invisible from the other. It is stored on
+     * every record of the course and written to all of them at once -- exactly the
+     * way {@link #color} already works -- which means the note travels with a
+     * record when it is renamed or moved, and needs no separate table to keep in
+     * step with the timetable.</p>
+     *
+     * <p>Empty means "no note", which is also what every course written before
+     * this field existed reads back as.</p>
+     */
+    public String note = "";
+
+    /**
      * Clock span of this course, for example {@code 08:00 - 09:40}.
      *
      * <p>Derived, never stored: it depends on which bell schedule applies, which
@@ -68,6 +83,7 @@ public class Course implements Serializable {
         result.parity = parity;
         result.color = color;
         result.scheduleName = scheduleName;
+        result.note = note;
         result.timeRange = timeRange;
         return result;
     }

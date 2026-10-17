@@ -123,6 +123,10 @@ public class CourseDetailActivity extends Activity {
         body.addView(heroCard(detail));
         body.addView(spaced(factsCard(detail)));
         body.addView(spaced(whereCard(detail)));
+        // Read through the repository, not off this record: the note belongs to the
+        // course, so either arrangement of it shows the same text.
+        String note = repository.noteOf(course);
+        body.addView(spaced(noteCard(note)));
         body.addView(spaced(actionsCard(detail)));
     }
 
@@ -238,6 +242,62 @@ public class CourseDetailActivity extends Activity {
         return card;
     }
 
+    /**
+     * The course note, always on screen.
+     *
+     * <p>A card of its own rather than another row in the one above: a note is
+     * paragraphs, and the label-and-value layout would give it a fixed 76dp gutter
+     * and a column that wraps every few characters.</p>
+     *
+     * <p>It used to be added only when there was something to show, on the grounds
+     * that a heading over an empty card is a heading about nothing. That reasoning
+     * missed the point: a user who has never written a note had no way to learn the
+     * app holds one at all, and the only route to the field was to open the editor
+     * for an unrelated reason and scroll to the bottom. The heading stays now, and
+     * only what sits under it changes -- a short empty state with the way in, or the
+     * text with the way to change it.</p>
+     *
+     * <p>The text is shown exactly as stored, newlines included, because the line
+     * breaks are the author's and are usually the point.</p>
+     */
+    private View noteCard(String note) {
+        LinearLayout card = card();
+        boolean hasNote = note != null && !note.isEmpty();
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(section("\u8BFE\u7A0B\u5907\u6CE8"),
+                new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        // A text button, not a filled one. Writing a note is a side errand on this
+        // screen, and the one filled button on it is still 编辑课程.
+        header.addView(UiKit.textButton(this,
+                hasNote ? "\u7F16\u8F91" : "\u6DFB\u52A0\u5907\u6CE8",
+                Palette.PRIMARY, view -> openEditor(true)));
+        card.addView(header);
+
+        if (hasNote) {
+            TextView text = UiKit.text(this, note, UiTokens.Type.BODY_MEDIUM,
+                    Palette.ON_SURFACE, false);
+            text.setLineSpacing(dp(3), 1f);
+            card.addView(text);
+            return card;
+        }
+
+        card.addView(UiKit.text(this, "\u6682\u65E0\u5907\u6CE8",
+                UiTokens.Type.BODY_MEDIUM, Palette.ON_SURFACE_VARIANT, false));
+        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        hintParams.topMargin = dp(UiTokens.SPACE_XS);
+        card.addView(UiKit.text(this,
+                "\u53EF\u8BB0\u5F55\u4F5C\u4E1A\u3001\u8003\u8BD5\u5B89\u6392\u3001"
+                        + "\u5B66\u4E60\u8D44\u6599\u7B49",
+                UiTokens.Type.LABEL_MEDIUM, Palette.OUTLINE, false), hintParams);
+        return card;
+    }
+
     /** The one thing this screen exists to lead to. */
     /**
      * What can be done with this course: change it, make another like it, or drop
@@ -318,8 +378,25 @@ public class CourseDetailActivity extends Activity {
 
     /** Opens the existing editor on this course; nothing about it changes here. */
     private void openEditor() {
+        openEditor(false);
+    }
+
+    /**
+     * Opens the existing editor, optionally asking it to start at the note field.
+     *
+     * <p>The note is edited in the same form as everything else, deliberately: a
+     * second, note-only screen would be a second place that reads and writes the
+     * same field, and the two would eventually disagree. The flag only decides where
+     * the caret starts.</p>
+     *
+     * @param focusNote true when the user came here for the note itself
+     */
+    private void openEditor(boolean focusNote) {
         Intent intent = new Intent(this, EditCourseActivity.class);
         intent.putExtra(EditCourseActivity.EXTRA_COURSE_ID, courseId);
+        if (focusNote) {
+            intent.putExtra(EditCourseActivity.EXTRA_FOCUS_NOTE, true);
+        }
         startActivity(intent);
     }
 

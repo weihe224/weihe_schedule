@@ -30,7 +30,7 @@ public class CourseDraftTest {
     @Test
     public void everyValueComesBackUnchanged() {
         CourseDraft draft = new CourseDraft("Algorithms", "Prof. Li", "Building A 203",
-                "3", "14", 2, 4, 5, 1, 2, 0xFF3C6A8E);
+                "3", "14", 2, 4, 5, 1, 2, 0xFF3C6A8E, null);
 
         assertEquals("Algorithms", draft.name());
         assertEquals("Prof. Li", draft.teacher());
@@ -52,7 +52,7 @@ public class CourseDraftTest {
         for (String typed : new String[] {"", "1", "12", "1a", " 3 ", "0"}) {
             CourseDraft draft = new CourseDraft("c", "", "", typed, typed,
                     CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_INDEX,
-                    CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR);
+                    CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR, null);
 
             assertEquals("week text must survive exactly: [" + typed + "]",
                     typed, draft.startWeek());
@@ -69,7 +69,7 @@ public class CourseDraftTest {
             CourseDraft draft = new CourseDraft("c", "", "",
                     String.valueOf(range[0]), String.valueOf(range[1]),
                     CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_INDEX,
-                    CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR);
+                    CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR, null);
 
             assertEquals(String.valueOf(range[0]), draft.startWeek());
             assertEquals(String.valueOf(range[1]), draft.endWeek());
@@ -81,7 +81,7 @@ public class CourseDraftTest {
         // 0 = every week, 1 = odd, 2 = even: the row's own order.
         for (int index = 0; index <= 2; index++) {
             CourseDraft draft = new CourseDraft("c", "", "", "1", "18",
-                    0, 0, 1, index, 0, CourseDraft.NO_COLOR);
+                    0, 0, 1, index, 0, CourseDraft.NO_COLOR, null);
             assertEquals(index, draft.parityIndex());
         }
     }
@@ -89,7 +89,7 @@ public class CourseDraftTest {
     @Test
     public void aChosenColourComesBack() {
         CourseDraft draft = new CourseDraft("c", "", "", "1", "18",
-                0, 0, 1, 0, 0, 0xFF8B5E3C);
+                0, 0, 1, 0, 0, 0xFF8B5E3C, null);
         assertTrue(draft.hasColor());
         assertEquals(0xFF8B5E3C, draft.color());
     }
@@ -100,10 +100,10 @@ public class CourseDraftTest {
     public void anEmptiedFieldIsNotTheSameAsAnUncarriedOne() {
         CourseDraft emptied = new CourseDraft("", "", "", "", "",
                 CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_INDEX,
-                CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR);
+                CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR, null);
         CourseDraft absent = new CourseDraft(null, null, null, null, null,
                 CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_INDEX,
-                CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR);
+                CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR, null);
 
         // The user who cleared a field gets an empty field back; a field that was
         // never in the state keeps whatever initialisation gave it.
@@ -118,7 +118,7 @@ public class CourseDraftTest {
     public void absentPositionsAndColoursAreReportedAsAbsent() {
         CourseDraft draft = new CourseDraft(null, null, null, null, null,
                 CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_INDEX,
-                CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR);
+                CourseDraft.NO_INDEX, CourseDraft.NO_INDEX, CourseDraft.NO_COLOR, null);
 
         assertEquals(CourseDraft.NO_INDEX, draft.dayIndex());
         assertEquals(CourseDraft.NO_INDEX, draft.startPeriodIndex());
@@ -138,7 +138,7 @@ public class CourseDraftTest {
         assertTrue("the marker must not collide with a real colour",
                 com.weihe.schedule.model.Course.DEFAULT_COLOR != CourseDraft.NO_COLOR);
         CourseDraft withDefault = new CourseDraft("c", "", "", "1", "18",
-                0, 0, 1, 0, 0, com.weihe.schedule.model.Course.DEFAULT_COLOR);
+                0, 0, 1, 0, 0, com.weihe.schedule.model.Course.DEFAULT_COLOR, null);
         assertTrue(withDefault.hasColor());
     }
 

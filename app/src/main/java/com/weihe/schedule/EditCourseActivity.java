@@ -21,6 +21,7 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -54,6 +55,15 @@ public class EditCourseActivity extends Activity {
      * so saving writes a new record and the original is untouched.
      */
     public static final String EXTRA_COPY = "copy";
+    /**
+     * Set when the user asked for the note specifically -- from the detail screen's
+     * "add a note" or "edit" control -- rather than for the course as a whole.
+     *
+     * <p>It only decides where the caret starts. Nothing about what is read or
+     * written changes, so a caller that omits it gets exactly the editor it had
+     * before.</p>
+     */
+    public static final String EXTRA_FOCUS_NOTE = "focus_note";
 
     private static final int QUICK_WEEKS = 8;
     private static final int FIRST_HALF_END = Math.min(
@@ -76,6 +86,16 @@ public class EditCourseActivity extends Activity {
     private EditText nameInput;
     private EditText teacherInput;
     private EditText locationInput;
+    /**
+     * The course note.
+     *
+     * <p>A field of its own rather than a sixth line in the basic section: it is
+     * the only thing on this form that is not about when or where the lesson
+     * happens, and it is the only multi-line one.</p>
+     */
+    private EditText noteInput;
+    /** The form's scroll view, kept so the note field can be scrolled to. */
+    private ScrollView formScroll;
     private List<String> locationSuggestions = new ArrayList<>();
     private List<String> teacherSuggestions = new ArrayList<>();
     private EditText startWeekInput;
@@ -158,6 +178,43 @@ public class EditCourseActivity extends Activity {
         // what the user had changed on top of it. This writes into views and nothing
         // else: no save, no delete, no repository call.
         applyDraft();
+        if (getIntent().getBooleanExtra(EXTRA_FOCUS_NOTE, false)) {
+            focusNote();
+        }
+    }
+
+    /**
+     * Puts the caret in the note field, scrolls it into view and raises the keyboard.
+     *
+     * <p>Used when the detail screen sent the user here for the note itself. Without
+     * it they arrive on a long form whose note field is at the very bottom, which
+     * makes "add a note" a two-step action for no reason the user can see.</p>
+     *
+     * <p>Posted rather than run inline: nothing has been measured yet at this point,
+     * and scrolling to a view with no position goes nowhere. The offset is worked
+     * out from where the field and the scroll view actually are on screen rather
+     * than from {@code getTop()}, which is relative to the field's own parent and
+     * would be wrong by however many sections sit above it.</p>
+     */
+    private void focusNote() {
+        if (noteInput == null || formScroll == null) {
+            return;
+        }
+        formScroll.post(() -> {
+            noteInput.requestFocus();
+            int[] field = new int[2];
+            int[] viewport = new int[2];
+            noteInput.getLocationInWindow(field);
+            formScroll.getLocationInWindow(viewport);
+            int target = formScroll.getScrollY() + field[1] - viewport[1]
+                    - dp(UiTokens.SPACE_XL);
+            formScroll.smoothScrollTo(0, Math.max(0, target));
+            InputMethodManager keyboard =
+                    (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (keyboard != null) {
+                keyboard.showSoftInput(noteInput, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
     }
 
     private View buildRoot() {
@@ -167,6 +224,7 @@ public class EditCourseActivity extends Activity {
         root.addView(createHeader());
 
         ScrollView scroll = new ScrollView(this);
+        formScroll = scroll;
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
         LinearLayout body = new LinearLayout(this);
@@ -194,6 +252,11 @@ public class EditCourseActivity extends Activity {
         body.addView(createParitySection());
         body.addView(createScheduleSection());
         body.addView(createColorSection());
+        body.addView(createNoteSection());
+        // Read through the repository rather than off the record: the note belongs
+        // to the course, so opening the second arrangement of a course has to show
+        // what was written on the first one.
+        noteInput.setText(repository.noteOf(course));
 
         locationInput.addTextChangedListener(new TextWatcher() {
             @Override
@@ -900,6 +963,64 @@ public class EditCourseActivity extends Activity {
     }
 
     /**
+     * The course note, last on the form.
+     *
+     * <p>Last because everything above decides when and where the lesson happens,
+     * and this is the only place to write down something about the course itself.
+     * The label says 课程备注 rather than 备注 on purpose: the note belongs to the
+     * course, not to the arrangement open in front of the user, and a shorter label
+     * would suggest the other thing.</p>
+     *
+     * <p>The field grows to eight lines and then scrolls inside itself. It is inside
+     * a scroll view already, so letting it grow without limit would make a long note
+     * push the save button an unpredictable distance away, while a fixed two-line
+     * box would make writing one unpleasant.</p>
+     */
+    private View createNoteSection() {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.setPadding(dp(14), dp(13), dp(14), dp(14));
+        section.setBackground(UiKit.outline(this,
+                Palette.SURFACE_CONTAINER, UiTokens.RADIUS_L,
+                Palette.OUTLINE_VARIANT, 1));
+        section.addView(UiKit.text(this, "\u8BFE\u7A0B\u5907\u6CE8",
+                12, Palette.ON_SURFACE, true));
+
+        noteInput = new EditText(this);
+        noteInput.setHint("\u8BB0\u5F55\u4F5C\u4E1A\u3001\u8003\u8BD5\u5B89\u6392\u3001"
+                + "\u5B66\u4E60\u8D44\u6599\u7B49");
+        noteInput.setHintTextColor(Palette.OUTLINE);
+        noteInput.setTextColor(Palette.ON_SURFACE);
+        noteInput.setTextSize(UiTokens.Type.BODY_MEDIUM);
+        noteInput.setSingleLine(false);
+        noteInput.setMinLines(3);
+        noteInput.setMaxLines(8);
+        noteInput.setGravity(Gravity.TOP | Gravity.START);
+        noteInput.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        // Enter inserts a line break here: this is the one field on the form where
+        // a newline is content rather than a reason to move on.
+        noteInput.setImeOptions(EditorInfo.IME_ACTION_NONE
+                | EditorInfo.IME_FLAG_NO_ENTER_ACTION);
+        noteInput.setPadding(dp(12), dp(8), dp(12), dp(8));
+        noteInput.setBackground(UiKit.fill(this, Palette.SURFACE_CONTAINER_LOW,
+                UiTokens.RADIUS_M));
+        LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        fieldParams.topMargin = dp(8);
+        section.addView(noteInput, fieldParams);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(12);
+        section.setLayoutParams(params);
+        return section;
+    }
+
+    /**
      * Draws the course colours as one row of swatches.
      *
      * <p>One row, not a grid. Values that belong together read as a strip; wrapping
@@ -1136,7 +1257,9 @@ public class EditCourseActivity extends Activity {
                 return;
             }
         }
-        repository.upsertCourse(course);
+        // One write for the record and its course-wide note: the note belongs to
+        // the course, so saving from any arrangement has to reach all of them.
+        repository.saveCourse(course, noteInput.getText().toString());
         String note = "\u8BFE\u7A0B\u5DF2\u4FDD\u5B58";
         if (Boolean.TRUE.equals(colorSyncChoice)) {
             // One batch call for every other arrangement. Read after the save above,
@@ -1201,6 +1324,7 @@ public class EditCourseActivity extends Activity {
     private static final String STATE_NAME = "draft_name";
     private static final String STATE_TEACHER = "draft_teacher";
     private static final String STATE_LOCATION = "draft_location";
+    private static final String STATE_NOTE = "draft_note";
     private static final String STATE_START_WEEK = "draft_start_week";
     private static final String STATE_END_WEEK = "draft_end_week";
     private static final String STATE_DAY = "draft_day";
@@ -1229,6 +1353,7 @@ public class EditCourseActivity extends Activity {
         outState.putString(STATE_NAME, nameInput.getText().toString());
         outState.putString(STATE_TEACHER, teacherInput.getText().toString());
         outState.putString(STATE_LOCATION, locationInput.getText().toString());
+        outState.putString(STATE_NOTE, noteInput.getText().toString());
         // Raw text. The field may hold "" or "1a" at this moment, and neither is a
         // number this could store instead.
         outState.putString(STATE_START_WEEK, startWeekInput.getText().toString());
@@ -1266,7 +1391,8 @@ public class EditCourseActivity extends Activity {
                 state.getInt(STATE_END_PERIOD, CourseDraft.NO_INDEX),
                 state.getInt(STATE_PARITY, CourseDraft.NO_INDEX),
                 state.getInt(STATE_SCHEDULE, CourseDraft.NO_INDEX),
-                state.getInt(STATE_COLOR, CourseDraft.NO_COLOR));
+                state.getInt(STATE_COLOR, CourseDraft.NO_COLOR),
+                state.getString(STATE_NOTE));
     }
 
     /** The parity row's starting position: the draft's, or the course's. */
@@ -1300,6 +1426,9 @@ public class EditCourseActivity extends Activity {
         }
         if (draft.location() != null) {
             locationInput.setText(draft.location());
+        }
+        if (draft.note() != null) {
+            noteInput.setText(draft.note());
         }
         if (draft.startWeek() != null) {
             startWeekInput.setText(draft.startWeek());

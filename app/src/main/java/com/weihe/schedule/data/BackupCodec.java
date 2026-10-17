@@ -18,6 +18,7 @@ import com.weihe.schedule.model.BellSchedule;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
+import com.weihe.schedule.rule.CourseNotes;
 
 /**
  * The backup file format: one versioned JSON object holding everything a user
@@ -414,6 +415,13 @@ public final class BackupCodec {
         // Unsigned, so JSON's double precision cannot change the colour.
         object.put("color", Long.valueOf(course.color & 0xFFFFFFFFL));
         object.put("scheduleName", course.scheduleName);
+        // Only when there is one, exactly as the store writes it. A backup of a
+        // notes-free timetable therefore has the same shape it always had, and one
+        // written by this build still reads on a build that has never heard of
+        // notes -- the key is simply ignored there.
+        if (!CourseNotes.isBlank(course.note)) {
+            object.put("note", course.note);
+        }
         return object;
     }
 
@@ -754,6 +762,9 @@ public final class BackupCodec {
             course.teacher = asString(item.get("teacher"));
             course.location = asString(item.get("location"));
             course.scheduleName = asString(item.get("scheduleName")).trim();
+            // Optional, so a backup taken before notes existed restores as courses
+            // with no notes rather than being refused. Trimmed like the store does.
+            course.note = asString(item.get("note")).trim();
             course.dayOfWeek = day.intValue();
             course.startPeriod = startPeriod.intValue();
             course.endPeriod = endPeriod.intValue();

@@ -3076,3 +3076,158 @@ chip 的独特价值是"回本周但**保留星期几**"（第12周周三 → �
 | 已在本周时隐藏 | ✅ 只剩「课表总览」 |
 | 不遮挡卡片 | ✅ 滚到底最后卡片内容止于 y=1903，FAB 顶 y=1999 |
 | 其它页面 | ✅ 总课表/单周课表未动；23 门课程完好 |
+
+---
+
+## Y. 追加记录 — 2026-10-17：课程共享备注
+
+### Y-1 需求要点
+
+一门课因为时间/周次/教室/教师不同被拆成多条记录，这些记录要共享**同一份**备注；
+备注要真持久化、要进备份、要兼容旧数据、不能出现在课表卡片上。
+
+### Y-2 先查清楚的三件事
+
+1. **课程身份**：`CourseColorSync.sameCourseAs` 已经定义好了 —— 同一学期内
+   `normalize(name)`（trim 后完全相同）即同一门课，id 只用来排除自己。
+   星期/节次/周次/教室/教师刻意不参与，因为它们正是拆记录的原因。**直接复用，不另造。**
+2. **存储**：每学期一个 key `courses:<semesterId>`，值是课程 JSON 数组；
+   `saveCourses` 整表写。备份与存储**各有一套课程映射**
+   （`CourseRepository.toJson` 与 `BackupCodec.courseToJson`），注释里明写"必须逐字段一致"
+   —— 加字段**两处都要改**，这是本轮最大的坑。
+3. **表单**：`EditCourseActivity` 把各分区 add 到 body，字段在 `applyForm` 里汇总，
+   保存走 `commitSave`；草稿 `CourseDraft` 承载旋转时的表单内容。
+
+### Y-3 方案选择：为什么不做"按名字的备注表"
+
+任务倾向"课程组级数据、单一权威来源"，我选了**记录上存 + 仓库同步**，理由是改名：
+
+- 按名字建表：把「高数」改名成「高等数学」后，那条记录指向的新键不存在 → **备注当场消失**。
+  而它原来和另外两条共享同一份，没法判断该不该"搬走"。
+- 存在记录上：改名时备注跟着记录走，留下的安排保留自己那份。**谁都不会静默丢东西。**
+
+这和 `color` 的处理**完全一致**（颜色也是每记录一份、由 `recolorCourses` 批量同步），
+符合 AGENTS.md「业务规则不得有第二份实现」。代价是磁盘上多存几份（每门课通常 1–3 条）。
+
+### Y-4 实现
+
+- `Course.note`（`copy()` 带上）
+- `rule/CourseNotes`：`isBlank` / `groupNote`（自己的优先，否则取兄弟的第一个非空）/
+  `noteToStore`（有内容就存；空 + 编辑 = 清空；空 + 新建 = 沿用，防误清空）
+- `CourseRepository.noteOf(course)`、`saveCourse(course, note)`（**一次 `saveCourses`**
+  同时落记录和全组备注，避免两次提交之间进程死亡导致半同步）
+- `toJson`/`fromJson` 与 `BackupCodec` 两处都加 `note`，**仅非空时写**（旧 JSON 逐字节不变）
+- `EditCourseActivity`：`createNoteSection()`（多行、minLines 3 / maxLines 8、
+  `IME_FLAG_NO_ENTER_ACTION` 让回车插入换行）、预填 `noteOf`、草稿存取、保存改走 `saveCourse`
+- `CourseDetailActivity`：`noteCard(note)`，有备注才加，放在「地点与教师」之后
+- `CourseDraft` 加 `note`（表单内容的一部分；9 处测试构造补 `null`）
+
+### Y-5 踩到的坑
+
+1. **两套课程 JSON 映射**。只改仓库那套的话，备份里不会有备注；
+   只改备份那套的话，存储里不会有。两处都改了，并且都"仅非空时写"。
+2. **`addSemester` 不会切换当前学期**。测试里我以为它会，结果第二条课程写进了第一个学期，
+   备注按同名同步把第一条也改了 —— 测试失败暴露了这点。加 `setActiveSemester` 后正确。
+3. **`data` 包原本不依赖 `rule`**。这次让 `CourseRepository` 用 `CourseColorSync`/`CourseNotes`，
+   方向是对的（rule 保持无 Android、无 data 依赖），但确实是新的一条边。
+4. 详情页多了备注卡片后，**「编辑课程」按钮下移约 240px**，我按旧坐标点空了一次 ——
+   设备验证时坐标要重新 dump，不要沿用上一轮的。
+
+### Y-6 门禁与设备验证
+
+- **1091 项 / 0 失败 / 0 错误 / 0 跳过**（+26 = CourseNotesTest 11 + CourseNoteStorageTest 15）
+- `app-debug.apk` **1,171,940 字节**；lint **0 errors, 2 warnings**
+
+模拟器实测（**只用 `install -r`**）：
+
+| 项 | 结果 |
+|---|---|
+| 编辑页备注区 | ✅ 标题 + 提示 + 3 行高 |
+| 键盘弹出时保存可达 | ✅ 「保存课程」在键盘上方 |
+| 换行 | ✅ dump 里 `&#10;` |
+| 详情页展示 | ✅ 两行原文 |
+| **跨安排共享** | ✅ 周四 1-2 写入 → 周一 2-3（不同星期/节次/教室）读到同样内容 |
+| 重启后仍在 | ✅ force-stop 后重进仍在 |
+| 编辑页预填 | ✅ |
+| 课表卡片不含备注 | ✅ 总课表/单周课表 0 处 |
+| 清空 | ✅ 两条安排同时清空 |
+| 其他功能 | ✅ 23 门课程/周次/颜色/叠放正常 |
+
+设备上验的是 ASCII + 换行；**中文/标点/多行的存取由单元测试覆盖**（adb 无法输入非 ASCII）。
+
+### Y-7 未验证
+
+极小屏、横屏、平板；「复制课程」是否应复制备注（当前会复制，因为它是记录字段）。
+
+---
+
+## Z. 追加记录 — 2026-10-18：详情页备注区常显 + 一键定位备注框
+
+### Z-1 需求
+
+详情页原来"备注非空才显示备注卡片"，导致**从没用过备注的用户根本不知道有这个功能**。
+要求：始终显示备注区；空/有内容两种形态；「添加备注」能直接进到备注输入框；
+共享与持久化逻辑一行不许改。
+
+### Z-2 改动（只碰两个文件）
+
+1. **`CourseDetailActivity`**
+   - `render()` 里去掉 `if (!note.isEmpty())`，无条件 `addView(noteCard(note))`
+   - `noteCard(note)` 分两态，共用一张卡片：
+     - 头部行：`section("课程备注")` 权重 1 + `UiKit.textButton(…)`（空→「添加备注」，有→「编辑」）
+     - 空：`暂无备注`（`ON_SURFACE_VARIANT`）+ 提示（`LABEL_MEDIUM` / `OUTLINE`）
+     - 有：正文（`BODY_MEDIUM`，`setLineSpacing(dp(3),1f)`，换行原样保留）
+   - `openEditor()` → `openEditor(false)`；新增 `openEditor(boolean focusNote)`
+2. **`EditCourseActivity`**
+   - 新增 `EXTRA_FOCUS_NOTE`
+   - 新增 `formScroll` 字段（在 `buildRoot` 里赋值）
+   - `onCreate` 末尾：带该 extra 就 `focusNote()`
+   - `focusNote()`：`formScroll.post` → `requestFocus` → 算偏移 → `smoothScrollTo` → `showSoftInput`
+
+**没动**：`Course.note` / `CourseNotes` / `noteOf` / `saveCourse` / `BackupCodec` / `CourseDraft`，
+以及课表、缩放、叠放、颜色、周次、提醒、导入、备份。
+
+### Z-3 几个实现细节值得记住
+
+1. **滚动偏移不能用 `getTop()`**。备注框的 `getTop()` 是相对它所在分区容器的，
+   不是相对 ScrollView 内容 —— 会少算上方所有分区的高度。用
+   `getLocationInWindow` 同时取备注框和 ScrollView 的位置再相减，才是对的。
+2. **必须 `post`**。`onCreate` 里刚 `setContentView`，什么都没测量，滚到"还没有位置"的
+   View 等于没滚。
+3. **`textButton` 自带 48dp 最小高度**（`TOUCH_TARGET`），所以头部行会有 48dp，
+   空状态整卡约 130dp —— 这是"紧凑但不拥挤"的合理值，不要再压。
+4. **不要用实心按钮做「添加备注」**：这一屏的主操作是「编辑课程」，两个实心按钮会打架。
+
+### Z-4 门禁与设备验证
+
+- **1091 项 / 0 失败**（纯 UI 改动，测试数不变 —— 备注语义的 26 项在 T 节那轮已覆盖）
+- `app-debug.apk` **1,172,804 字节**；lint **0 errors, 2 warnings**
+
+模拟器实测（**只用 `install -r`**）：
+
+| 项 | 结果 |
+|---|---|
+| 空备注仍显示备注区 | ✅ 标题/添加备注/暂无备注/提示 四项齐全 |
+| 「添加备注」直达备注框 | ✅ 编辑页打开即滚到备注框、`focused=true`、键盘已弹出 |
+| 保存后立即刷新 | ✅ 两行备注出现，「暂无备注」消失，「编辑」出现 |
+| 有备注态 | ✅ 内容 + 换行（`&#10;`）+ 编辑入口 |
+| 取消编辑 | ✅ 备注原样（注意：键盘弹着时第一次 BACK 只收键盘，要按两次） |
+| 清空 | ✅ 回到空状态 |
+| 跨安排共享 | ✅ 周一 2-3 → 周四 1-2 同样内容 |
+| 重启 | ✅ 仍在 |
+
+### Z-5 踩的坑（验证脚本层面）
+
+1. **清空备注时 `KEYCODE_MOVE_END` 在多行 EditText 里只到"当前行末"**，
+   30 次 DEL 只删掉了第一行，第二行还在。我第一遍的断言写的是
+   `not any('readch5' in x)` —— 第一行删掉后这个条件就成立了，**断言假阳性**，
+   实际没清空。改成直接 dump EditText 的 `text` 属性才看出来。
+2. 键盘弹着时 **第一次 BACK 只收键盘**，不是退出页面。验"取消"要按两次。
+3. 详情页加了备注卡片后「编辑课程」下移，坐标要重新 dump（上一轮已踩过一次）。
+
+### Z-6 未验证
+
+- 本轮没重新验「不同课程互不覆盖」和「十几行长备注」；前者有单元测试 + 上一轮设备验证，
+  后者只验了两行。
+- 极小屏/横屏/平板未验。
+- adb 输不了中文，设备上验的是 ASCII + 换行。

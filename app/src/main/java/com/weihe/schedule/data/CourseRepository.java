@@ -15,6 +15,8 @@ import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
+import com.weihe.schedule.rule.CourseColorSync;
+import com.weihe.schedule.rule.CourseNotes;
 
 public class CourseRepository {
     private static final String PREFS = "weihe_schedule";
@@ -642,10 +644,70 @@ public class CourseRepository {
         return CourseList.find(getCourses(), id);
     }
 
+    /**
+     * Stores one arrangement, and nothing else.
+     *
+     * <p>The primitive: whatever the record says is what is written, with no
+     * course-wide semantics. Callers that edit a course the user is looking at
+     * want {@link #saveCourse(Course, String)} instead, which also applies the
+     * note to the course's other arrangements.</p>
+     */
     public void upsertCourse(Course course) {
         List<Course> courses = getCourses();
         CourseList.ensureId(courses, course, System.currentTimeMillis());
         CourseList.upsert(courses, course);
+        saveCourses(courses);
+    }
+
+    /**
+     * The note the course carries, read from whichever arrangement was asked.
+     *
+     * <p>Not simply {@code course.note}: a note belongs to the course, and the
+     * record in hand may be one written before the note existed or by a path that
+     * did not know about it. {@link CourseNotes#groupNote} falls back to the
+     * siblings, so every arrangement of a course reads the same text.</p>
+     */
+    public String noteOf(Course course) {
+        if (course == null) {
+            return "";
+        }
+        return CourseNotes.groupNote(course,
+                CourseColorSync.sameCourseAs(getCourses(), course));
+    }
+
+    /**
+     * Saves an edited course together with its note, in one write.
+     *
+     * <p>One commit, not two: the record and the note its siblings carry have to
+     * land together, or a process that died between them would leave one
+     * arrangement of a course with a note and the others without.</p>
+     *
+     * <p>The note is applied to every arrangement of the course, matched the same
+     * way the colour is -- see {@link CourseColorSync}. Nothing else about those
+     * records is touched: their days, periods, weeks, rooms and teachers are left
+     * exactly as they were, so editing a note can never move a lesson.</p>
+     *
+     * @param course the record the editor has open; assigned an id when it is new
+     * @param note   what the user left in the note field
+     */
+    public void saveCourse(Course course, String note) {
+        if (course == null) {
+            return;
+        }
+        List<Course> courses = getCourses();
+        boolean isNew = course.id == 0L || CourseList.find(courses, course.id) == null;
+        // Read the course's note before the record is placed, so a new arrangement
+        // can join it rather than overwrite it with the empty field it opened with.
+        String existing = CourseNotes.groupNote(course,
+                CourseColorSync.sameCourseAs(courses, course));
+        String stored = CourseNotes.noteToStore(note, existing, isNew);
+
+        CourseList.ensureId(courses, course, System.currentTimeMillis());
+        course.note = stored;
+        CourseList.upsert(courses, course);
+        for (Course sibling : CourseColorSync.sameCourseAs(courses, course)) {
+            sibling.note = stored;
+        }
         saveCourses(courses);
     }
 
@@ -1583,6 +1645,13 @@ public class CourseRepository {
         // Written as a long so it survives JSON's double-precision numbers.
         object.put("color", Long.valueOf(course.color & 0xFFFFFFFFL));
         object.put("scheduleName", course.scheduleName);
+        // Only when there is one. A course without a note then stores exactly what
+        // it stored before notes existed, so a payload written by this build is
+        // still the shape an older one expects -- and a timetable of notes-free
+        // courses gains no empty keys at all.
+        if (!CourseNotes.isBlank(course.note)) {
+            object.put("note", course.note);
+        }
         return object;
     }
 
@@ -1602,6 +1671,10 @@ public class CourseRepository {
         // Absent in payloads written before per-course schedules existed: an
         // empty name means "decide by venue", which is the old behaviour.
         course.scheduleName = MiniJson.optString(object, "scheduleName", "").trim();
+        // Absent in every payload written before notes existed, and in every course
+        // that has none. Trimmed on the way in so the stored text is what the note
+        // is compared and shown as; the newlines inside it are left alone.
+        course.note = MiniJson.optString(object, "note", "").trim();
         return course;
     }
 
