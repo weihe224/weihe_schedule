@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The 2x2 widget: what is happening now, and what comes after it.
+
+    Two cells by two is a square, so it is neither the 3x2 list nor the 2x1 strip: one
+    short header, one main card, and one secondary line under it. The main card is the
+    same tinted block, 3dp colour rail and type scale the other two sizes use, so all
+    three read as one family.
+
+    The empty block replaces the card rather than filling it with a course that is not
+    there: on a day with nothing left, the widget says so and shows no time at all.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_square_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="@dimen/widget_padding">
+
+    <TextView
+        android:id="@+id/widget_square_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:text="@string/widget_default_title"
+        android:maxLines="1"
+        android:textColor="@color/widget_ink_muted"
+        android:textSize="@dimen/widget_text_title"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:id="@+id/widget_square_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/widget_gap"
+        android:background="@drawable/widget_headline_bg"
+        android:orientation="horizontal"
+        android:padding="@dimen/widget_block_padding">
+
+        <ImageView
+            android:id="@+id/widget_square_rail"
+            android:layout_width="@dimen/widget_accent_width"
+            android:layout_height="match_parent"
+            android:background="@color/widget_headline"
+            android:contentDescription="@null" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:baselineAligned="false"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_square_status"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:text="@string/widget_next_status_default"
+                    android:maxLines="1"
+                    android:textColor="@color/widget_ink_muted"
+                    android:textSize="@dimen/widget_text_title"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/widget_square_countdown_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:textColor="@color/widget_ink_muted"
+                    android:textSize="@dimen/widget_text_title"
+                    android:visibility="gone" />
+
+                <Chronometer
+                    android:id="@+id/widget_square_countdown"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:countDown="true"
+                    android:textColor="@color/widget_ink"
+                    android:textSize="@dimen/widget_text_name"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_square_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:ellipsize="end"
+                android:text="@string/widget_default_name"
+                android:maxLines="2"
+                android:textColor="@color/widget_ink"
+                android:textSize="@dimen/widget_text_name"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_square_detail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:text="@string/widget_default_detail"
+                android:maxLines="1"
+                android:textColor="@color/widget_ink_muted"
+                android:textSize="@dimen/widget_text_detail" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_square_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/widget_gap"
+        android:background="@drawable/widget_headline_bg"
+        android:orientation="vertical"
+        android:padding="@dimen/widget_block_padding"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/widget_square_empty_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="@color/widget_ink"
+            android:textSize="@dimen/widget_text_name"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_square_empty_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/widget_ink_muted"
+            android:textSize="@dimen/widget_text_detail" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_square_next"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/widget_gap"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/widget_ink_muted"
+        android:textSize="@dimen/widget_text_detail"
+        android:visibility="gone" />
+</LinearLayout>

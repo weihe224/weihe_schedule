@@ -27,6 +27,7 @@ import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.Pickers;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
+import com.weihe.schedule.widget.CourseWidgetUpdater;
 
 /**
  * The list of semesters, and the way to look at a past one.
@@ -209,6 +210,8 @@ public class SemesterListActivity extends Activity {
         repository.setActiveSemester(semester);
         // Another term means another set of classes to be reminded about.
         ReminderScheduler.sync(this);
+        // And another set of classes for the widget to show.
+        CourseWidgetUpdater.refreshAll(this);
         Toast.makeText(this, "\u5DF2\u5207\u6362\u5230 " + semester.label(),
                 Toast.LENGTH_SHORT).show();
         setResult(RESULT_SWITCHED);
@@ -334,6 +337,7 @@ public class SemesterListActivity extends Activity {
         // A new active term: the plan belongs to the classes of that term, not the
         // old one's.
         ReminderScheduler.sync(this);
+        CourseWidgetUpdater.refreshAll(this);
         Toast.makeText(this, "\u5DF2\u65B0\u5EFA " + created.label()
                 + "\uFF08\u7B2C 1 \u5468 " + monday + "\uFF09\u5E76\u5207\u6362\u8FC7\u53BB",
                 Toast.LENGTH_LONG).show();
@@ -399,6 +403,7 @@ public class SemesterListActivity extends Activity {
                         // Deleting the active term takes its classes with it, so the
                         // alarms have to be rebuilt from whatever is left.
                         ReminderScheduler.sync(this);
+                        CourseWidgetUpdater.refreshAll(this);
                         Toast.makeText(this, "\u5B66\u671F\u5DF2\u5220\u9664",
                                 Toast.LENGTH_SHORT).show();
                         render();

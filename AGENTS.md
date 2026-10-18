@@ -10,10 +10,18 @@
 |---|---|
 | **纯 Java** | 不引入 Kotlin、Compose、Room、Hilt 或任何注解处理器 |
 | **不新增依赖** | 现有依赖只有 `libs/jxl-2.6.12.jar` 与 `junit:junit:4.13.2`。加依赖前必须先问用户 |
-| **不用 XML 布局** | `res/layout` 不存在，**所有 View 在 Java 中构建**。不要新建 layout 文件 |
+| **不用 XML 布局** | `res/layout` 不存在，**所有 View 在 Java 中构建**。不要新建 layout 文件（例外见下） |
 | **不用 AndroidX** | 用平台 API（`android.app.Activity`、`android.app.Dialog` 等） |
 | **不改存储格式** | `SharedPreferences("weihe_schedule")` 的键与 JSON 结构属于兼容契约 |
 | Java 17 语法 | `sourceCompatibility`/`targetCompatibility` = 17，可用 `var`、records、`java.time` |
+
+**「不用 XML 布局」的唯一例外（2026-10-18 起）**：桌面小组件。
+
+`RemoteViews` 只能从 XML 膨胀，Java 里拼不出来，所以
+`res/layout/widget_*.xml`、`res/xml/course_widget_info.xml`、`res/values/widget.xml`
+是**允许且仅允许**服务于 `widget/` 包的布局资源。
+**页面 UI 仍然全部在 Java 中构建**；不要因为小组件开了这个口子就把 Activity 的界面也改成 XML，
+也不要把小组件的样式常量搬回 `UiTokens`（`RemoteViews` 由桌面进程膨胀，读不到 Java 常量）。
 
 ---
 

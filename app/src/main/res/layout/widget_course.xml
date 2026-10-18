@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The widget: the date, at most two classes, and a way into the rest of the day.
+
+    There is one layout for every size. A taller widget does not get a third card:
+    the day can hold a dozen classes, so the widget shows the two that matter now and
+    says how many the day actually has, rather than pretending this is all of it. The
+    count in that line comes from the timetable, not from the number of cards drawn.
+
+    The card container is filled at refresh time with nested RemoteViews, so "at most
+    two" is enforced by how many are added rather than by a third view that has to be
+    hidden correctly on every screen size, font scale and course name.
+
+    The body is wrapped in a weighted column instead of using a spacer View: a plain
+    View is not on the list of classes a RemoteViews is allowed to inflate, and the
+    whole widget fails to load if one appears. The weight pushes the entry line to the
+    bottom without one.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="@dimen/widget_padding">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:baselineAligned="false"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_default_title"
+            android:textColor="@color/widget_ink_muted"
+            android:textSize="@dimen/widget_text_title"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/widget_cards"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical" />
+
+        <LinearLayout
+            android:id="@+id/widget_empty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/widget_gap"
+            android:background="@drawable/widget_headline_bg"
+            android:orientation="vertical"
+            android:padding="@dimen/widget_block_padding"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/widget_empty_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/widget_ink"
+                android:textSize="@dimen/widget_text_name"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_empty_detail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/widget_ink_muted"
+                android:textSize="@dimen/widget_text_detail" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_entry"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:text="@string/widget_default_detail"
+        android:textColor="@color/widget_button"
+        android:textSize="@dimen/widget_text_detail"
+        android:textStyle="bold" />
+</LinearLayout>

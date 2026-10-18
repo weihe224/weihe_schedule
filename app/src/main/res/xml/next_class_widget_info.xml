@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Metadata for the 2x1 widget.
+
+    Two cells wide and one tall, using the platform's own cell arithmetic (70dp per
+    cell minus 30dp): two cells are 110dp across, one is 40dp down. The earlier version
+    of this widget declared 1x2 and was placed 2x2, because 110dp is the two-cell
+    value in that formula and the width is what the launcher reads first.
+
+    minResize is declared so the launcher's own resize bounds match: it may grow, and
+    shrinking it below one cell tall would only clip the room line, which the renderer
+    drops on its own when the reported height is small.
+
+    The targetCell pair does the same job from Android 12. updatePeriodMillis is the
+    platform floor of 30 minutes and only ever a safety net; the widget is redrawn on
+    class boundaries and data changes by the same alarm the 3x2 widget uses.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:description="@string/widget_next_description"
+    android:initialLayout="@layout/widget_next_class"
+    android:minHeight="40dp"
+    android:minResizeHeight="40dp"
+    android:minResizeWidth="110dp"
+    android:minWidth="110dp"
+    android:previewLayout="@layout/widget_next_class"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="1"
+    android:targetCellWidth="2"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen"
+    tools:targetApi="s" />

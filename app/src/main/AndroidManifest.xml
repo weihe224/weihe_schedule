@@ -133,5 +133,74 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!--
+            The home-screen widget.
+
+            exported="false" like every other receiver here: the platform still
+            delivers APPWIDGET_UPDATE to it, and no other app should be able to make
+            it redraw. The second action is the app's own boundary alarm (class over,
+            next class starting, day rolling over), which is what keeps the widget
+            truthful while the app is closed; the periodic update the platform
+            offers is half an hour coarse.
+
+            The label is what the widget picker lists; the description explains what
+            the widget is for before it is placed.
+        -->
+        <receiver
+            android:name=".widget.CourseWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_course_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.weihe.schedule.action.WIDGET_TICK" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/course_widget_info" />
+        </receiver>
+
+        <!--
+            The 1x2 widget: one class, at a glance.
+
+            A separate provider rather than a second entry in the existing one: a
+            widget's size range is declared per provider, so one provider cannot offer
+            both a 3x2 layout and a 1x2 one. Two entries in the picker is also the
+            honest description of what the app now offers.
+
+            It receives no broadcasts of its own. The boundary alarm and every data
+            change go through CourseWidgetUpdater, which redraws every widget on the
+            device whichever size it is.
+        -->
+        <receiver
+            android:name=".widget.NextClassWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_next_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/next_class_widget_info" />
+        </receiver>
+
+        <!--
+            The 2x2 widget: the class that matters now, plus the one after it.
+
+            A third provider for the third size, for the same reason as the second: a
+            provider declares one size range. It receives no broadcasts of its own;
+            CourseWidgetUpdater redraws every size from one timetable read.
+        -->
+        <receiver
+            android:name=".widget.SquareWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_square_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/square_widget_info" />
+        </receiver>
     </application>
 </manifest>

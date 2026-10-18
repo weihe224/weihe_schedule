@@ -45,6 +45,7 @@ import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.Pickers;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
+import com.weihe.schedule.widget.CourseWidgetUpdater;
 
 /**
  * Today's courses, and the way into everything else.
@@ -165,6 +166,10 @@ public class MainActivity extends Activity {
         // cancels what it registered last time and registers at most a week's
         // worth again, so resuming repeatedly cannot pile alarms up.
         ReminderScheduler.sync(this);
+        // The widget answers the same question from the same data, and this is the
+        // screen every launch goes through -- so it is also the cheapest place to
+        // catch anything that changed while the app was not looking.
+        CourseWidgetUpdater.refreshAll(this);
     }
 
     // ---------------------------------------------------------------- layout
@@ -1584,6 +1589,7 @@ public class MainActivity extends Activity {
         if (repository.replaceCoursesAt(courses, target, weekOne, weeks)) {
             // The import replaced the term the alarms were planned from.
             ReminderScheduler.sync(this);
+            CourseWidgetUpdater.refreshAll(this);
             refreshAll();
             Toast.makeText(this, "\u8BFE\u8868\u5DF2\u5BFC\u5165",
                     Toast.LENGTH_SHORT).show();

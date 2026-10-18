@@ -3317,3 +3317,266 @@ chip 的独特价值是"回本周但**保留星期几**"（第12周周三 → �
 - 排查改为日志（4 个 tag）；门禁重跑：**1099 项 / 0 失败**，APK **1,175,784 B**，lint **0 errors, 2 warnings**。
 - 设备复查：卡片回到「勾选 + 一行状态 + 橙色度色块 + 一句说明 + 单个按钮」；`exact` 未授权 →「允许精确闹钟」在，
   授权后消失；提醒仍为 10 条。测完把设备恢复到提醒关闭、通知拒绝、精确闹钟 appop default。
+
+---
+
+## AB. 2026-10-18 桌面小组件（今日课程）
+
+**任务**：给拾课加一个桌面小组件——紧凑时显示下一节课/正在上的课 + 时间 + 地点 + 倒计时，
+大尺寸再多显示今天接下来的 2–3 门课；覆盖上课中 / 即将开始 / 今天没课 / 没有课表 / 学期外
+五种状态；点开进应用；保存、删除、导入、恢复、切学期、改作息表、跨零点、重启、改时间时都要刷新。
+
+**约束**：`AppWidgetProvider` + `RemoteViews`，纯 Java，不引入 Kotlin/Compose/Glance，
+不加依赖，不复制周次/单双周/作息表逻辑；倒计时用 `Chronometer`；`updatePeriodMillis` 不得低于 30 分钟；
+不得把提醒账本（上限 10 条）当作课表数据。
+
+### AB-1. 结构
+
+- `rule/TodayPlan`（纯 JVM）：吃 `List<Course>` + `Semester` + `List<BellSchedule>` + 默认作息表 id +
+  当前时刻，产出 `state` / `current` / `next` / `following` / `laterToday` / `headline()` /
+  `countdownAt()` / `nextRefreshAt()`。周次与单双周走 `ScheduleUtils.occursInWeek`，
+  时间走 `BellSchedules.resolve` + `BellSchedule.startMinute/endMinute`，筛选走 `CourseQuery`。
+- `widget/` 五个类：Provider（生命周期 + 自定义 `WIDGET_TICK`）、DataSource（只读一次仓库）、
+  Renderer（两个布局 + 文案 + 点击 + 尺寸判断）、Updater（`refreshAll`）、RefreshScheduler（一个重画闹钟）。
+- 资源：表头单独一个 layout 由两个尺寸 `<include>`，行是嵌套 RemoteViews 用 `addView` 加进去，
+  所以"今天有几门课"决定行数，而不是在 XML 里预放三行再逐个隐藏。
+
+### AB-2. 根因级问题（真机才暴露）
+
+1. **倒计时显示 497864:44:48。** `RemoteViews.setChronometer(id, base, …)` 的 base 是
+   `SystemClock.elapsedRealtime()` 基准；第一版传了 `LocalDateTime` 的 epoch 毫秒，
+   `Chronometer` 用"开机毫秒"去减，差值自然是 57 年。
+   修法：`elapsedRealtime() + (目标epoch - 当前epoch)`，并在 `bindCountdown` 的 javadoc 里写明原因。
+2. **选择器预览里出现 `00:00`。** 静态预览不会执行渲染代码，`Chronometer` 就露出默认值。
+   修法：XML 里 `visibility="gone"`，由渲染器在有目标时打开。
+3. **`res/values/widget.xml` 与 manifest 的注释里出现 `--`** → AAPT 直接报
+   `注释中不允许出现字符串 "--"`。这个坑本项目上次踩在 manifest 上，这次一次踩在两个文件里。
+4. **lint 多了 5 条警告**：`previewLayout`/`targetCell*` 是 API 31 属性（`UnusedAttribute`），
+   `\uXXXX` 转义的中文字符串被扫成拼写错误（`Typos`）。修法：`tools:targetApi="s"`；
+   资源里的中文直接写（和 `strings.xml` 的 `app_name` 一致），Java 源码里仍用转义。
+
+### AB-3. 顺带修掉的既有缺口
+
+作息表的四个写入点（`EditScheduleActivity` 保存/删除、`ScheduleListActivity` 设为默认/删除）
+此前**只写数据不重排提醒**：改了下课时间，当天的提醒还按旧时刻发。本轮一并补了
+`ReminderScheduler.sync(...)`，同时给这 4 处和另外 6 处数据写入补了 `CourseWidgetUpdater.refreshAll(...)`。
+
+### AB-4. 当轮结果
+
+- 门禁：`--rerun-tasks testDebugUnitTest assembleDebug lintDebug` → BUILD SUCCESSFUL；
+  1135 项 / 0 失败 / 0 错误，61 个测试类；lint 0 errors, 2 warnings（既有）；APK 1,195,415 B。
+- 设备（API 37 模拟器）：选择器可发现、可添加、可移除；今天没课 / 正在上课 / 即将开始三种状态截图；
+  倒计时自行走动；边界闹钟精确对准下课、下一节开始、次日 00:05；编辑课程后立即刷新；
+  重启后重画并重挂闹钟。
+- 未验证：宽版多行在发布口径下的裁切（Launcher 手势无法用 adb 复现，用临时放宽预算的构建拍到一行后回退）、
+  点击跳转、`TIME_SET`/`TIMEZONE_CHANGED`、深色模式。
+
+### AB-5. 给下一轮的提醒
+
+- 想验证宽版：手动长按小组件 → 拖右下角把手拉高到 3 行，看第三行是否被裁。
+- 判断"小组件是否在更新"，看日志就够：`adb logcat -s CourseWidget`，
+  每次刷新一行 `refreshed=<成功数>/<总数> state=… following=…`，闹钟一行 `refresh alarm at=… exact|inexact`。
+
+---
+
+## AC. 2026-10-18 小组件第二轮：倒计时靠右、上下翻页按钮
+
+**背景**：第一版小组件（见 AB）交付后，用户要求：把「距上课/距下课」放到右侧；当天有多节课时能翻动查看后续课程；
+若翻动不好做就改成醒目的上下按钮。
+
+### AC-1. 走过的弯路（记录以免下一轮重犯）
+
+1. **`AdapterViewFlipper` + `RemoteViewsService` 方案**：页面能绑定并渲染（说明服务与工厂都通了），
+   但在 Pixel Launcher（API 37）上左右滑动不翻页，卡片点击也不生效——
+   点击启动的是 `act=MAIN cat=LAUNCHER`，即桌面自己的「点小组件打开应用」兜底。
+   说明触摸没有进入集合项；`setOnClickFillInIntent` + `setPendingIntentTemplate` 与直连 PendingIntent 都一样。
+   → **结论：这个桌面不给小组件集合视图派发手势。**
+2. 其间还试过：`input swipe` 三种速度、`input motionevent` 分段拖拽、横屏/放大逻辑屏幕（`wm size`）找 Add 按钮。
+   横屏与放大屏幕都不改变结论，只用来把「添加小组件」的 Add 按钮从折叠区里弄出来。
+
+### AC-2. 最终实现
+
+- **页码状态放在应用侧**：`widget/CourseWidgetPageStore.java`，独立偏好文件 `weihe_schedule_widget`，
+  键 `page:<widgetId>` 与 `day:<id>`（跨天自动归零）。不碰 `weihe_schedule` 的存储契约。
+- **上下按钮**：`res/drawable/widget_nav_button.xml`（`Palette.PRIMARY` 实心圆）+ `widget_ic_up/down.xml`
+  （Material chevron 矢量，白色），32dp，右侧竖排，中间夹页码 `1 / 2`，`AdapterViewFlipper` 那套全部删除。
+- **按钮点击**：`PendingIntent.getBroadcast`（request code = `widgetId * 2 + 方向`）→ `CourseWidgetProvider`
+  收到 `WIDGET_PAGE_PREV/NEXT` → 改页码 → `CourseWidgetUpdater.refreshAll`。循环翻页。
+- **倒计时靠右**：从「右侧一列」改为**标题行右侧**。右侧一列会压缩时间/地点两行，实测把
+  `第 4-6 节` 与 `教学楼F楼F102多 · 凌铭` 都截断了；放到标题行只压缩课名。
+- **紧凑布局**：日期 + 卡片 +（右侧）上下按钮列；正文垂直居中；`minResize` 提到 180×130dp。
+
+### AC-3. 当轮验证
+
+- 门禁：1140 项 / 0 失败 / 0 错误；lint 0 errors, 2 warnings（既有）；APK 1,200,804 B。
+- 设备：第 1 页 `dd`（`距下课 19:20`，`1 / 2`）→ 点 ▼ → `Aa`（`距上课 1:27:16`，`2 / 2`）→ 点 ▲ 回到第 1 页；
+  点卡片打开 `CourseDetailActivity`；重装后页码保留；日志有 `page turn widget=7 pages=2 intent=…`。
+- 顺带修掉自己引入的 3 条 lint 警告（`DisableBaselineAlignment`、`NestedWeights`、未使用的 `widget_text_pager`），
+  以及两处 XML 注释里的 `--`（AAPT 直接报错，本项目已踩过三次）。
+
+### AC-4. 留给下一轮
+
+- 若以后换到支持集合手势的桌面，可评估把滑动加回来；当前按钮方案在所有桌面都能用。
+- 深色模式仍未做。
+
+---
+
+## AD. 2026-10-18 小组件第三轮：两节课卡 + 今日课表入口
+
+**任务（用户 7 条）**：2×3 组件最多两张课卡；按当前时间动态选（上课中=当前+下一节；没在课上=接下来最早两节）；
+不足两节不占位；底部始终有「查看今日全部 N 节课程」入口，N 按当天实际课程算；点入口进今日课表；
+开始/结束/跨日/改数据后重算；无论尺寸、字体、课名多长都不得出现第三张卡。
+
+**做法**
+
+- `CourseWidgetRenderer.MAX_CARDS = 2`；卡片用 `addView` 加进容器，**加几张由代码决定**，布局里没有第三张卡的位置，
+  所以「不得出现第三节」不依赖任何尺寸判断。
+- 选卡规则只有一条：`headline + following 的第一个`。headline 在「正在上课」时就是当前课，否则是下一节，
+  于是「当前+下一节」和「接下来最早两节」用同一条规则同时成立。
+- 新增 `TodayPlan.todayCount()`（当天全部课程数，含已结束），入口文案只用它，不用卡片数量。
+- 入口整行是 `PendingIntent` → `MainActivity`；单张卡片是 `PendingIntent` → `CourseDetailActivity`。
+
+**删掉的**：翻页（`CourseWidgetPageStore`、上下按钮、翻页广播）、宽版布局与行（`widget_course_wide/row`）、
+`isWide`/`rowBudget`/`MAX_FOLLOWING`、紧凑/日期两个布局，合并为单一 `widget_course.xml`。
+
+**真机坑（值得记）**：布局里用 `<View layout_height="0dp" layout_weight="1"/>` 当弹簧，桌面直接
+`Can't load widget`，异常是 `Class not allowed to be inflated android.view.View` ——
+`RemoteViews` 只允许白名单视图类。改成把上半部分包进 weight=1 的 `LinearLayout`，入口自然落底。
+
+**验证**
+
+- 门禁：1144 项 / 0 失败 / 0 错误；lint 0 errors, 2 warnings（既有）；APK 1,193,756 B。
+- 设备（09:25，`dd` 正在上）：两张卡（`dd` 距下课 09:12 / `Aa` 距上课 1:14:12）+ 底部「查看今日全部 2 节课程」；
+  点入口打开 `MainActivity`；点第二张卡打开 `CourseDetailActivity`；字体 1.3 倍仍是两张卡。
+- 未验证：字体 ≥1.3 时第二张卡的第二行会被裁；当天只有 2 节课，「没在上课时显示最早两节」只有单测覆盖。
+
+**下一轮可做**：按 `fontScale` 动态收缩第二张卡内容，避免大字号下裁行；深色模式。
+
+---
+
+## AE. 2026-10-18 新增 1×2 小组件（极简下一节课提醒卡）
+
+**任务**：在已有 3×2 组件的基础上新增 1×2 尺寸，视觉一致但布局独立；信息优先级
+课名 > 开始时间 > 教室 > 倒计时 > 状态；状态区分下一节/上课中/今日结束/今日无课/空课表/学期外；
+复用现有小组件技术栈与课程数据，不复制单双周、作息表、时间计算逻辑；不影响现有尺寸；跑测试+构建+Lint。
+
+**做法**
+
+- 新增第二个 Provider `NextClassWidgetProvider` + 独立布局 `widget_next_class.xml` + 元数据
+  `next_class_widget_info.xml`。一个 Provider 的尺寸范围是整体声明的，塞不下两种布局。
+- 数据与刷新共用：一次 `CourseWidgetDataSource.read`、一个边界闹钟、同一批数据写入点；
+  `CourseWidgetUpdater.refreshAll` 同时遍历两个 Provider 的 id。
+- 顺手修掉共存缺陷：3×2 的 `onDisabled` 原来无条件取消闹钟，现在走 `refreshAll`，
+  任一尺寸还在桌面就保留闹钟。
+
+**真机坑（两条，都值得记）**
+
+1. **名义 1×2 被放成 2×2**：`minWidth=110dp` 是平台公式 `70n-30` 里的「2 格」值，
+   桌面据此按 2 格宽放置，选择器显示 `2 × 2`。改 `minWidth=40dp` 后显示 `1 × 2`。
+2. **`getAppWidgetOptions` 是区间不是当前值**：1×2 报 `minH=99dp` / `maxH=203dp`，实际约 152dp；
+   取 `min` 会把教室和倒计时全隐藏。改取较大值，并日志输出 `minH/maxH`。
+
+**验证**
+
+- 门禁：1153 项 / 0 失败 / 0 错误（62 类）；lint 0 errors, 2 warnings（既有）；APK 1,198,798 B。
+- 设备：选择器出现第二个入口「下一节」，显示 `1 × 2`；预览为窄卡、文字换行正常；
+  活动实例渲染出「下一节 / Aa / 10:40 / 教学楼F楼F102多 / 距上课 1:02:15」；点击打开 App；
+  移除后实例消失而闹钟保留；两个尺寸同时刷新（`refreshed=2/2 … nextClass=1`）；
+  09:35 边界闹钟让两者从「正在上课」切到「下一节」。
+- **未验证**：没有拍到「1 格宽」的活动实例——该条目的 `+ Add` 位于选择器底部浮动标签栏之下，
+  `adb` 的点击/拖拽够不到（试过 `wm size` 放大、滚动、`draganddrop`、`motionevent`）；
+  其余四种状态文案、缩放、横屏均只有单测或未覆盖。**需要人工在桌面添加一次 1×2 组件确认**。
+
+**下一轮可做**：横屏高度处理（取较大值可能让倒计时略微超出）、深色模式；若能自动化放置，
+补一张 1 格宽的真机截图。
+
+---
+
+## AF. 2026-10-18 尺寸修正：1×2 改为 2×1（横向）
+
+**任务**：上一轮把「下一节」做成竖向 1×2，实际需求是横向 2×1。只改这个组件，3×2 必须原样保留，不提前做 2×2。
+
+**改动**（4 个文件 + 1 组尺寸常量）
+
+- `res/xml/next_class_widget_info.xml`：`minWidth 110dp` / `minHeight 40dp` / `minResize 110×40` /
+  `targetCellWidth 2` / `targetCellHeight 1`（平台公式 `70n−30`：2 格宽 110dp，1 格高 40dp）。
+- `res/layout/widget_next_class.xml`：重写为横版三行——① 状态 + 倒计时同行；② 课名（占位，单行省略）+
+  开始时间（22sp，右）；③ 教室（整行，可隐藏）。左侧 3dp 课程色条，沿用 3×2 的白底卡片与圆角。
+- `NextClassWidgetRenderer`：只保留「教室」的高度阈值（88dp）；**删掉倒计时的高度阈值**——横版里倒计时与状态同行，
+  不占额外高度，只有教室需要独立一行。
+- `values/widget.xml`：新增 `widget_next_text_name 16sp`。
+- `NextClassWidgetRendererTest`：阈值断言改为「只有教室占高度，88dp ≤ 单格实测 99dp」。
+
+**未改**：`CourseWidgetRenderer`、`widget_course.xml`、`widget_course_card.xml`、`course_widget_info.xml`、
+`TodayPlan`、刷新与闹钟机制、数据写入点。
+
+**设备验证**
+
+- 选择器显示 `下一节 2 × 1`，预览为横版窄条。
+- 放置：选择器里的 `+ Add` 被底部浮动标签栏遮挡，`adb` 点不到；改用 `input draganddrop` 从预览拖到桌面，成功。
+- `options widget=11 minH=43 maxH=96` → `height=96dp`；渲染出「下一节 / 距上课 44:01 / Aa / 10:40 / 教学楼F楼F102多」，
+  无裁切、无重叠。
+- 点击 → `MainActivity`；同屏 3×2 行为不变；日志 `refreshed=2/2 … nextClass=1`。
+
+**未验证**：缩放到更矮时隐藏教室行（仅单测）、其余四种状态文案（仅单测）、横屏、深色模式。
+
+**门禁**：1153 项 / 0 失败 / 0 错误；lint 0 errors, 2 warnings（既有）；APK 1,198,822 B。
+
+**下一阶段**：2×2（本阶段按任务要求未开发）；深色模式；若启动器仍遮挡 `+ Add`，可考虑在 App 内提供
+「添加到桌面」入口（`requestPinAppWidget`）。
+### AF-1. 风格对齐（同日追加）
+
+用户指出 2×1 与 3×2 风格不一致。差异根源只有一个：2×1 少了 3×2 的浅绿课块，且时间用了 22sp 自成一档。
+修法：2×1 在白色卡片内套同一层 `widget_headline_bg` 绿块，色条移进绿块内部，字号改回 3×2 的
+11/15/12sp 体系，删掉专为 2×1 加的四条尺寸。3×2 未改动。复核截图 `widget-111`；
+最终门禁 1153 项 / 0 失败，lint 0 errors 2 warnings，APK 1,198,638 B。
+---
+
+## AG. 2026-10-18 新增 2×2 小组件（接下来的课）
+
+**任务**：在已有 3×2、2×1 之上新增 2×2，方形，展示当前/下一节 + 紧随其后的一节；保持前两种尺寸不变。
+
+**新增**：`SquareWidgetProvider`、`SquareWidgetRenderer`、`res/layout/widget_square.xml`、
+`res/xml/square_widget_info.xml`（110×110dp，targetCell 2×2）、`WidgetChronometer`（共享倒计时，
+`labelFor` + `bind`，含 `elapsedRealtime` 换算）、`SquareWidgetRendererTest`（10 项）。
+**修改**：Manifest 第三个 receiver、`CourseWidgetUpdater`（第三个 id 数组 + `square=` 日志）、
+`NextClassWidgetRenderer`（倒计时委托给共享类，行为不变）、`values/widget.xml`（两条字符串）。
+
+**规则复用**：主卡/次卡都来自 `CourseWidgetRenderer.cards(plan)`（headline + 其一后），
+不复制单双周/作息表/教室逻辑；空态文案复用 `NextClassWidgetRenderer.emptyTitle/emptyHint`。
+刷新复用一次读取 + 一个边界闹钟 + 十处写入点，日志 `refreshed=3/3 … square=1`。
+
+**设备**：选择器「3 widgets」出现第三个入口「接下来的课」，预览为方形；用 `input draganddrop` 放置成功（id=12，
+启动器给的尺寸 137×200dp）；渲染 `周日 · 第5周 单周 / 下一节 / 距上课 32:51 / Aa / 10:40 - 14:00 · 教学楼…`；
+点击打开 `MainActivity`；三种尺寸同屏同时刷新。
+
+**未验证**：次要课程行（今天只有 2 节课，`cards=1`）、其余四种状态、缩放阈值、横屏、深色模式。
+
+**门禁**：1163 项 / 0 失败 / 0 错误（63 类）；lint 0 errors, 2 warnings（既有）；APK 1,203,000 B。
+
+**下一阶段**：2×2 的次要行需要 3 节课的一天才能真机确认；深色模式；若启动器继续遮挡 `+ Add`，
+可考虑在 App 内加「添加到桌面」（`requestPinAppWidget`）。
+---
+
+## AH. 2026-10-18 小组件半透明
+
+用户要求减少对壁纸的遮挡。只改 `res/values/widget.xml` 三个共用颜色：
+`widget_surface` #FFFFFFFF → #E0FFFFFF（88%）、`widget_headline` #FFCFE5DE → #C7CFE5DE（78%）、
+`widget_outline` #FFDFE7E1 → #99DFE7E1（60%）。三种尺寸共用同一组 drawable，改一处全生效；
+文字色一律保持不透明，因此对比度不受影响。
+
+设备复核截图 `widget-130`：壁纸明暗从卡面透出，文字/绿块/倒计时清晰。
+未验证：极端壁纸、深色模式。门禁 1163 项 / 0 失败，lint 0 errors 2 warnings，APK 1,203,000 B。
+---
+
+## AI. 2026-10-18 第二张卡片用「已结束」补位
+
+用户反馈 3×2/2×2 放得下两节课却只显示一节。根因是选择规则：`cards()` 只取未结束的课，
+当只剩一节未上时第二张空着，而入口写着「查看今日全部 2 节课程」。
+
+改法：`TodayPlan` 增加 `Session.ended(now)` 与 `previous()`（当天最近结束的一节）；
+`cards()` 在仍未满两张时用 `previous()` 补位（未上的课永远优先）；`WidgetChronometer.bind` 对已结束的课
+显示「已结束」并隐藏 Chronometer；3×2 的倒计时改走该共享类；2×2 次要行改为 `已结束 09:35 · dd`；2×1 不变。
+
+设备复核（`widget-140`）：3×2 两张卡 `Aa 距上课 22:31` + `dd 已结束`；2×2 主卡 + `已结束 09:35 · dd`；2×1 不变。
+测试更新 5 项，共 1164 项全绿；lint 0 errors 2 warnings；APK 1,203,112 B。

@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
+import com.weihe.schedule.widget.CourseWidgetUpdater;
+
 /**
  * Rebuilds the reminder plan when something outside the app invalidates it.
  *
@@ -94,6 +96,10 @@ public class ReminderRestoreReceiver extends BroadcastReceiver {
         Context app = context.getApplicationContext();
         try {
             int registered = ReminderScheduler.sync(app);
+            // The widget is rebuilt from the same data and goes stale on exactly the
+            // same events: a reboot clears nothing it reads, but the date has moved
+            // and the alarms that were going to change it are gone.
+            CourseWidgetUpdater.refreshAll(app);
             // The count is the answer to "did my reminders come back?", which is
             // otherwise invisible for an event nobody was looking at. Rare enough
             // to be worth a line: a boot, a clock change, or an update.

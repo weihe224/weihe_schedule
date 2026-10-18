@@ -56,6 +56,7 @@ import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.Pickers;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
+import com.weihe.schedule.widget.CourseWidgetUpdater;
 
 /**
  * Everything that is not the timetable itself.
@@ -141,6 +142,10 @@ public class SettingsActivity extends Activity {
             // without re-planning is how a screen ends up saying "0 条提醒" next to a
             // switch that is on.
             ReminderScheduler.sync(this);
+            // The widget reads the same timetable and goes stale on the same events;
+            // returning to the app is the moment anything done elsewhere becomes
+            // visible on the home screen.
+            CourseWidgetUpdater.refreshAll(this);
             refresh();
         }
     }
@@ -1351,6 +1356,9 @@ public class SettingsActivity extends Activity {
         // Every date in the term just moved, so every alarm instant moved with it.
         // Re-planning now is what keeps a reminder from firing on the old calendar.
         ReminderScheduler.sync(this);
+        // Today's date is read against the term start, so the widget's answer moved
+        // too -- possibly to a different week, or out of the term altogether.
+        CourseWidgetUpdater.refreshAll(this);
         refresh();
         Toast.makeText(this, "\u5F00\u5B66\u65E5\u5DF2\u8BBE\u4E3A "
                 + ScheduleUtils.formatFullDate(monday), Toast.LENGTH_SHORT).show();
@@ -1667,6 +1675,7 @@ public class SettingsActivity extends Activity {
         if (repository.replaceCoursesAt(courses, target, weekOne, weeks)) {
             // The term the alarms were planned from has just been replaced wholesale.
             ReminderScheduler.sync(this);
+            CourseWidgetUpdater.refreshAll(this);
             refresh();
             Toast.makeText(this, "\u8BFE\u8868\u5DF2\u5BFC\u5165",
                     Toast.LENGTH_SHORT).show();

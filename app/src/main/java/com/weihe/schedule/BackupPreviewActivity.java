@@ -23,6 +23,7 @@ import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
+import com.weihe.schedule.widget.CourseWidgetUpdater;
 
 /**
  * Shows what a backup file contains, without applying any of it.
@@ -366,6 +367,9 @@ public class BackupPreviewActivity extends Activity {
                 // exist. Rebuilding here is the difference between "restored" and
                 // "restored, but still reminding me about last term".
                 ReminderScheduler.sync(this);
+                // A restore replaces the whole term, so the widget's answer changes
+                // wholesale with it.
+                CourseWidgetUpdater.refreshAll(this);
                 body.removeAllViews();
                 LinearLayout done = card();
                 done.addView(UiKit.text(this, "\u6062\u590D\u5B8C\u6210",

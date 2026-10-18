@@ -25,6 +25,7 @@ import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
+import com.weihe.schedule.widget.CourseWidgetUpdater;
 
 /**
  * One course, in full, before anything is changed.
@@ -403,6 +404,9 @@ public class CourseDetailActivity extends Activity {
                     // The class is gone, so its alarms have to go with it. Rebuilding
                     // here is what stops a deleted course from announcing itself.
                     ReminderScheduler.sync(this);
+                    // The widget shows the same timetable, so it is stale the moment
+                    // this write lands.
+                    CourseWidgetUpdater.refreshAll(this);
                     Toast.makeText(this, "\u8BFE\u7A0B\u5DF2\u5220\u9664",
                             Toast.LENGTH_SHORT).show();
                     finish();

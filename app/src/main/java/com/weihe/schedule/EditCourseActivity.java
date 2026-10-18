@@ -46,6 +46,7 @@ import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
+import com.weihe.schedule.widget.CourseWidgetUpdater;
 
 public class EditCourseActivity extends Activity {
     public static final String EXTRA_COURSE_ID = "course_id";
@@ -1280,6 +1281,9 @@ public class EditCourseActivity extends Activity {
         // edits a class and then leaves the app never passes through it, and would
         // otherwise be reminded at the old time until the next launch.
         ReminderScheduler.sync(this);
+        // The widget is the same data with a different deadline: it has to be right
+        // before the user gets back to a home screen, not when they next open the app.
+        CourseWidgetUpdater.refreshAll(this);
         Toast.makeText(this, note, Toast.LENGTH_SHORT).show();
         finish();
     }
@@ -1322,6 +1326,7 @@ public class EditCourseActivity extends Activity {
                     // A deleted class must not be announced. Rebuilding drops it from
                     // the plan and cancels the slot it occupied in the same pass.
                     ReminderScheduler.sync(this);
+                    CourseWidgetUpdater.refreshAll(this);
                     setResult(RESULT_OK);
                     finish();
                 }));

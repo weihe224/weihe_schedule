@@ -18,9 +18,11 @@ import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.data.CourseRepository;
+import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
+import com.weihe.schedule.widget.CourseWidgetUpdater;
 
 /**
  * The list of bell schedules.
@@ -276,6 +278,10 @@ public class ScheduleListActivity extends Activity {
             return;
         }
         render();
+        // Courses with no matching venue now ring a different table, so their times
+        // -- and with them today's widget and the alarms -- change.
+        ReminderScheduler.sync(this);
+        CourseWidgetUpdater.refreshAll(this);
         Toast.makeText(this, "\u5DF2\u8BBE\u4E3A\u9ED8\u8BA4\u4F5C\u606F\u8868",
                 Toast.LENGTH_SHORT).show();
     }
@@ -314,6 +320,10 @@ public class ScheduleListActivity extends Activity {
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.destructive("\u5220\u9664\u4F5C\u606F\u8868", () -> {
                     if (repository.deleteBellSchedule(schedule.name())) {
+                        // Deleting a table repoints every course that named it, so
+                        // both the alarms and the widget have to be rebuilt.
+                        ReminderScheduler.sync(this);
+                        CourseWidgetUpdater.refreshAll(this);
                         render();
                         Toast.makeText(this, "\u4F5C\u606F\u8868\u5DF2\u5220\u9664", Toast.LENGTH_SHORT).show();
                     }

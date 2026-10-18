@@ -24,10 +24,12 @@ import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.BellScheduleEditor;
 import com.weihe.schedule.rule.ScheduleDraft;
 import com.weihe.schedule.data.CourseRepository;
+import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.Pickers;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
+import com.weihe.schedule.widget.CourseWidgetUpdater;
 
 /**
  * Edits one bell schedule: its name, the venue keywords that select it, how long
@@ -670,6 +672,10 @@ public class EditScheduleActivity extends Activity {
                 UiKit.Action.destructive("\u5220\u9664\u4F5C\u606F\u8868", () -> {
                     // By name, and the repository clears the courses that named it.
                     if (repository.deleteBellSchedule(editor.originalName())) {
+                        // The times of every course that rang this table just moved:
+                        // both the reminder plan and the widget are built from them.
+                        ReminderScheduler.sync(this);
+                        CourseWidgetUpdater.refreshAll(this);
                         setResult(RESULT_OK);
                         finish();
                     }
@@ -707,6 +713,10 @@ public class EditScheduleActivity extends Activity {
         // Saving the list directly, as this used to, silently left those courses
         // naming a table that no longer existed.
         repository.saveBellSchedule(originalName, editor.build());
+        // Every course that rings this table now starts at a different minute, so
+        // the alarms and the widget are both stale the moment this returns.
+        ReminderScheduler.sync(this);
+        CourseWidgetUpdater.refreshAll(this);
         Toast.makeText(this, "\u4F5C\u606F\u8868\u5DF2\u4FDD\u5B58",
                 Toast.LENGTH_LONG).show();
         setResult(RESULT_OK);
