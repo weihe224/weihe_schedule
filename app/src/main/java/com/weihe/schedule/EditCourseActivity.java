@@ -42,6 +42,7 @@ import com.weihe.schedule.rule.CourseFormValidator;
 import com.weihe.schedule.rule.WeekSelection;
 import com.weihe.schedule.rule.CourseSuggestions;
 import com.weihe.schedule.data.CourseRepository;
+import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
@@ -1274,6 +1275,11 @@ public class EditCourseActivity extends Activity {
                     + " \u6761\u540C\u540D\u5B89\u6392\u7684\u989C\u8272";
         }
         setResult(RESULT_OK);
+        // The alarms were planned from the timetable as it was a minute ago. Rebuild
+        // them here rather than waiting for the home screen to resume: a user who
+        // edits a class and then leaves the app never passes through it, and would
+        // otherwise be reminded at the old time until the next launch.
+        ReminderScheduler.sync(this);
         Toast.makeText(this, note, Toast.LENGTH_SHORT).show();
         finish();
     }
@@ -1313,6 +1319,9 @@ public class EditCourseActivity extends Activity {
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.destructive("\u5220\u9664\u8BFE\u7A0B", () -> {
                     repository.deleteCourse(course.id);
+                    // A deleted class must not be announced. Rebuilding drops it from
+                    // the plan and cancels the slot it occupied in the same pass.
+                    ReminderScheduler.sync(this);
                     setResult(RESULT_OK);
                     finish();
                 }));

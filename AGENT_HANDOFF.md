@@ -6,6 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
+> - **最新一轮：见文末「V. 2026-10-18 上课提醒可靠性修复」**（提醒改为精确闹钟 + 权限流程 + 数据变更即重排；诊断只走日志，界面不暴露）。A–U 各节的 Git 状态、提醒实现描述与部分「未验证」结论**已被 V 节取代**。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -1692,3 +1693,125 @@ gradlew.bat -Dorg.gradle.vfs.watch=false --rerun-tasks testDebugUnitTest assembl
 改动：`CourseDetailActivity.java`、`EditCourseActivity.java`（含 T 节遗留的未提交改动）、
 本文件、`AGENT_HANDOFF_ARCHIVE.md`。未跟踪：`.workbuddy-ai/`、`app/release/`、
 `rule/CourseNotes.java`、两个新测试类。**Agent 未 commit / 未 push。**
+
+---
+
+## V. 2026-10-18 上课提醒可靠性修复（当前状态）
+
+> **与 A–U 各节冲突时以本节为准。** 逐轮细节见归档 **AA 节**。
+> 起因：用户在**真实设备**上装包后，上课提醒没有正常触发。
+
+### V-1. 根因（按影响排序，均有代码依据）
+
+| # | 根因 | 依据（修复前） | 造成的现象 |
+|---|---|---|---|
+| **1** | **迟到即丢弃**：接收器在 `now >= 课程开始` 时直接 `return`，什么都不发 | 旧 `ReminderReceiver.announce()` | 闹钟只要晚到（哪怕 1 秒）就**永远不提醒**。这是「完全收不到」最直接的代码原因 |
+| **2** | **只有非精确闹钟**：`setAndAllowWhileIdle`，清单里连精确闹钟权限都没声明 | 旧 `ReminderScheduler.register()`、旧 `AndroidManifest.xml` 注释「SCHEDULE_EXACT_ALARM is deliberately absent」 | Doze / 厂商省电下可晚几分钟到几十分钟 → 命中根因 1 → 静默无提醒 |
+| **3** | **没有精确闹钟权限流程**：不检查 `canScheduleExactAlarms()`、无授权入口、无「权限恢复后重排」 | 全项目 grep 无 `canScheduleExactAlarms` | 永远走非精确，且用户无从改善 |
+| **4** | **数据变更后不重排**：保存/删除/导入/恢复/学期切换都不调用 `sync()`，只有首页 `onResume`、设置页开关与闹钟触发时才重排 | 旧 `EditCourseActivity`、`BackupPreviewActivity`、`SemesterListActivity`、导入路径均无 `ReminderScheduler.sync` | 改课/删课后旧闹钟继续响到下一次重启或回首页；新建课程可能完全没有闹钟 |
+| **5** | **权限恢复后不重排**：设置页 `onResume` 只刷新文本不重排；精确闹钟权限变化无监听 | 旧 `SettingsActivity.onResume` | 在系统设置里打开通知权限后回到应用，界面显示「已开启」但**一条闹钟都没有** |
+| **6** | **没有任何自检手段** | 旧设置页只有「已安排 N 条提醒」 | 用户与开发者都无法区分「没安排」「被权限挡」「渠道被关」 |
+
+> 说明：根因 1+2+3 会**同时**导致「真机上完全收不到」，且都不会崩溃、不会报错，只表现为静默。模拟器上（几乎不进入 Doze）历轮验证是绿的，这正是它一直没被发现的原因。
+
+### V-2. 修复内容
+
+| 项 | 修复后 |
+|---|---|
+| 精确度 | 默认 `setExactAndAllowWhileIdle`；**每次注册前**检查 `canScheduleExactAlarms()`；未授权才退回 `setAndAllowWhileIdle`；调用时被拒（`SecurityException`）就地降级并记日志 |
+| 权限 | 清单声明 `SCHEDULE_EXACT_ALARM`（**只这一个**，未使用 `USE_EXACT_ALARM`）；设置页有「允许精确闹钟」入口直达系统页；监听 `SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED`，授权/撤销后**后台自动重排** |
+| 迟到 | 迟到 ≤ `Reminder.MAX_LATE_MINUTES`（20 分钟）内仍然提醒，文案改为「已到上课时间（提醒延迟 N 分钟）」；超过才丢弃。20 分钟 < 一节课，保证不会提醒「已经错过的课」 |
+| 生命周期 | 加 `sync()`：编辑页保存/删除、详情页删除、备份恢复成功、导入成功、学期切换/新建/删除、学期起始日期改动、设置页 `onResume`、精确闹钟权限变化、开机/改时间/改时区/应用更新 |
+| 界面（上线形态） | 设置页回到原来的四点：开启勾选、一行状态（已关闭 / 通知权限未开启 / 已开启 · 提前 N 分钟 · 已安排 M 条提醒）、提前量色块、一句说明；**下面只留一个按钮**，按当前缺什么自动变成「去开启通知权限」或「允许精确闹钟」，两样都不缺时整行隐藏。不显示诊断数据，也没有测试按钮 |
+| 诊断（日志） | 界面上不暴露诊断信息，改为日志：`ReminderScheduler` / `ReminderReceiver` / `ReminderNotification` / `ReminderRestore` 四个 tag 覆盖计划条数、每条闹钟的 slot/courseId/触发时刻/精确与否、取消的旧槽位、触发时的 slot/迟到分钟/是否发布、被丢弃的原因、重排失败原因。**只记 id 与时刻，不记课名/教室/教师** |
+
+#### V-2.1 诊断界面被移除（上线要求，2026-10-18 同日）
+
+排查阶段曾把「通知权限 / 通知渠道 / 精确闹钟 / 下一条提醒 / 上次重排失败」做成设置页里的三行状态，
+并提供了「发送测试通知」「测试提醒（1 分钟后）」两个按钮与 `TEST_SLOT=999` 的测试闹钟链路。
+这些是**排查工具**，用户看到真机截图后要求「把界面恢复到可上线状态」，因此**已全部删除**：
+
+- 设置页只剩：勾选、一行状态、提前量色块、一句说明、**一个**自适应权限按钮；
+- `ReminderScheduler.scheduleTest/cancelTest/testScheduledAt`、`ACTION_TEST_REMIND`、`postTest()`、
+  `ReminderSettings.last_sync_*`/`test_at` 一并删除（没有调用方的代码不留）；
+- **保留**精确闹钟入口（未授权时按钮变成「允许精确闹钟」）——这不是调试信息，而是让"提醒可能延迟"可被修复的入口；
+- 排查手段改为日志（V-2 最后一行）。**不要为了"方便调试"再把测试按钮加回设置页**；需要时用
+  `adb shell am broadcast` 或临时构建验证，而不是随包发布。
+
+### V-3. 审计十问（结论）
+
+1. **触发时间**＝`课程开始（按作息表解析到分钟）− 提前量`，见 `ReminderPlan.onDate`。
+2. **是**：提前量、真实开始时间、学期周次、单双周都由 `ScheduleUtils`/`CourseQuery` 统一计算，未复制逻辑。
+3. **修复前**非精确；**现在**精确优先、未授权时降级为 `setAndAllowWhileIdle` 并在界面明示。
+4. **权限**：`POST_NOTIFICATIONS`（13+ 运行时）+ `SCHEDULE_EXACT_ALARM`（12+ 可用户授予）+ `RECEIVE_BOOT_COMPLETED`（安装即授予）。
+5. **是**：`sync()` 捕获 `RuntimeException` 并记 `sync failed: <类型>: <原因>`；闹钟级失败记 slot 与原因。界面上不再显示失败原因（见 V-2.1），排查靠日志。
+6. **是**：设备实测接收器在目标时刻 +39 ms 收到并发布通知（见 V-5）。
+7. **是**：通知权限/应用总开关/渠道 importance 三处都会导致不显示；设置页现在分别显示；`canPost()` 为假时**不注册任何闹钟**。
+8. **是**：重启、改时间/时区、应用更新、精确闹钟授权变化、课程增删改、导入、恢复、学期改动都会重排。
+9. **否**：`PendingIntent` 用「槽位（小整数）+ 固定 action + 组件」标识，槽位到课程的映射存在 `scheduled` 里；通知 id = `hash(courseId, epochDay)`。同一门课的多条安排是不同 `courseId`，不会互相覆盖（已有测试锁定）。
+10. **上限 10 条 / 前瞻 7 天**：会，但**不会漏**——每次触发、每次开屏、每次数据变更都会重排，10 条是「同时挂起的上限」，不是「每天的上限」。前提是接收器能跑（见 V-6）。
+
+### V-4. 改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `AndroidManifest.xml` | +`SCHEDULE_EXACT_ALARM`；恢复接收器 +`SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED` |
+| `rule/Reminder.java` | +`MAX_LATE_MINUTES`、`isLate`、`isStillUsefulAt`、`lateMinutes`（纯函数，可单测） |
+| `reminder/ReminderScheduler.java` | 精确/非精确决策与降级、`canScheduleExact()`、逐步日志 |
+| `reminder/ReminderReceiver.java` | 处理 `ACTION_TEST_REMIND`；迟到宽限；每个丢弃分支都有日志 |
+| `reminder/ReminderNotifications.java` | `post(..., deliveredAt)`、迟到文案、失败日志 |
+| `reminder/ReminderRestoreReceiver.java` | 识别精确闹钟权限变化广播 |
+| `reminder/ReminderSettings.java` | 未改存储键（`enabled`/`lead_minutes`/`scheduled` 之外没有新增键） |
+| `SettingsActivity.java` | `onResume` 先重排；一行状态 + 单个自适应权限按钮（通知 / 精确闹钟）；提示文案更新 |
+| `EditCourseActivity.java` / `CourseDetailActivity.java` | 保存/删除后 `sync()` |
+| `BackupPreviewActivity.java` / `MainActivity.java` / `SettingsActivity.java`（导入） | 恢复/导入成功后 `sync()` |
+| `SemesterListActivity.java` | 切换/新建/删除学期后 `sync()` |
+| 测试 | 新增 `rule/ReminderTimingTest`（6 项）；`ReminderScheduleTest` +2（迟到文案）；`ReminderRestoreTest` 更新两处事件清单 |
+
+### V-5. 实测（模拟器 `emulator-5554` / API 37 / 1080×2424 @420，**不是真机**）
+
+| 场景 | 结果 |
+|---|---|
+| 未授权通知时开启提醒 | 状态行「通知权限未开启，提醒不会显示」；`scheduled=[]`；系统无任何本应用闹钟 |
+| 授权通知后自动重排 | `sync: planned=10 registered=10`；设置页「已开启 · 提前 10 分钟 · 已安排 10 条提醒」 |
+| 未授权精确闹钟 | 日志 `exact=false`；设置页出现「允许精确闹钟」入口 |
+| 授予精确闹钟（`cmd appops set ... allow`） | **系统广播触发重排**：`SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED: 已重建 10 条提醒`；日志 `exact=true`；`dumpsys alarm` 显示 `window=0 exactAllowReason=permission` |
+| **测试闹钟（验证用，已移除）** | 当时的构建带「测试提醒（1 分钟）」按钮：计划 07:34:06.067 → 接收器 **07:34:06.076**（+9 ms）；应用在后台、**屏幕关闭**；通知入栏；一次性。这个按钮是排查工具，**上线前按用户要求连同诊断行一起删除**（见 V-2.1），现在的构建没有它 |
+| **真实课程提醒** | 插入周日第 1 节探针课（A/F 楼作息 08:15-08:55，提前 34 分钟）→ 计划 07:41:00.000 → 接收器 **07:41:00.039**（+39 ms）；通知标题「上课提醒 · ReminderProbe」、正文「10月18日 周日 08:15 · 第 1 节 · 教学楼F楼F101多 · Probe Teacher / 34 分钟后开始」 |
+| 改课（周次 1-18 → 1-4，今天第 5 周） | 保存后立即重排，槽位 1000 重新指向别课，探针从 `scheduled` 消失；`dumpsys alarm` 中旧时刻已不存在 |
+| 重启 | `BOOT_COMPLETED: 已重建 10 条提醒`；重启后系统里 10 条精确闹钟与重启前一致 |
+| 撤销通知权限 | `sync: notifications blocked`；闹钟全部取消；界面显示「通知权限未开启，提醒不会显示」+ 入口 |
+| 恢复通知权限 | 重启应用后自动回到 10 条精确闹钟 |
+| 数据还原 | 测试用的探针课程与提前量已清除，`weihe_schedule.xml` 与测试前**逐字节相同**（MD5 `5812d6eb…`）；通知权限恢复为拒绝、精确闹钟 appop 恢复 default |
+
+### V-6. 未验证 / 系统限制（必须告知用户）
+
+1. **没有真机验证**：全部结论来自模拟器 API 37。厂商 ROM（小米/华为/OPPO/vivo）的省电策略会额外限制后台与闹钟，**代码无法绕过**，只能在系统设置里给应用「自启动 / 无限制电池」。
+2. **被用户「强行停止」后不会提醒**：Android 会取消该应用的闹钟与广播，直到用户再次打开应用。这是系统行为，不是缺陷。
+3. **锁屏上的显示形态未验证**（屏幕关闭状态下通知确实已发布，但没看锁屏界面）。
+4. **非精确路径的送达时间未实测**：只验证了「未授权时确实以 inexact 注册」。
+5. **`SecurityException` 就地降级分支未复现**（代码审阅通过；权限在上架/撤销瞬间失效才会走到）。
+6. 新设置卡片在**大字号/极小屏**下的排版未验证。
+7. 同一门课**同一天两段**（两条记录）各自提醒——由独立 `courseId` 与独立通知 id 保证，有单元测试，但未做设备验证。
+
+### V-7. 下一步建议
+
+| 优先级 | 任务 |
+|---|---|
+| P0 | **在真机上复测「真实课程提醒」**（挑一条十几分钟后的课，或临时把提前量调大）；厂商 ROM 需先给应用「无限制电池」 |
+| P1 | 锁屏形态、非精确路径实际延迟、`SecurityException` 分支 |
+| P1 | 若用户反馈仍不响：`adb logcat -s ReminderScheduler ReminderReceiver ReminderNotification ReminderRestore`（界面已不再显示诊断，日志是唯一途径） |
+| P2 | 通知点击后返回栈（当前 `FLAG_ACTIVITY_NEW_TASK`）在真机上的表现 |
+
+### V-8. 工作区状态（本轮结束）
+
+改动：`AndroidManifest.xml`、`rule/Reminder.java`、`reminder/` 下 4 个类（`ReminderSettings` 未新增存储键）、
+`SettingsActivity.java`、`EditCourseActivity.java`、`CourseDetailActivity.java`（仅此前的详情页 UI + 本轮 2 行 sync）、
+`BackupPreviewActivity.java`、`SemesterListActivity.java`、`MainActivity.java`、
+2 个既有测试 + 1 个新测试类（`rule/ReminderTimingTest`）、本文件、归档。
+**Agent 未 commit / 未 push。** 未跟踪：`app/release/`（构建产物）。
+
+门禁（删除诊断界面后重跑）：`--rerun-tasks testDebugUnitTest assembleDebug lintDebug` → BUILD SUCCESSFUL；
+**1099 项 / 0 失败**；APK **1,175,784 B**；lint **0 errors, 2 warnings**（既有 IconXmlAndPng）。
+设备端复查：设置页卡片恢复为「勾选 + 一行状态 + 色块 + 一句说明 + 单个权限按钮」；
+`exact` 未授权时该按钮为「允许精确闹钟」，授权后整行隐藏；提醒条数照常 10 条。

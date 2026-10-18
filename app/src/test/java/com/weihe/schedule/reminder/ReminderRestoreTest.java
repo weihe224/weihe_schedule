@@ -305,7 +305,11 @@ public class ReminderRestoreTest {
                 "android.intent.action.BOOT_COMPLETED",
                 "android.intent.action.TIME_SET",
                 "android.intent.action.TIMEZONE_CHANGED",
-                "android.intent.action.MY_PACKAGE_REPLACED" }) {
+                "android.intent.action.MY_PACKAGE_REPLACED",
+                // Granting exact alarms is what turns a plan that may arrive late
+                // into one that arrives on the minute, so the alarms have to be
+                // registered again through the new route.
+                "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" }) {
             assertTrue(action + " must rebuild the plan",
                     ReminderRestoreReceiver.isRestoreEvent(action));
         }

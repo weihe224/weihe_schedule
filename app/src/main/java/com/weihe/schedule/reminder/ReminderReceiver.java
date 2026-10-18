@@ -80,6 +80,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         }
         if (!ReminderSettings.isEnabled(context)) {
             // Switched off between registering and firing.
+            Log.i(TAG, "fired slot=" + slot + " but reminders are off");
             ReminderScheduler.cancelAll(context);
             return;
         }
@@ -88,32 +89,47 @@ public class ReminderReceiver extends BroadcastReceiver {
         if (entry == null || !entry.describes(slot, firedAtMillis)) {
             // No entry claims this slot at this instant: a leftover alarm, or one
             // whose cancellation did not take. Silence is the right answer.
+            Log.i(TAG, "fired slot=" + slot + " at=" + firedAtMillis
+                    + " with no matching entry; dropped");
             return;
         }
         if (ReminderSettings.alreadyNotified(context, entry)) {
+            Log.i(TAG, "fired slot=" + slot + " course=" + entry.courseId()
+                    + " already announced today; dropped");
             return;
         }
         if (!ReminderNotifications.canPost(context)) {
             // No permission, or the channel is silenced. The settings screen says
             // so; a notification here could not be shown anyway.
+            Log.i(TAG, "fired slot=" + slot + " course=" + entry.courseId()
+                    + " but notifications are blocked");
             return;
         }
 
         Reminder reminder = lookup(context, entry);
         if (reminder == null) {
             // The class is gone, moved, or no longer runs today.
+            Log.i(TAG, "fired slot=" + slot + " course=" + entry.courseId()
+                    + " is no longer on the timetable for " + entry.classDay()
+                    + "; dropped");
             return;
         }
-        LocalDateTime startAt = reminder.startAt();
-        if (!LocalDateTime.now().isBefore(startAt)) {
-            // The alarm arrived after the class began -- a very late delivery, or a
-            // clock change. Reminding someone about a class already under way is
-            // worse than saying nothing.
+        LocalDateTime now = LocalDateTime.now();
+        if (!reminder.isStillUsefulAt(now)) {
+            // Delivered after the class had already been running longer than the
+            // window in which a reminder still helps. This used to drop anything at
+            // or after the start time, which turned "late" into "never" on a phone
+            // whose alarms are inexact; see Reminder#MAX_LATE_MINUTES.
+            Log.i(TAG, "fired slot=" + slot + " course=" + reminder.courseId()
+                    + " too late (" + reminder.lateMinutes(now) + " min); dropped");
             return;
         }
-        if (ReminderNotifications.post(context, reminder)) {
+        boolean posted = ReminderNotifications.post(context, reminder, now);
+        if (posted) {
             ReminderSettings.markNotified(context, entry);
         }
+        Log.i(TAG, "fired slot=" + slot + " course=" + reminder.courseId()
+                + " late=" + reminder.lateMinutes(now) + " posted=" + posted);
     }
 
     /** The class this entry refers to, read from the timetable as it is now. */

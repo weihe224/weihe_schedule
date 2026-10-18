@@ -19,6 +19,7 @@ import com.weihe.schedule.data.BackupPreview;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.data.RestoreReport;
 import com.weihe.schedule.design.Palette;
+import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
@@ -360,6 +361,11 @@ public class BackupPreviewActivity extends Activity {
         switch (report.status()) {
             case RESTORED:
                 subtitle.setText("\u5DF2\u6062\u590D");
+                // Every course the phone held a minute ago has just been replaced,
+                // so every registered alarm points at something that may no longer
+                // exist. Rebuilding here is the difference between "restored" and
+                // "restored, but still reminding me about last term".
+                ReminderScheduler.sync(this);
                 body.removeAllViews();
                 LinearLayout done = card();
                 done.addView(UiKit.text(this, "\u6062\u590D\u5B8C\u6210",

@@ -16,9 +16,9 @@ import android.util.Log;
  * copy of those would eventually disagree with the first, and the disagreement
  * would surface as a reminder at the wrong minute.</p>
  *
- * <h2>Why these four events</h2>
+ * <h2>Why these events</h2>
  *
- * <p>All four are on the platform's list of broadcasts that may still be received
+ * <p>All of them are on the platform's list of broadcasts that may still be received
  * by a manifest-declared receiver after Android 8.0's background limits:</p>
  *
  * <ul>
@@ -29,7 +29,12 @@ import android.util.Log;
  *       instants, so moving the clock or the zone moves every one of them;</li>
  *   <li>{@link Intent#ACTION_MY_PACKAGE_REPLACED} -- sent only to this app, and so
  *       not an implicit broadcast at all. An update may leave alarms the new build
- *       would not have chosen, and re-planning costs one pass.</li>
+ *       would not have chosen, and re-planning costs one pass;</li>
+ *   <li>{@link #ACTION_EXACT_ALARM_PERMISSION_CHANGED} -- the user just granted or
+ *       revoked exact alarms. Granting it is what turns a plan that arrived "some
+ *       time later" into a plan that arrives on the minute, so the alarms have to be
+ *       registered again through the new route immediately, even if the app is not
+ *       open.</li>
  * </ul>
  *
  * <p>{@code ACTION_DATE_CHANGED} is deliberately <em>absent</em>: it is not on that
@@ -64,6 +69,16 @@ import android.util.Log;
  * than the feature.</p>
  */
 public class ReminderRestoreReceiver extends BroadcastReceiver {
+
+    /**
+     * Sent when the user grants or revokes the exact-alarm permission.
+     *
+     * <p>Written out rather than taken from {@code AlarmManager}, because that
+     * constant only exists from API 31 while this receiver is compiled against
+     * every level the app supports. Same string, no version check at the call.</p>
+     */
+    static final String ACTION_EXACT_ALARM_PERMISSION_CHANGED =
+            "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED";
 
     private static final String TAG = "ReminderRestore";
 
@@ -108,6 +123,7 @@ public class ReminderRestoreReceiver extends BroadcastReceiver {
             case Intent.ACTION_TIME_CHANGED:
             case Intent.ACTION_TIMEZONE_CHANGED:
             case Intent.ACTION_MY_PACKAGE_REPLACED:
+            case ACTION_EXACT_ALARM_PERMISSION_CHANGED:
                 return true;
             default:
                 return false;

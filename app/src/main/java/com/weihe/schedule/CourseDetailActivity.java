@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -20,6 +21,7 @@ import com.weihe.schedule.model.BellSchedule;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.rule.CourseDetail;
+import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.UiKit;
 import com.weihe.schedule.ui.UiTokens;
@@ -45,6 +47,16 @@ public class CourseDetailActivity extends Activity {
 
     /** The course to show. The same extra the editor takes. */
     public static final String EXTRA_COURSE_ID = "course_id";
+
+    /**
+     * Width of the label column shared by the two fact cards.
+     *
+     * <p>One width for both cards, so 星期 and 上课地点 put their values at the same
+     * x. Wide enough for the longest label the page uses (上课规则, four characters)
+     * at the body size, and fixed rather than measured: a label that wrapped would
+     * shift only its own row's value and break the column for the rows below it.</p>
+     */
+    private static final int FACT_LABEL_WIDTH_DP = 76;
 
     private CourseRepository repository;
     private LinearLayout body;
@@ -89,7 +101,8 @@ public class CourseDetailActivity extends Activity {
         scroll.setClipToPadding(false);
         body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(14), dp(14), dp(14), dp(20));
+        body.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_L),
+                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_XL));
         scroll.addView(body, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -155,22 +168,32 @@ public class CourseDetailActivity extends Activity {
      * <p>Carries the course colour as a rail down the side, which is the same cue
      * the timetable uses, so the colour a card was recognised by is still there on
      * the page it opens.</p>
+     *
+     * <p>The rail is drawn at the card's own left edge rather than in the row beside
+     * the text. In the row it took its width plus a gap out of the content, which
+     * pushed the course name seventeen dp to the right of every other card's heading
+     * and split the page's left edge into two lines. It is the same course-coloured
+     * rail of the same width; what changed is that it no longer occupies layout.</p>
      */
     private View heroCard(CourseDetail detail) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
+        FrameLayout frame = new FrameLayout(this);
 
         View rail = new View(this);
         rail.setBackground(UiKit.fill(this, detail.color(), UiTokens.RADIUS_FULL));
-        LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(
-                dp(5), ViewGroup.LayoutParams.MATCH_PARENT);
-        railParams.rightMargin = dp(UiTokens.SPACE_M);
-        row.addView(rail, railParams);
+        FrameLayout.LayoutParams railParams = new FrameLayout.LayoutParams(
+                dp(UiTokens.COURSE_RAIL_WIDTH), ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.START);
+        railParams.topMargin = dp(UiTokens.SPACE_L);
+        railParams.bottomMargin = dp(UiTokens.SPACE_L);
+        frame.addView(rail, railParams);
 
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        row.addView(column, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        column.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_L),
+                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_L));
+        frame.addView(column, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // No maxLines and no ellipsis anywhere in this card: a long course name is
         // the one thing on the page that must never be cut short, and the card
@@ -191,27 +214,23 @@ public class CourseDetailActivity extends Activity {
                 true, UiTokens.RADIUS_S));
         column.addView(time, UiKit.stack(this, UiTokens.SPACE_M));
 
-        if (detail.timeKnown() && !detail.scheduleName().isEmpty()) {
-            column.addView(UiKit.text(this,
-                    "\u6309\u300C" + detail.scheduleName() + "\u300D\u4F5C\u606F",
-                    UiTokens.Type.LABEL_MEDIUM, Palette.OUTLINE, false),
-                    UiKit.stack(this, UiTokens.SPACE_S));
-        } else if (!detail.timeKnown() && !detail.timeNote().isEmpty()) {
-            // The reason is named rather than left as a bare "unavailable": it is
-            // the difference between a course whose schedule was deleted and one
-            // whose period the schedule does not reach.
-            column.addView(UiKit.text(this,
-                    detail.timeText() + "\uFF08" + detail.timeNote() + "\uFF09",
+        // The schedule's name is not repeated here: the 上课安排 card names it in its
+        // own 作息表 row, and stating one fact twice on a single screen is what this
+        // page already avoids for the semester. When the time cannot be established
+        // the pill above has already said so, so this line carries only the reason --
+        // which is the difference between a course whose schedule was deleted and one
+        // whose period that schedule does not reach.
+        if (!detail.timeKnown() && !detail.timeNote().isEmpty()) {
+            column.addView(UiKit.text(this, "\uFF08" + detail.timeNote() + "\uFF09",
                     UiTokens.Type.LABEL_MEDIUM, Palette.ERROR, false),
                     UiKit.stack(this, UiTokens.SPACE_S));
         }
 
-        LinearLayout card = card();
-        card.addView(row);
+        LinearLayout card = bareCard();
+        card.addView(frame);
         return card;
     }
 
-    /** When the course runs, field by field. */
     /**
      * When the course runs, field by field.
      *
@@ -259,46 +278,48 @@ public class CourseDetailActivity extends Activity {
      *
      * <p>The text is shown exactly as stored, newlines included, because the line
      * breaks are the author's and are usually the point.</p>
+     *
+     * <p>The way in sits at the end of the note, right-aligned, in both states. It
+     * used to be a text button on the heading row, which made this the one card whose
+     * title sat lower than the rest: the button's 48dp touch target is taller than
+     * any heading, and centring that row took the text down with it. Moving the
+     * target to where the note ends lines the three card headings up and leaves the
+     * entry where the reader already is.</p>
      */
     private View noteCard(String note) {
         LinearLayout card = card();
         boolean hasNote = note != null && !note.isEmpty();
 
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(section("\u8BFE\u7A0B\u5907\u6CE8"),
-                new LinearLayout.LayoutParams(
-                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        // A text button, not a filled one. Writing a note is a side errand on this
-        // screen, and the one filled button on it is still 编辑课程.
-        header.addView(UiKit.textButton(this,
-                hasNote ? "\u7F16\u8F91" : "\u6DFB\u52A0\u5907\u6CE8",
-                Palette.PRIMARY, view -> openEditor(true)));
-        card.addView(header);
+        card.addView(section("\u8BFE\u7A0B\u5907\u6CE8"));
 
         if (hasNote) {
             TextView text = UiKit.text(this, note, UiTokens.Type.BODY_MEDIUM,
                     Palette.ON_SURFACE, false);
             text.setLineSpacing(dp(3), 1f);
-            card.addView(text);
-            return card;
+            card.addView(text, UiKit.stack(this, UiTokens.SPACE_M));
+        } else {
+            card.addView(UiKit.text(this, "\u6682\u65E0\u5907\u6CE8",
+                    UiTokens.Type.BODY_MEDIUM, Palette.ON_SURFACE_VARIANT, false),
+                    UiKit.stack(this, UiTokens.SPACE_M));
+            card.addView(UiKit.text(this,
+                    "\u53EF\u8BB0\u5F55\u4F5C\u4E1A\u3001\u8003\u8BD5\u5B89\u6392\u3001"
+                            + "\u5B66\u4E60\u8D44\u6599\u7B49",
+                    UiTokens.Type.LABEL_MEDIUM, Palette.OUTLINE, false),
+                    UiKit.stack(this, UiTokens.SPACE_XS));
         }
 
-        card.addView(UiKit.text(this, "\u6682\u65E0\u5907\u6CE8",
-                UiTokens.Type.BODY_MEDIUM, Palette.ON_SURFACE_VARIANT, false));
-        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        hintParams.topMargin = dp(UiTokens.SPACE_XS);
-        card.addView(UiKit.text(this,
-                "\u53EF\u8BB0\u5F55\u4F5C\u4E1A\u3001\u8003\u8BD5\u5B89\u6392\u3001"
-                        + "\u5B66\u4E60\u8D44\u6599\u7B49",
-                UiTokens.Type.LABEL_MEDIUM, Palette.OUTLINE, false), hintParams);
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.END);
+        // A text button, not a filled one. Writing a note is a side errand on this
+        // screen, and the one filled button on it is still 编辑课程.
+        footer.addView(UiKit.textButton(this,
+                hasNote ? "\u7F16\u8F91" : "\u6DFB\u52A0\u5907\u6CE8",
+                Palette.PRIMARY, view -> openEditor(true)));
+        card.addView(footer, UiKit.stack(this, UiTokens.SPACE_XS));
         return card;
     }
 
-    /** The one thing this screen exists to lead to. */
     /**
      * What can be done with this course: change it, make another like it, or drop
      * it.
@@ -327,11 +348,20 @@ public class CourseDetailActivity extends Activity {
         row.addView(UiKit.outlinedButton(this, "\u590D\u5236\u8BFE\u7A0B",
                 view -> copyCourse()), new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+
+        // Built apart from the row so two of its defaults can be brought up to the
+        // outlined button's. A text button is one point of type smaller (14sp against
+        // 15sp) and carries a 48dp minimum height of its own; side by side in a 40dp
+        // row that made the pair look like two sizes of button rather than one row.
+        // What separates them stays the colour and the border, not the size.
+        TextView remove = UiKit.textButton(this, "\u5220\u9664\u8BFE\u7A0B",
+                Palette.ERROR, view -> confirmDelete());
+        remove.setTextSize(UiTokens.Type.TITLE_SMALL);
+        remove.setMinHeight(dp(UiTokens.BUTTON_HEIGHT_COMPACT));
         LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
         removeParams.leftMargin = dp(UiTokens.SPACE_S);
-        row.addView(UiKit.textButton(this, "\u5220\u9664\u8BFE\u7A0B", Palette.ERROR,
-                view -> confirmDelete()), removeParams);
+        row.addView(remove, removeParams);
         card.addView(row);
         return card;
     }
@@ -370,6 +400,9 @@ public class CourseDetailActivity extends Activity {
                 UiKit.Action.of("\u53D6\u6D88", null),
                 UiKit.Action.destructive("\u5220\u9664\u8BFE\u7A0B", () -> {
                     repository.deleteCourse(courseId);
+                    // The class is gone, so its alarms have to go with it. Rebuilding
+                    // here is what stops a deleted course from announcing itself.
+                    ReminderScheduler.sync(this);
                     Toast.makeText(this, "\u8BFE\u7A0B\u5DF2\u5220\u9664",
                             Toast.LENGTH_SHORT).show();
                     finish();
@@ -408,11 +441,33 @@ public class CourseDetailActivity extends Activity {
         return card;
     }
 
+    /**
+     * The same surface with no inner padding, for a card whose content draws to its
+     * own edges.
+     *
+     * <p>Used by the hero card only: its colour rail has to start at the card's left
+     * edge, and with the card's padding in place the rail would begin sixteen dp in
+     * and read as a stripe floating inside the card instead of as its edge.</p>
+     */
+    private LinearLayout bareCard() {
+        LinearLayout card = UiKit.bareCard(this);
+        UiKit.elevate(card, UiTokens.RADIUS_L, UiTokens.ELEVATION_NONE);
+        return card;
+    }
+
+    /**
+     * A card as a body child, with one gap above it.
+     *
+     * <p>SPACE_M rather than the 10dp literal this page used to carry: 10 is not on
+     * the spacing scale, so the gap between two cards could not be compared to any
+     * other gap on the screen. Twelve keeps the five cards reading as one page --
+     * the scale's 24dp step would separate them as far apart as the page margin.</p>
+     */
     private View spaced(View card) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.topMargin = dp(10);
+        params.topMargin = dp(UiTokens.SPACE_M);
         card.setLayoutParams(params);
         return card;
     }
@@ -427,16 +482,22 @@ public class CourseDetailActivity extends Activity {
      * <p>The value wraps onto as many lines as it needs. A long venue or a long
      * teacher's name is information, and shrinking the type until it fits would
      * trade a layout problem for a reading problem.</p>
+     *
+     * <p>The label is centred against the value rather than pinned to its first
+     * line: a three-line venue is still one field, and a label sitting at the top of
+     * it reads as belonging to the first line only. The label column is
+     * {@link #FACT_LABEL_WIDTH_DP} wide in every row of both cards, so the values
+     * line up down the page whichever of them wrap.</p>
      */
     private View fact(String label, String value) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.TOP);
+        row.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView name = UiKit.text(this, label, UiTokens.Type.BODY_MEDIUM,
                 Palette.ON_SURFACE_VARIANT, false);
         row.addView(name, new LinearLayout.LayoutParams(
-                dp(76), ViewGroup.LayoutParams.WRAP_CONTENT));
+                dp(FACT_LABEL_WIDTH_DP), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView amount = UiKit.text(this, value, UiTokens.Type.BODY_MEDIUM,
                 Palette.ON_SURFACE, false);

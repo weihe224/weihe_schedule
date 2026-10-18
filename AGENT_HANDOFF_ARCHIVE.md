@@ -3231,3 +3231,89 @@ chip 的独特价值是"回本周但**保留星期几**"（第12周周三 → �
   后者只验了两行。
 - 极小屏/横屏/平板未验。
 - adb 输不了中文，设备上验的是 ASCII + 换行。
+
+---
+
+## AA. 追加记录 — 2026-10-18：上课提醒可靠性修复
+
+### AA-1 触发起点
+用户报告：真机安装后「上课提醒」没有正常实现。要求从课程数据 → 计划 → 系统闹钟 → 通知显示整链排查，且必须区分
+「单元测试通过 / 闹钟已安排 / 通知已发布 / 真机端到端通过」。
+
+### AA-2 审计发现（修复前代码）
+- `ReminderReceiver.announce()`：`if (!LocalDateTime.now().isBefore(startAt)) return;` —— **迟到即丢弃**。
+  闹钟只要晚到一瞬，通知就永远不发。这是「完全收不到」的最直接原因。
+- `ReminderScheduler.register()` 只用 `setAndAllowWhileIdle`；`AndroidManifest.xml` 里连
+  `SCHEDULE_EXACT_ALARM` 都没有，注释写着「deliberately absent」。Doze / 厂商省电下必然晚到，
+  再被上一条丢弃 → 静默无提醒。
+- 无 `canScheduleExactAlarms()`、无授权入口、无权限变化后的重排。
+- `ReminderScheduler.sync()` 的调用点只有：`MainActivity.onResume`、设置页的开关/提前量、两个接收器。
+  **编辑课程、删除课程、导入、备份恢复、学期切换/新建/删除、学期起始日期改动都不重排。**
+- `SettingsActivity.onResume` 只 `refresh()` 不 `sync()`：在系统设置里授予通知权限后回到应用，
+  界面显示「已开启」，但 `scheduled` 为空。
+- 设置页没有通知权限/渠道/精确闹钟/下一条/最近一次失败的任何显示。
+
+### AA-3 修复
+1. **精确优先**：`setExactAndAllowWhileIdle`；每次注册前 `canScheduleExactAlarms()`；
+   未授权 → `setAndAllowWhileIdle`；调用时 `SecurityException` → 就地降级并记日志。
+   清单只加 `SCHEDULE_EXACT_ALARM`（明确不用 `USE_EXACT_ALARM`）。
+2. **权限生命周期**：设置页「允许精确闹钟」→ 系统页；`ReminderRestoreReceiver` 监听
+   `SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED`，授权/撤销后后台自动重排。
+3. **迟到宽限**：`rule/Reminder` 新增 `MAX_LATE_MINUTES=20`、`isLate`、`isStillUsefulAt`、`lateMinutes`；
+   接收器用宽限窗口替代「到点即丢」；文案改为「已到上课时间（提醒延迟 N 分钟）」，不再复述已过期的倒计时。
+4. **生命周期补齐**：编辑页保存/删除、详情页删除、备份恢复成功、两处导入成功、学期切换/新建/删除、
+   学期起始日期、设置页 `onResume`、权限变化、开机/改时间/改时区/应用更新，全部 `sync()`。
+5. **诊断与自检**：设置页三行状态（通知权限 / 通知渠道 / 精确闹钟）+ 下一条提醒 + 最近一次重排失败原因；
+   「发送测试通知」验证权限与渠道；「测试提醒（1 分钟后）」用与真实提醒相同的 `AlarmManager` 调用，
+   槽位 999（真实槽位 1000+ 之外）、动作 `TEST_REMIND`、通知 id `0x7E57`，一次性，触发后自动撤销。
+6. **日志**：4 个 tag，只记 courseId/slot/时刻/结果，不记课名教室教师。
+
+### AA-4 测试
+- 新增 `rule/ReminderTimingTest` 6 项：未迟到、恰好在开始时算迟到、窗口内仍可用、窗口外丢弃、
+  `now=null` 不当成准时、窗口必须短于一节课。
+- `ReminderScheduleTest` +2：准时文案保留倒计时；迟到文案写明延迟且不再出现「分钟后开始」。
+- `ReminderRestoreTest`：事件清单加 `SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED`，
+  忽略清单加 `TEST_REMIND`。
+- 门禁：`--rerun-tasks testDebugUnitTest assembleDebug lintDebug` → BUILD SUCCESSFUL；
+  **1099 项 / 0 失败 / 0 错误**（基线 1091，+8）；APK 1,179,188 B；lint **0 errors, 2 warnings**（既有 IconXmlAndPng）。
+
+### AA-5 设备实测（模拟器 API 37，1080×2424 @420）
+| 场景 | 实测 |
+|---|---|
+| 测试提醒 | 计划 07:34:06.067 → 触发 07:34:06.076（**+9 ms**），应用后台 + 屏幕关闭，通知入栏，`test_at` 归零 |
+| 真实课程提醒 | 周日第 1 节探针课（08:15-08:55，提前 34 分钟）：计划 07:41:00.000 → 触发 **07:41:00.039**（+39 ms）；通知「上课提醒 · ReminderProbe / 10月18日 周日 08:15 · 第 1 节 · 教学楼F楼F101多 · Probe Teacher / 34 分钟后开始」 |
+| 精确/非精确 | 未授权时日志 `inexact`，`dumpsys alarm` 无 `exactAllowReason`；授权后 `exact=true`，`window=0 exactAllowReason=permission` |
+| 权限变化重排 | `adb shell cmd appops set ... allow` → 系统广播 → `已重建 10 条提醒` |
+| 改课 | 周次 1-18 → 1-4（今天第 5 周）：保存即重排，探针从 `scheduled` 消失，旧触发时刻在系统闹钟里消失 |
+| 重启 | `BOOT_COMPLETED: 已重建 10 条提醒`，10 条闹钟时刻与重启前一致 |
+| 撤销通知权限 | 全部闹钟取消，`last_sync_error="notifications are blocked"`，界面红字 + 「去开启通知权限」 |
+| 恢复 | 数据逐字节还原（MD5 `5812d6eb…`），通知权限回拒绝、精确闹钟 appop 回 default |
+
+### AA-6 未验证 / 限制
+- **只有模拟器，没有真机**；厂商 ROM 的省电策略无法用代码绕过。
+- 强行停止后系统会取消闹钟与广播，直到用户再次打开应用——系统行为。
+- 锁屏形态、非精确路径的实际延迟、`SecurityException` 降级分支均未实测。
+- 新设置卡片的大字号/极小屏排版未验证。
+
+### AA-7 踩坑
+1. **清单注释里不能出现 `--`**：在 `AndroidManifest.xml` 的注释里写了 `route -- this is…`，
+   `processDebugMainManifest` 直接报 `MergeFailureException: Error parsing AndroidManifest.xml`，
+   错误信息不指向具体行，容易误判成编码问题。
+2. **清单里新加的权限是升级安装**：`install -r` 后 appop 仍是 `default`，而 targetSdk 34 在 API 37 上
+   实际按「未授权」处理（`canScheduleExactAlarms()=false`）——这正是需要降级路径的原因。
+3. **`cmd appops set ... allow` 会触发系统广播**，可以用来验证「授权后自动重排」，比点系统设置页快得多。
+4. **A/F 楼作息第 1 节是 08:15**（不是 08:00/08:55）：构造探针课程时若按猜的时间算提前量，
+   提醒会因为「已经过去」被正确跳过，看起来像 bug。时间一律从详情页读，不要猜。
+5. **往 `courses:<学期id>` 里插探针课程**时，插入点必须放在现有数组的 `[` 之后并保留逗号；
+   写成 `[{…` 会产生 `[[{…` 的嵌套数组，解析失败 → 整学期课程都读不出来（界面显示 0 条安排）。
+### AA-8 后续（同日）：诊断界面按上线要求移除
+
+- 排查期曾在设置页加了三行诊断（通知权限/渠道/精确闹钟/下一条/上次失败）与两个自检按钮
+  （发送测试通知、测试提醒 1 分钟），并实现了 `TEST_SLOT=999` 的测试闹钟链路。
+- 用户看到真机截图后要求「把界面恢复到可上线状态」，因此：诊断行、两个按钮、
+  `scheduleTest/cancelTest/testScheduledAt`、`ACTION_TEST_REMIND`、`postTest()`、
+  `ReminderSettings.last_sync_*`/`test_at` **全部删除**（无调用方即不留）。
+- **保留**精确闹钟入口：未授权时那颗按钮变成「允许精确闹钟」，授权后整行隐藏——这是修复路径，不是诊断信息。
+- 排查改为日志（4 个 tag）；门禁重跑：**1099 项 / 0 失败**，APK **1,175,784 B**，lint **0 errors, 2 warnings**。
+- 设备复查：卡片回到「勾选 + 一行状态 + 橙色度色块 + 一句说明 + 单个按钮」；`exact` 未授权 →「允许精确闹钟」在，
+  授权后消失；提醒仍为 10 条。测完把设备恢复到提醒关闭、通知拒绝、精确闹钟 appop default。

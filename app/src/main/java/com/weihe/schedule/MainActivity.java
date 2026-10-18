@@ -1582,6 +1582,8 @@ public class MainActivity extends Activity {
     private void runImport(List<Course> courses, Semester target, LocalDate weekOne,
             int weeks) {
         if (repository.replaceCoursesAt(courses, target, weekOne, weeks)) {
+            // The import replaced the term the alarms were planned from.
+            ReminderScheduler.sync(this);
             refreshAll();
             Toast.makeText(this, "\u8BFE\u8868\u5DF2\u5BFC\u5165",
                     Toast.LENGTH_SHORT).show();

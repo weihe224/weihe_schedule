@@ -4,6 +4,7 @@ import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.util.Log;
 
 import java.time.LocalDate;
@@ -31,14 +32,22 @@ import com.weihe.schedule.rule.ReminderPlan;
  * where the care is needed, because a wrong answer means either a reminder that
  * never comes or a phone full of alarms.</p>
  *
- * <h2>Inexact on purpose</h2>
+ * <h2>Exact when the phone allows it, honest when it does not</h2>
  *
- * <p>Alarms use {@code setAndAllowWhileIdle}. That needs no permission at all,
- * which matters because the exact alternative does: from Android 14 an app
- * targeting 33 or later is refused {@code SCHEDULE_EXACT_ALARM} by default and
- * has to send the user into system settings to get it. The cost is that a
- * reminder can arrive a few minutes late when the phone has been still and
- * asleep, and the settings screen says so rather than promising punctuality.</p>
+ * <p>A class reminder has a time requirement, so the default is
+ * {@code setExactAndAllowWhileIdle}: "ten minutes before the bell" is not answered
+ * by "some time in the next while". Exact alarms need
+ * {@code SCHEDULE_EXACT_ALARM} from Android 12, and the user can refuse it or take
+ * it away again, so every registration first asks
+ * {@link AlarmManager#canScheduleExactAlarms()} and falls back to
+ * {@code setAndAllowWhileIdle} -- which needs no permission -- only when the exact
+ * route is unavailable.</p>
+ *
+ * <p>That fallback is never silent. The settings screen reports which mode the
+ * alarms were registered in, the inexact path is logged, and the exact-alarm
+ * permission has its own entry point and its own broadcast listener: a reminder
+ * feature that claims punctuality while scheduling inexactly is the failure this
+ * class exists to avoid.</p>
  *
  * <h2>Rebuilt, not patched</h2>
  *
@@ -81,6 +90,7 @@ public final class ReminderScheduler {
         try {
             if (!ReminderSettings.isEnabled(app)) {
                 cancelAll(app);
+                Log.i(TAG, "sync: reminders are off, nothing registered");
                 return 0;
             }
             if (!ReminderNotifications.canPost(app)) {
@@ -90,6 +100,7 @@ public final class ReminderScheduler {
                 // permission is missing, and the next sync after it is granted
                 // picks the work up again.
                 cancelAll(app);
+                Log.i(TAG, "sync: notifications blocked, nothing registered");
                 return 0;
             }
             List<Reminder> reminders = planFor(app, now);
@@ -99,15 +110,43 @@ public final class ReminderScheduler {
             // set. Reporting the size of the plan instead was a claim about alarms
             // that may never have been registered -- no alarm service at all being
             // the plainest case.
-            return register(app, entries);
+            int registered = register(app, entries);
+            Log.i(TAG, "sync: planned=" + reminders.size() + " registered=" + registered
+                    + " exact=" + canScheduleExact(app));
+            return registered;
         } catch (RuntimeException failed) {
             // A reminder is an addition to the app, never a reason for it to fall
             // over. Leave whatever is registered alone rather than cancelling: a
             // stale alarm is better than none at all.
-            Log.w(TAG, "\u91CD\u5EFA\u63D0\u9192\u5931\u8D25\uFF0C\u4FDD\u7559\u539F"
-                    + "\u6709\u8BA1\u5212", failed);
+            Log.w(TAG, "sync failed: " + describe(failed), failed);
             return -1;
         }
+    }
+
+    /** A short, log-safe description of a failure: type plus message, no stack. */
+    private static String describe(RuntimeException failed) {
+        String message = failed.getMessage();
+        return failed.getClass().getSimpleName()
+                + (message == null || message.isEmpty() ? "" : ": " + message);
+    }
+
+    /**
+     * Whether this phone will let the app set exact alarms.
+     *
+     * <p>Only Android 12 and later have the permission; below that the exact APIs
+     * need nothing, so the answer is yes. The check is repeated before every
+     * registration rather than remembered, because the grant can be withdrawn while
+     * the app is running and calling the exact API without it throws.</p>
+     */
+    public static boolean canScheduleExact(Context context) {
+        if (context == null) {
+            return false;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return true;
+        }
+        AlarmManager alarms = alarms(context);
+        return alarms != null && alarms.canScheduleExactAlarms();
     }
 
     /** Cancels every registered alarm and forgets the ledger. */
@@ -118,13 +157,17 @@ public final class ReminderScheduler {
         // nothing can ever find again -- they would fire with no entry to claim
         // them. Cancelling a slot that holds nothing costs a lookup: the cancel
         // path uses FLAG_NO_CREATE and returns immediately.
+        int cleared = 0;
         for (int index = 0; index < ReminderSchedule.MAX_SLOTS; index++) {
-            cancel(app, ReminderSchedule.slotOf(index));
+            if (cancel(app, ReminderSchedule.slotOf(index))) {
+                cleared++;
+            }
         }
         if (!ReminderSettings.scheduled(app).isEmpty()) {
             ReminderSettings.setScheduled(app,
                     Collections.<ReminderSchedule.Entry>emptyList());
         }
+        Log.i(TAG, "cancel all: " + cleared + " registered alarm(s) cleared");
     }
 
     /** How many alarms are registered right now, according to the ledger. */
@@ -177,6 +220,7 @@ public final class ReminderScheduler {
         AlarmManager alarms = alarms(context);
         List<ReminderSchedule.Entry> previous = ReminderSettings.scheduled(context);
         List<ReminderSchedule.Entry> registered = new ArrayList<>();
+        boolean exactAllowed = canScheduleExact(context);
 
         RuntimeException failure = null;
         if (alarms != null) {
@@ -185,19 +229,30 @@ public final class ReminderScheduler {
             // the app dropped it -- a reboot clears every alarm there is.
             for (ReminderSchedule.Entry entry : entries) {
                 try {
-                    alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,
-                            entry.triggerAtMillis(), pendingIntent(context, entry));
+                    setAlarm(context, alarms, entry, exactAllowed);
                     registered.add(entry);
+                    // Ids and instants only: enough to match a reminder against the
+                    // alarm log, and no course names or venues in a system log.
+                    Log.i(TAG, "alarm slot=" + entry.slot() + " course="
+                            + entry.courseId() + " at=" + entry.triggerAtMillis()
+                            + (exactAllowed ? " exact" : " inexact"));
                 } catch (RuntimeException refused) {
                     failure = refused;
+                    Log.w(TAG, "alarm refused slot=" + entry.slot() + " course="
+                            + entry.courseId() + ": " + describe(refused));
                     break;
                 }
             }
+        } else {
+            Log.w(TAG, "no AlarmManager; nothing can be registered");
         }
 
         for (ReminderSchedule.Entry stale : previous) {
             if (!usesSlot(registered, stale.slot())) {
-                cancel(context, stale.slot());
+                if (cancel(context, stale.slot())) {
+                    Log.i(TAG, "alarm cancelled slot=" + stale.slot() + " course="
+                            + stale.courseId() + " (no longer planned)");
+                }
             }
         }
 
@@ -212,6 +267,31 @@ public final class ReminderScheduler {
         return registered.size();
     }
 
+    /**
+     * Puts one alarm in the system, exactly when that is allowed.
+     *
+     * <p>The permission can be revoked between the check and the call, which throws
+     * {@link SecurityException} rather than returning a failure; catching it here and
+     * registering the inexact alarm instead is what keeps a revoked permission from
+     * costing the user every reminder. The event is logged because the accuracy the
+     * user was promised has just changed.</p>
+     */
+    private static void setAlarm(Context context, AlarmManager alarms,
+            ReminderSchedule.Entry entry, boolean exactAllowed) {
+        PendingIntent intent = pendingIntent(context, entry);
+        if (exactAllowed) {
+            try {
+                alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,
+                        entry.triggerAtMillis(), intent);
+                return;
+            } catch (SecurityException revoked) {
+                Log.w(TAG, "exact alarm refused, scheduling inexact instead", revoked);
+            }
+        }
+        alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.triggerAtMillis(),
+                intent);
+    }
+
     /** Whether {@code slot} is one of the slots the new plan occupies. */
     private static boolean usesSlot(List<ReminderSchedule.Entry> entries, int slot) {
         for (ReminderSchedule.Entry entry : entries) {
@@ -222,7 +302,7 @@ public final class ReminderScheduler {
         return false;
     }
 
-    private static void cancel(Context context, int slot) {
+    private static boolean cancel(Context context, int slot) {
         // FLAG_NO_CREATE: cancelling must never be the reason a PendingIntent
         // starts existing. If nothing was registered on this slot there is nothing
         // to cancel, and creating one here would leave a stray.
@@ -230,13 +310,14 @@ public final class ReminderScheduler {
                 intentFor(context, slot, 0L), PendingIntent.FLAG_NO_CREATE
                         | PendingIntent.FLAG_IMMUTABLE);
         if (existing == null) {
-            return;
+            return false;
         }
         AlarmManager alarms = alarms(context);
         if (alarms != null) {
             alarms.cancel(existing);
         }
         existing.cancel();
+        return true;
     }
 
     private static AlarmManager alarms(Context context) {

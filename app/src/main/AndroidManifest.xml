@@ -2,17 +2,25 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-        Class reminders. This is the only permission the feature needs, and it is
-        asked for at runtime from the settings screen, not at launch.
-
-        SCHEDULE_EXACT_ALARM is deliberately absent. From Android 14 an app
-        targeting 33 or later is refused it by default, so asking for it would mean
-        sending the user into system settings before reminders worked at all. The
-        alarms use setAndAllowWhileIdle instead, which needs no permission; the
-        cost is that a reminder may arrive a few minutes late on a sleeping phone,
-        and the settings screen says so.
+        Class reminders. Asked for at runtime from the settings screen, not at
+        launch; a denial is shown there rather than hidden.
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+        Exact alarms. A class reminder has to arrive at a particular minute, so the
+        scheduler asks for setExactAndAllowWhileIdle and falls back to the inexact
+        call only when this permission is missing. From Android 12 the permission is
+        user-grantable and can be revoked again, which is why ReminderScheduler
+        checks canScheduleExactAlarms() before every registration instead of
+        assuming the declaration is enough.
+
+        SCHEDULE_EXACT_ALARM, not USE_EXACT_ALARM: the latter is auto-granted but
+        reserved for alarm clocks and calendars, and this app is neither. One
+        permission, asked for once, with the system's own settings page as the entry
+        point.
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!--
         Needed to be told that the device has finished booting. A reboot clears
@@ -98,6 +106,12 @@
               TIME_SET              the clock moved, so every instant moved with it
               TIMEZONE_CHANGED      the same, through the zone the instants were made in
               MY_PACKAGE_REPLACED   sent only to this app, so not implicit at all
+              SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+                                    exact alarms were just granted or revoked, so the
+                                    whole plan has to be registered through the new
+                                    route; this is the event that upgrades a plan from
+                                    "may be late" to "on the minute" while the app is
+                                    closed
 
             ACTION_DATE_CHANGED is deliberately absent: it is NOT on that list, so a
             receiver here would never be called. Midnight rollover is already covered,
@@ -105,7 +119,7 @@
 
             exported="false" is the tighter setting, not a restriction that would
             mute it: the platform documents that a non-exported receiver still
-            receives system broadcasts, and all four actions are protected
+            receives system broadcasts, and all of the actions above are protected
             broadcasts no other app could send anyway.
         -->
         <receiver
@@ -116,6 +130,7 @@
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
     </application>

@@ -114,6 +114,7 @@ public class SettingsActivity extends Activity {
     private UiKit.Check reminderCheck;
     private TextView reminderStatus;
     private TextView reminderPermissionAction;
+    private View reminderPermissionRow;
     private List<TextView> reminderLeadChips;
 
     @Override
@@ -133,6 +134,13 @@ public class SettingsActivity extends Activity {
             // Re-read storage; another screen may have changed it. See
             // CourseRepository#reload.
             repository.reload();
+            // Rebuild the alarms before drawing them. The plan can have gone stale
+            // for reasons this screen cannot observe -- a course edited on another
+            // screen, notifications granted in system settings, a backup restored --
+            // and the card below reports how many alarms exist. Reading a count
+            // without re-planning is how a screen ends up saying "0 条提醒" next to a
+            // switch that is on.
+            ReminderScheduler.sync(this);
             refresh();
         }
     }
@@ -917,13 +925,19 @@ public class SettingsActivity extends Activity {
         leadParams.topMargin = dp(UiTokens.SPACE_L);
         card.addView(leadRow, leadParams);
 
-        // Said plainly, because it is the price of not asking for the exact-alarm
-        // permission: a reminder is not late by design, but it can be late.
-        card.addView(hintLine("\u63D0\u9192\u4E0D\u65E9\u4E8E\u8BBE\u5B9A\u65F6\u95F4\uFF1B\u8BBE\u5907\u957F\u65F6\u95F4\u5F85\u673A\u65F6\u53EF\u80FD\u665A\u51E0\u5206\u949F\u3002", 8));
+        card.addView(hintLine("\u63D0\u9192\u5728\u8BFE\u7A0B\u5F00\u59CB\u524D\u53D1\u51FA"
+                + "\uFF1B\u672A\u6388\u4E88\u7CBE\u786E\u95F9\u949F\u6743\u9650\u65F6"
+                + "\u53EF\u80FD\u665A\u51E0\u5206\u949F\u3002", 8));
 
+        // One action row, carrying whichever permission is the one standing in the
+        // way. A missing notification permission stops reminders altogether, a
+        // missing exact-alarm permission only costs punctuality, and asking for both
+        // at once would put two prompts on a card where one answer already fixes the
+        // thing the user came here for.
         reminderPermissionAction = action("\u53BB\u5F00\u542F\u901A\u77E5\u6743\u9650", Palette.PRIMARY, true,
                 view -> openNotificationSettings());
-        card.addView(actionRow(reminderPermissionAction));
+        reminderPermissionRow = actionRow(reminderPermissionAction);
+        card.addView(reminderPermissionRow);
         return card;
     }
 
@@ -1067,19 +1081,57 @@ public class SettingsActivity extends Activity {
         TextView customChip = reminderLeadChips.get(choices.length);
         customChip.setText(customLeadLabel(custom, minutes));
         UiKit.styleChip(customChip, custom);
+        boolean exact = ReminderScheduler.canScheduleExact(this);
         if (!enabled) {
             reminderStatus.setText("\u5DF2\u5173\u95ED");
             reminderStatus.setTextColor(Palette.ON_SURFACE_VARIANT);
+            reminderPermissionRow.setVisibility(View.GONE);
         } else if (!allowed) {
             reminderStatus.setText("\u901A\u77E5\u6743\u9650\u672A\u5F00\u542F\uFF0C\u63D0\u9192\u4E0D\u4F1A\u663E\u793A");
             reminderStatus.setTextColor(Palette.ERROR);
+            setPermissionAction("\u53BB\u5F00\u542F\u901A\u77E5\u6743\u9650",
+                    view -> openNotificationSettings());
         } else {
             reminderStatus.setText("\u5DF2\u5F00\u542F \u00B7 \u63D0\u524D " + minutes + " \u5206\u949F \u00B7 \u5DF2\u5B89\u6392 "
                     + ReminderScheduler.registeredCount(this) + " \u6761\u63D0\u9192");
             reminderStatus.setTextColor(Palette.ON_SURFACE);
+            if (exact) {
+                reminderPermissionRow.setVisibility(View.GONE);
+            } else {
+                // The feature works without it, only less punctually; the entry is
+                // therefore a quiet second priority rather than a warning.
+                setPermissionAction("\u5141\u8BB8\u7CBE\u786E\u95F9\u949F",
+                        view -> openExactAlarmSettings());
+            }
         }
-        reminderPermissionAction.setVisibility(
-                enabled && !allowed ? View.VISIBLE : View.GONE);
+    }
+
+    /** Points the card's single permission row at whatever is blocking punctuality. */
+    private void setPermissionAction(String label, View.OnClickListener listener) {
+        reminderPermissionAction.setText(label);
+        reminderPermissionAction.setOnClickListener(listener);
+        reminderPermissionRow.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * The system's own page for granting exact alarms.
+     *
+     * <p>There is no runtime dialog for this permission: Android only offers the
+     * settings screen, which is why the app explains what it is for and then opens
+     * that screen rather than trying to ask.</p>
+     */
+    private void openExactAlarmSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return;
+        }
+        try {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (RuntimeException unavailable) {
+            Toast.makeText(this, "\u65E0\u6CD5\u6253\u5F00\u7CBE\u786E\u95F9\u949F\u8BBE\u7F6E",
+                    Toast.LENGTH_SHORT).show();
+        }
     }
 
     /** Whether the app may post at all. The permission only exists from Android 13. */
@@ -1296,6 +1348,9 @@ public class SettingsActivity extends Activity {
     private void applySemesterStart(LocalDate date) {
         LocalDate monday = ScheduleUtils.mondayOf(date);
         repository.setSemesterStart(monday);
+        // Every date in the term just moved, so every alarm instant moved with it.
+        // Re-planning now is what keeps a reminder from firing on the old calendar.
+        ReminderScheduler.sync(this);
         refresh();
         Toast.makeText(this, "\u5F00\u5B66\u65E5\u5DF2\u8BBE\u4E3A "
                 + ScheduleUtils.formatFullDate(monday), Toast.LENGTH_SHORT).show();
@@ -1610,6 +1665,8 @@ public class SettingsActivity extends Activity {
     private void runImport(List<Course> courses, Semester target, LocalDate weekOne,
             int weeks) {
         if (repository.replaceCoursesAt(courses, target, weekOne, weeks)) {
+            // The term the alarms were planned from has just been replaced wholesale.
+            ReminderScheduler.sync(this);
             refresh();
             Toast.makeText(this, "\u8BFE\u8868\u5DF2\u5BFC\u5165",
                     Toast.LENGTH_SHORT).show();

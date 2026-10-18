@@ -22,6 +22,19 @@ import java.time.ZonedDateTime;
  */
 public final class Reminder {
 
+    /**
+     * How long after the class has started a late alarm is still worth showing.
+     *
+     * <p>An alarm can arrive after the moment it was planned for: an inexact alarm
+     * on a sleeping phone, a device waking from Doze, or an OEM battery manager
+     * holding the broadcast. The old rule dropped anything that arrived at or after
+     * the start time, which silently turned "a few minutes late" into "no reminder
+     * at all" -- the exact failure this feature cannot afford. Twenty minutes is
+     * deliberately shorter than a period: late enough to still be useful, short
+     * enough that it never announces a class the student has already missed.</p>
+     */
+    public static final int MAX_LATE_MINUTES = 20;
+
     private final long courseId;
     private final String courseName;
     private final String teacher;
@@ -130,6 +143,36 @@ public final class Reminder {
     /** {@link #triggerAt()} as an absolute instant in {@code zone}. */
     public long triggerMillis(ZoneId zone) {
         return toMillis(triggerAt, zone);
+    }
+
+    /**
+     * Whether the class has started by {@code now}.
+     *
+     * <p>A late delivery is not the same thing as a useless one -- see
+     * {@link #isStillUsefulAt} -- so the two questions are answered separately and
+     * the notification wording follows from this one.</p>
+     */
+    public boolean isLate(LocalDateTime now) {
+        return now != null && !now.isBefore(startAt);
+    }
+
+    /**
+     * Whether an alarm delivered at {@code now} should still be announced.
+     *
+     * <p>True from before the planned moment until
+     * {@link #MAX_LATE_MINUTES} after the class began. Past that the reminder has
+     * become a report about something already missed, and silence is kinder.</p>
+     */
+    public boolean isStillUsefulAt(LocalDateTime now) {
+        return now != null && !now.isAfter(startAt.plusMinutes(MAX_LATE_MINUTES));
+    }
+
+    /** How many minutes past the start {@code now} is; zero when on time. */
+    public long lateMinutes(LocalDateTime now) {
+        if (!isLate(now)) {
+            return 0L;
+        }
+        return java.time.temporal.ChronoUnit.MINUTES.between(startAt, now);
     }
 
     private static long toMillis(LocalDateTime moment, ZoneId zone) {

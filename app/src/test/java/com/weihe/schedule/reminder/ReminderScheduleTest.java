@@ -453,6 +453,31 @@ public class ReminderScheduleTest {
     }
 
     @Test
+    public void anOnTimeDeliveryKeepsTheCountdown() {
+        Reminder reminder = planFor(singleCourse(1L, 1, 1), LEAD, TERM_START).get(0);
+
+        String detail = ReminderNotifications.detailOf(reminder, reminder.triggerAt());
+
+        assertTrue(detail, detail.contains(LEAD + " \u5206\u949F\u540E\u5F00\u59CB"));
+        assertFalse("an on-time reminder has no delay to explain",
+                detail.contains("\u5DF2\u5230\u4E0A\u8BFE\u65F6\u95F4"));
+    }
+
+    @Test
+    public void aLateDeliveryNamesTheDelayInsteadOfAnElapsedCountdown() {
+        Reminder reminder = planFor(singleCourse(1L, 1, 1), LEAD, TERM_START).get(0);
+
+        String detail = ReminderNotifications.detailOf(
+                reminder, reminder.startAt().plusMinutes(6));
+
+        assertTrue(detail, detail.contains("\u5DF2\u5230\u4E0A\u8BFE\u65F6\u95F4"));
+        assertTrue("the delay is named so it can be told from a wrong time",
+                detail.contains("\u5EF6\u8FDF 6 \u5206\u949F"));
+        assertFalse("a countdown that has already elapsed would be a lie",
+                detail.contains("\u5206\u949F\u540E\u5F00\u59CB"));
+    }
+
+    @Test
     public void theWeekdayIsNamedInChineseWhateverTheDeviceLocale() {
         // The app's screens are Chinese on every phone. A date pattern letter would
         // have printed whatever the device's locale said -- "Tuesday" on this build

@@ -6,7 +6,9 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.util.Log;
 
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
@@ -49,6 +51,8 @@ import com.weihe.schedule.rule.Reminder;
  * tell a screen to change anything -- a tap may open a page, never edit data.</p>
  */
 public final class ReminderNotifications {
+
+    private static final String TAG = "ReminderNotification";
 
     /** Channel id. Stable: changing it would orphan the user's channel settings. */
     public static final String CHANNEL_ID = "class_reminders";
@@ -98,23 +102,50 @@ public final class ReminderNotifications {
     }
 
     /**
-     * Posts the reminder for one class.
+     * Posts the reminder for one class, timed against the device clock.
      *
      * @return whether anything was shown
      */
     public static boolean post(Context context, Reminder reminder) {
-        if (context == null || reminder == null || !canPost(context)) {
+        return post(context, reminder, LocalDateTime.now());
+    }
+
+    /**
+     * Posts the reminder, with the moment of delivery supplied.
+     *
+     * <p>The delivery moment is an argument because an alarm does not always arrive
+     * when it was planned for: an inexact alarm on a sleeping phone can be minutes
+     * late, and a late reminder that still says "10 分钟后开始" would be lying about
+     * the one fact it exists to carry. Passing the clock in is also what lets the
+     * wording be tested without a device.</p>
+     *
+     * @param deliveredAt when the alarm actually fired, or {@code null} to describe
+     *                    the reminder as planned
+     * @return whether anything was shown
+     */
+    public static boolean post(Context context, Reminder reminder,
+            LocalDateTime deliveredAt) {
+        if (context == null || reminder == null) {
+            return false;
+        }
+        if (!canPost(context)) {
+            // Says which half failed: the app-level switch, or the channel. The
+            // settings screen shows the same thing; this is the copy that survives
+            // in a bug report.
+            Log.i(TAG, "not posted: notifications blocked (course "
+                    + reminder.courseId() + ")");
             return false;
         }
         ensureChannel(context);
         NotificationManager manager = manager(context);
         if (manager == null) {
+            Log.w(TAG, "not posted: no NotificationManager");
             return false;
         }
 
         int id = ReminderSchedule.notificationId(reminder.courseId(),
                 reminder.classDay().toEpochDay());
-        String detail = detailOf(reminder);
+        String detail = detailOf(reminder, deliveredAt);
 
         // The course, by its own id. No FLAG_ACTIVITY_CLEAR_TOP: the detail screen
         // reads its extra in onCreate and has no onNewIntent, so clearing on top of
@@ -141,9 +172,12 @@ public final class ReminderNotifications {
                 .build();
         try {
             manager.notify(id, notification);
+            Log.i(TAG, "posted course=" + reminder.courseId() + " id=" + id
+                    + " lateMinutes=" + reminder.lateMinutes(deliveredAt));
             return true;
         } catch (RuntimeException refused) {
             // A notification that will not post must not take the app down.
+            Log.w(TAG, "notify() refused course=" + reminder.courseId(), refused);
             return false;
         }
     }
@@ -180,6 +214,22 @@ public final class ReminderNotifications {
      * is otherwise the hardest part of a notification to test.</p>
      */
     public static String detailOf(Reminder reminder) {
+        return detailOf(reminder, null);
+    }
+
+    /**
+     * The same line, told against the moment the alarm actually arrived.
+     *
+     * <p>When the delivery is late the countdown is replaced rather than left
+     * stating a lead time that has already elapsed: "10 分钟后开始" on a reminder
+     * that arrived fifteen minutes after the bell is the kind of wrong that makes
+     * people stop trusting the feature. The delay is named, so a user whose phone
+     * held the alarm can tell a late reminder from a broken one.</p>
+     *
+     * @param deliveredAt when the reminder was delivered, or {@code null} to
+     *                    describe it as planned
+     */
+    public static String detailOf(Reminder reminder, LocalDateTime deliveredAt) {
         StringBuilder text = new StringBuilder();
         text.append(DATE.format(reminder.startAt())).append(' ')
                 // The weekday comes from the app's own names rather than from the
@@ -197,7 +247,13 @@ public final class ReminderNotifications {
         if (!reminder.teacher().trim().isEmpty()) {
             text.append(" \u00B7 ").append(reminder.teacher().trim());
         }
-        return text.append('\n').append(reminder.leadMinutes())
+        text.append('\n');
+        if (reminder.isLate(deliveredAt)) {
+            return text.append("\u5DF2\u5230\u4E0A\u8BFE\u65F6\u95F4\uFF08\u63D0"
+                    + "\u9192\u5EF6\u8FDF ").append(reminder.lateMinutes(deliveredAt))
+                    .append(" \u5206\u949F\uFF09").toString();
+        }
+        return text.append(reminder.leadMinutes())
                 .append(" \u5206\u949F\u540E\u5F00\u59CB").toString();
     }
 
