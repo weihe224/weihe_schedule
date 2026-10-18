@@ -6,7 +6,6 @@ import android.content.Intent;
 import android.view.View;
 import android.widget.RemoteViews;
 
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 import com.weihe.schedule.MainActivity;
@@ -15,23 +14,20 @@ import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.rule.TodayPlan;
 
 /**
- * Draws the 2x1 widget: one class on a single wide strip.
+ * Draws the 2x1 widget: the next class, as large as one strip allows.
  *
  * <h2>A different shape, not a squeezed copy</h2>
  *
- * <p>Two cells wide and one tall is roughly 180x99dp. That is the opposite of the
- * column this widget started as: there is width to spend and very little height, so
- * the information lies down. The status and the countdown share the first line, the
- * name and the start time share the second, and the room gets a third that is dropped
- * when the launcher reports a box too short to hold it. Only the room costs height;
- * the countdown rides along on the status line and costs width instead.</p>
+ * <p>Two cells wide and one tall is about 180x96dp: width to spend, very little
+ * height. The top row is the 3x2's header -- date and teaching week -- so the sizes
+ * read as one family; the rest is the course at title size with its start time, and the
+ * room underneath.</p>
  *
- * <h2>It follows the real dimensions</h2>
+ * <h2>No countdown, no status word</h2>
  *
- * <p>A launcher's cell is not a fixed number of dp, so nothing here assumes the
- * nominal 2x1: the height actually reported in the widget options decides whether the
- * room and the countdown fit at all. A line is dropped rather than squeezed, because
- * a half-drawn line is worse than an absent one.</p>
+ * <p>Which class the strip shows already answers whether it is running: it is always
+ * the current or the next one. A ticking number and a "正在上课" label would both cost
+ * a line and neither adds a fact the name and the time do not already carry.</p>
  *
  * <h2>States</h2>
  *
@@ -41,15 +37,8 @@ import com.weihe.schedule.rule.TodayPlan;
  */
 final class NextClassWidgetRenderer {
 
-    /**
-     * Below this height the room line is dropped: the name and the time come first.
-     *
-     * <p>One cell tall is about 99dp on the phone this was built for, and the three
-     * lines need about that much. The numbers are content heights, not guesses at a
-     * launcher's cell size.</p>
-     */
+    /** Below this height the room line is dropped: the name and the time come first. */
     static final int ROOM_MIN_HEIGHT_DP = 88;
-
 
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -59,29 +48,35 @@ final class NextClassWidgetRenderer {
     static RemoteViews render(Context context, TodayPlan plan, int heightDp) {
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 R.layout.widget_next_class);
-        LocalDateTime now = LocalDateTime.now();
         TodayPlan.Session session = plan == null ? null : plan.headline();
 
-        views.setTextViewText(R.id.widget_next_status, statusLabel(plan, true));
-        views.setTextColor(R.id.widget_next_status, Palette.ON_SURFACE_VARIANT);
+        views.setTextViewText(R.id.widget_next_date, CourseWidgetRenderer.dateLine(plan));
+        views.setTextColor(R.id.widget_next_date, Palette.ON_SURFACE_VARIANT);
+        String week = pillText(plan);
+        views.setViewVisibility(R.id.widget_next_week, week.isEmpty() ? View.GONE : View.VISIBLE);
+        views.setTextViewText(R.id.widget_next_week, week);
+        views.setTextColor(R.id.widget_next_week, Palette.PRIMARY);
         views.setOnClickPendingIntent(R.id.widget_next_root, openApp(context));
 
         if (session == null) {
-            // Nothing to show: the state is the content. No time, room or countdown is
-            // invented to fill the space, which is what keeps this honest.
+            // Nothing to show: the state is the content. No time or room is invented to
+            // fill the space, which is what keeps this honest.
             views.setTextViewText(R.id.widget_next_name, emptyTitle(plan));
             views.setTextColor(R.id.widget_next_name, Palette.ON_SURFACE);
-            views.setTextViewText(R.id.widget_next_time, "");
+            // The time row goes entirely: an empty line between the title and the hint
+            // would push the two sentences that belong together apart.
+            views.setViewVisibility(R.id.widget_next_time, View.GONE);
             views.setTextViewText(R.id.widget_next_room, emptyHint(plan));
             views.setTextColor(R.id.widget_next_room, Palette.ON_SURFACE_VARIANT);
-            views.setViewVisibility(R.id.widget_next_countdown_label, View.GONE);
-            views.setViewVisibility(R.id.widget_next_countdown, View.GONE);
-            views.setInt(R.id.widget_next_rail, "setBackgroundColor", Palette.PRIMARY);
+            views.setViewVisibility(R.id.widget_next_room, View.VISIBLE);
+            // No class, no colour: a bar beside "今天没有课" would point at nothing.
+            views.setViewVisibility(R.id.widget_next_bar, View.GONE);
             return views;
         }
 
         views.setTextViewText(R.id.widget_next_name, session.name());
         views.setTextColor(R.id.widget_next_name, Palette.ON_SURFACE);
+        views.setViewVisibility(R.id.widget_next_time, View.VISIBLE);
         views.setTextViewText(R.id.widget_next_time, clockOf(session));
         views.setTextColor(R.id.widget_next_time, Palette.ON_SURFACE);
 
@@ -92,48 +87,40 @@ final class NextClassWidgetRenderer {
         views.setTextViewText(R.id.widget_next_room, room);
         views.setTextColor(R.id.widget_next_room, Palette.ON_SURFACE_VARIANT);
 
-        bindCountdown(views, session, now);
-
-        // The rail is the only colour on the widget: a thin stripe instead of a tinted
-        // card, because a saturated block at this size would be the loudest thing on
-        // the home screen while saying nothing.
-        views.setInt(R.id.widget_next_rail, "setBackgroundColor", session.color());
+        // The bar is the course's own colour, the one the detail screen marks it with.
+        views.setViewVisibility(R.id.widget_next_bar, View.VISIBLE);
+        views.setInt(R.id.widget_next_bar, "setBackgroundColor", session.color());
         return views;
     }
 
     // -------------------------------------------------------------------- text
 
     /**
-     * The status line, and for a running class the start of the next one.
+     * {@code 第5周 单周}, or empty outside the term.
      *
-     * <p>The hint is folded into the line rather than given one of its own: it costs
-     * no height, and on a wide strip it usually fits. When it does not, the status
-     * ellipsizes and the number that matters is still on the next line.</p>
+     * <p>Outside the term the week number is either zero or past the last teaching
+     * week; printing it next to "学期已结束" would name a week that does not exist.</p>
      */
-    static String statusLabel(TodayPlan plan, boolean withNextHint) {
-        if (plan == null) {
+    static String weekLabel(TodayPlan plan) {
+        if (!hasTeachingWeek(plan)) {
             return "";
         }
-        switch (plan.state()) {
-            case IN_CLASS:
-                if (withNextHint && plan.next() != null) {
-                    return "\u6B63\u5728\u4E0A\u8BFE \u00B7 \u4E0B\u8282 " + clockOf(plan.next());
-                }
-                return "\u6B63\u5728\u4E0A\u8BFE";
-            case UPCOMING:
-                return "\u4E0B\u4E00\u8282";
-            case NO_CLASS_TODAY:
-                return plan.todayCount() > 0
-                        ? "\u4ECA\u65E5\u8BFE\u7A0B\u5DF2\u7ED3\u675F"
-                        : "\u4ECA\u65E5\u65E0\u8BFE";
-            case NO_TIMETABLE:
-                return "\u8FD8\u6CA1\u6709\u8BFE\u8868";
-            case OUTSIDE_TERM:
-            default:
-                return plan.week() <= 0
-                        ? "\u5B66\u671F\u8FD8\u6CA1\u5F00\u59CB"
-                        : "\u5B66\u671F\u5DF2\u7ED3\u675F";
+        return "\u7B2C" + plan.week() + "\u5468 " + plan.parity();
+    }
+
+    /** The header capsule: {@code 第5周 (单周)}. */
+    static String pillText(TodayPlan plan) {
+        if (!hasTeachingWeek(plan)) {
+            return "";
         }
+        return "\u7B2C" + plan.week() + "\u5468 (" + plan.parity() + ")";
+    }
+
+    private static boolean hasTeachingWeek(TodayPlan plan) {
+        return plan != null
+                && plan.state() != TodayPlan.State.OUTSIDE_TERM
+                && plan.week() > 0
+                && !plan.parity().isEmpty();
     }
 
     /** The big number: when the class starts. */
@@ -144,11 +131,6 @@ final class NextClassWidgetRenderer {
     /** Where it happens; empty when the timetable has no venue, so the line can go. */
     static String roomOf(TodayPlan.Session session) {
         return session == null ? "" : session.location().trim();
-    }
-
-    /** {@code 距下课} / {@code 距上课}, or null when nothing is being counted down to. */
-    static String countdownLabelOf(TodayPlan.Session session, LocalDateTime now) {
-        return WidgetChronometer.labelFor(session, now);
     }
 
     /**
@@ -190,14 +172,6 @@ final class NextClassWidgetRenderer {
             default:
                 return "\u70B9\u5F00\u770B\u770B\u65B0\u5B66\u671F";
         }
-    }
-
-    // ---------------------------------------------------------------- countdown
-
-    private static void bindCountdown(RemoteViews views, TodayPlan.Session session,
-            LocalDateTime now) {
-        WidgetChronometer.bind(views, R.id.widget_next_countdown_label,
-                R.id.widget_next_countdown, session, now);
     }
 
     // ---------------------------------------------------------------- clicking

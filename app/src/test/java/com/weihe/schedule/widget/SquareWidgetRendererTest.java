@@ -1,6 +1,7 @@
 package com.weihe.schedule.widget;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.time.LocalDate;
@@ -17,117 +18,119 @@ import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.rule.TodayPlan;
 
 /**
- * What the 2x2 widget says about the next two classes.
+ * What the 2x2 widget lists, and what it says underneath the list.
  *
- * <p>The square has room for one sentence about the second class, so that sentence
- * carries the whole difference from the 3x2: it must name the right class and say
- * whether it is the next one or the one after. Those are the cases pinned here.</p>
+ * <p>The square is the 3x2's list with a footer: the same item view, up to two of them,
+ * and one grey line for the class that just finished. The tests here pin which classes
+ * become rows and which one becomes the footer -- the two are not interchangeable, and
+ * getting it wrong shows the same class twice.</p>
  */
 public class SquareWidgetRendererTest {
 
     private static final LocalDate TERM_START = LocalDate.parse("2026-08-31");
     private static final LocalDate MONDAY = TERM_START;
 
-    // ============================================ the header
+    // ============================================ which classes become rows
 
     @Test
-    public void theHeaderCarriesTheWeekdayAndTheTeachingWeekButNotTheDate() {
-        String header = SquareWidgetRenderer.headerOf(day(MONDAY.atTime(7, 0),
-                course(1L, 1, 1, 2)));
-
-        assertEquals("\u5468\u4E00 \u00B7 \u7B2C1\u5468 \u5355\u5468", header);
-    }
-
-    @Test
-    public void outsideTheTermTheHeaderIsJustTheWeekday() {
-        String header = SquareWidgetRenderer.headerOf(day(TERM_START.minusWeeks(2).atTime(9, 0),
-                course(1L, 1, 1, 2)));
-
-        assertEquals("\u5468\u4E00", header);
-    }
-
-    @Test
-    public void anEvenWeekSaysSo() {
-        String header = SquareWidgetRenderer.headerOf(day(TERM_START.plusWeeks(1).atTime(7, 0),
-                course(1L, 1, 1, 2)));
-
-        assertTrue(header, header.contains("\u7B2C2\u5468"));
-        assertTrue(header, header.contains("\u53CC\u5468"));
-    }
-
-    // ============================================ the second class line
-
-    @Test
-    public void whileAClassRunsTheSecondLineIsTheNextClass() {
+    public void theRowsAreTheHeadlineAndTheClassAfterIt() {
         TodayPlan plan = day(MONDAY.atTime(8, 20),
-                course(1L, 1, 1, 2), course(2L, 1, 3, 4));
-        List<TodayPlan.Session> cards = CourseWidgetRenderer.cards(plan);
+                course(1L, 1, 1, 2), course(2L, 1, 3, 4), course(3L, 1, 6, 7));
 
-        assertEquals(2, cards.size());
-        assertEquals("\u4E0B\u8282 09:35 \u00B7 Course 2",
-                SquareWidgetRenderer.secondaryText(plan, cards.get(1)));
+        List<TodayPlan.Session> items = SquareWidgetRenderer.items(plan);
+
+        assertEquals(2, items.size());
+        assertEquals("the class running keeps the first row", 1L, items.get(0).courseId());
+        assertEquals("the next one takes the second", 2L, items.get(1).courseId());
     }
 
     @Test
-    public void betweenClassesTheSecondLineIsTheOneAfterTheNext() {
-        TodayPlan plan = day(MONDAY.atTime(7, 0),
-                course(1L, 1, 1, 2), course(2L, 1, 3, 4));
-        List<TodayPlan.Session> cards = CourseWidgetRenderer.cards(plan);
+    public void oneClassLeftMeansOneRow() {
+        TodayPlan plan = day(MONDAY.atTime(12, 30), course(1L, 1, 1, 2), course(2L, 1, 6, 7));
 
-        assertEquals("\u518D\u4E0B\u8282 09:35 \u00B7 Course 2",
-                SquareWidgetRenderer.secondaryText(plan, cards.get(1)));
+        List<TodayPlan.Session> items = SquareWidgetRenderer.items(plan);
+
+        assertEquals(1, items.size());
+        assertEquals(2L, items.get(0).courseId());
     }
 
     @Test
-    public void aDayWithOneClassLeftFillsTheSecondLineWithTheFinishedOne() {
+    public void theFinishedClassIsAFooterNotARow() {
+        // The 3x2's helper fills a free slot with the finished class; the square must
+        // not, or that class would appear twice -- once as a row and once as the footer.
         TodayPlan plan = day(MONDAY.atTime(12, 30),
                 course(1L, 1, 1, 2), course(2L, 1, 6, 7));
-        List<TodayPlan.Session> cards = CourseWidgetRenderer.cards(plan);
 
-        assertEquals("one upcoming class, one that just ended", 2, cards.size());
-        assertEquals("\u5DF2\u7ED3\u675F 09:35 \u00B7 Course 1",
-                SquareWidgetRenderer.secondaryText(plan, cards.get(1)));
-        assertEquals("", SquareWidgetRenderer.secondaryText(plan, null));
+        List<TodayPlan.Session> items = SquareWidgetRenderer.items(plan);
+        TodayPlan.Session finished = plan.previous();
+
+        assertEquals(1L, finished.courseId());
+        for (TodayPlan.Session item : items) {
+            assertTrue("the footer must not repeat a row",
+                    item.courseId() != finished.courseId());
+        }
     }
 
     @Test
-    public void theSecondLineNeverInvitesAnEmptyName() {
-        assertEquals("", SquareWidgetRenderer.secondaryText(null, null));
-    }
+    public void anEmptyEveningHasNoRowsAndNoFooter() {
+        TodayPlan plan = day(MONDAY.atTime(23, 0), course(1L, 1, 1, 2), course(2L, 1, 3, 4));
 
-    // ============================================ the main card
-
-    @Test
-    public void theMainCardCarriesTheTimesThenTheRoom() {
-        TodayPlan.Session session = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2))
-                .headline();
-
-        assertEquals("08:15 - 09:35 \u00B7 A\u697C101",
-                SquareWidgetRenderer.detailOf(session, true));
-        assertEquals("a short widget keeps the times and drops the room",
-                "08:15 - 09:35", SquareWidgetRenderer.detailOf(session, false));
-        assertEquals("", SquareWidgetRenderer.detailOf(null, true));
+        assertTrue(SquareWidgetRenderer.items(plan).isEmpty());
+        assertTrue(SquareWidgetRenderer.items(null).isEmpty());
+        assertTrue("nothing left today means nothing to list",
+                plan.state() == TodayPlan.State.NO_CLASS_TODAY);
     }
 
     @Test
-    public void aSessionWithoutAVenueDoesNotLeaveADanglingDot() {
-        Course bare = course(1L, 1, 1, 2);
-        bare.location = "  ";
-        TodayPlan.Session session = day(MONDAY.atTime(7, 0), bare).headline();
+    public void neverMoreThanTwoRows() {
+        TodayPlan plan = day(MONDAY.atTime(7, 0),
+                course(1L, 1, 1, 1), course(2L, 1, 2, 2), course(3L, 1, 3, 3),
+                course(4L, 1, 4, 4));
 
-        assertEquals("08:15 - 09:35", SquareWidgetRenderer.detailOf(session, true));
+        assertEquals(CourseWidgetRenderer.MAX_CARDS,
+                SquareWidgetRenderer.items(plan).size());
+    }
+
+    // ============================================ the footer
+
+    @Test
+    public void theFooterSaysWhenTheClassEnded() {
+        TodayPlan plan = day(MONDAY.atTime(12, 30),
+                course(1L, 1, 1, 2), course(2L, 1, 6, 7));
+
+        assertEquals("Course 1 (09:35\u7ED3\u675F)",
+                SquareWidgetRenderer.finishedText(plan.previous()));
+    }
+
+    @Test
+    public void theFooterFollowsTheMostRecentFinish() {
+        TodayPlan plan = day(MONDAY.atTime(12, 30),
+                course(1L, 1, 1, 2), course(2L, 1, 3, 4), course(3L, 1, 6, 7));
+
+        assertEquals("1-2 ends 09:35 and 3-4 ends 10:55, so the later one wins",
+                2L, plan.previous().courseId());
+        assertEquals("Course 2 (10:55\u7ED3\u675F)",
+                SquareWidgetRenderer.finishedText(plan.previous()));
+    }
+
+    @Test
+    public void beforeTheFirstClassThereIsNoFooter() {
+        TodayPlan plan = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2), course(2L, 1, 3, 4));
+
+        assertNull(plan.previous());
+        assertEquals("", SquareWidgetRenderer.finishedText(null));
     }
 
     // ============================================ what gives way first
 
     @Test
-    public void theSecondLineGoesBeforeTheRoomsDoes() {
-        // The main card is the point of the widget; the second class is context. So
-        // the second line has the higher threshold and disappears first.
-        assertTrue(SquareWidgetRenderer.ROOM_MIN_HEIGHT_DP
-                < SquareWidgetRenderer.SECONDARY_MIN_HEIGHT_DP);
-        assertTrue("both have to fit inside a two-cell square",
+    public void theFooterGoesBeforeAnyRow() {
+        // The rows are the point of the widget; the finished class is context. So the
+        // footer has a height threshold and disappears first on a short square.
+        assertTrue("the threshold has to sit at or under a two-cell square",
                 SquareWidgetRenderer.SECONDARY_MIN_HEIGHT_DP <= 184);
+        assertTrue("and it should still show at a normal square size",
+                SquareWidgetRenderer.SECONDARY_MIN_HEIGHT_DP >= 120);
     }
 
     // ---------------------------------------------------------------- fixtures

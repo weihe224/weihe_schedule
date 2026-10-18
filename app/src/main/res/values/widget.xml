@@ -1,51 +1,62 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Everything the home-screen widget needs from resources.
+    Everything the home-screen widgets need from resources.
 
     This file is the one place in the app where sizes and colours are written as
-    literals. That is not a lapse in the design system but a limit of RemoteViews:
-    a widget is inflated by the launcher from XML, so it cannot take a number from
-    UiTokens or a colour from Palette at class-load time. Every value here mirrors
-    the Java constant named in its comment, and the renderer still overrides the
-    text colours from Palette on each draw; these are the values the picker preview
-    shows before the first draw, and the fallback if a refresh never runs.
+    literals. That is not a lapse in the design system but a limit of RemoteViews: a
+    widget is inflated by the launcher from XML, so it cannot take a number from
+    UiTokens or a colour from Palette at class-load time.
+
+    The widget palette is deliberately narrower than the app's: a translucent glass
+    surface, one ink ramp, one accent, one "finished" grey, and a divider. No course
+    colours: the 4dp bar on each item says whether the class is live or over, which
+    is the information a home screen actually needs at a glance.
 -->
 <resources>
 
-    <!--
-        Shape: Palette.SURFACE_CONTAINER / OUTLINE_VARIANT / PRIMARY_CONTAINER, with
-        one deliberate difference from the in-app palette: alpha. A widget sits on top
-        of the home screen rather than replacing a screen, so the card is 88% opaque
-        and the tinted block inside it 78%: enough wallpaper shows through to belong
-        there, little enough that the ink stays readable on a dark or a busy photo.
+    <!-- Palette.SURFACE_CONTAINER tinted with the brand green at 85% alpha: glass over
+         the wallpaper rather than a solid slab. -->
+    <color name="widget_glass">#D9F0F5F2</color>
+    <!-- 14% black hairline: reads as a glass edge on light and dark wallpapers. -->
+    <color name="widget_outline">#24000000</color>
+    <!-- Ink ramp: title / secondary / tertiary. -->
+    <color name="widget_ink">#FF1A1A1A</color>
+    <color name="widget_ink_muted">#FF666666</color>
+    <color name="widget_ink_faint">#FF999999</color>
+    <!-- Palette.PRIMARY: live status, countdown and the entry line. -->
+    <color name="widget_accent">#FF11584E</color>
+    <!-- The same accent at 12% for the week pill's fill. -->
+    <color name="widget_accent_tint">#1F11584E</color>
+    <!-- A finished class: its bar and its label. -->
+    <color name="widget_ended">#FFB9C0BD</color>
+    <!-- UiTokens.SPACE_XS-ish hairline between list items. -->
+    <color name="widget_divider">#14000000</color>
 
-        These are the only translucent surfaces in the app. Inside the app a screen
-        owns its whole background, and translucency there would only cost contrast.
-    -->
-    <color name="widget_surface">#E0FFFFFF</color>
-    <color name="widget_outline">#99DFE7E1</color>
-    <color name="widget_headline">#C7CFE5DE</color>
-    <!-- Palette.ON_SURFACE / Palette.ON_SURFACE_VARIANT -->
-    <color name="widget_ink">#FF16201D</color>
-    <color name="widget_ink_muted">#FF4E5C57</color>
-    <!-- Palette.PRIMARY: the entry line is the widget's one action. -->
-    <color name="widget_button">#FF11584E</color>
-
-    <dimen name="widget_corner">16dp</dimen>
-    <dimen name="widget_corner_inner">12dp</dimen>
+    <dimen name="widget_corner">20dp</dimen>
     <dimen name="widget_stroke">1dp</dimen>
-    <!-- UiTokens.SPACE_M = 12dp outer, SPACE_S + 2 = 10dp inside a card -->
-    <dimen name="widget_padding">10dp</dimen>
-    <dimen name="widget_block_padding">8dp</dimen>
+    <dimen name="widget_padding">12dp</dimen>
+    <!-- The 2x1 strip is one cell tall; it gets a tighter frame so four lines fit. -->
+    <dimen name="widget_padding_compact">7dp</dimen>
     <dimen name="widget_gap">8dp</dimen>
-    <dimen name="widget_card_gap">6dp</dimen>
-    <dimen name="widget_accent_width">3dp</dimen>
+    <dimen name="widget_item_padding">5dp</dimen>
+    <!-- The status bar down the left edge of every course item. -->
+    <dimen name="widget_bar">4dp</dimen>
+    <dimen name="widget_bar_inset">10dp</dimen>
+    <dimen name="widget_divider_height">1dp</dimen>
+    <dimen name="widget_pill_padding_h">7dp</dimen>
+    <dimen name="widget_pill_padding_v">2dp</dimen>
 
-    <!-- Type scale, mirroring UiTokens.Type: LABEL_MEDIUM 11sp, TITLE_SMALL 15sp,
-         LABEL_LARGE 12sp. -->
-    <dimen name="widget_text_title">11sp</dimen>
-    <dimen name="widget_text_name">15sp</dimen>
-    <dimen name="widget_text_detail">12sp</dimen>
+    <!-- Type scale. Titles stay large and bold; everything else steps down twice so
+         the eye has three clear tiers to land on. -->
+    <dimen name="widget_text_title">16sp</dimen>
+    <dimen name="widget_text_title_compact">16sp</dimen>
+    <dimen name="widget_text_time">13sp</dimen>
+    <dimen name="widget_text_time_compact">16sp</dimen>
+    <dimen name="widget_text_meta">10sp</dimen>
+    <dimen name="widget_text_status">10sp</dimen>
+    <dimen name="widget_text_header">11sp</dimen>
+    <dimen name="widget_text_pill">10sp</dimen>
+    <dimen name="widget_text_entry">11sp</dimen>
 
     <!-- Chinese written directly: this is a resource file, like strings.xml's
          app_name, not Java source where the project keeps text as \\uXXXX escapes. -->
@@ -56,7 +67,6 @@
     <string name="widget_default_detail">点开添加或导入</string>
     <string name="widget_next_label">下一节</string>
     <string name="widget_next_description">极简下一节课提醒：课程名称、开始时间、教室和倒计时。</string>
-    <string name="widget_next_status_default">下一节</string>
     <string name="widget_square_label">接下来的课</string>
     <string name="widget_square_description">显示正在上或下一节课，以及紧随其后的一节。</string>
 

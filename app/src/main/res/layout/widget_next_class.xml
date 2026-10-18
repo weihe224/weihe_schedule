@@ -1,117 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    The 2x1 widget: one class on a single wide strip.
+    The 2x1 widget: the next class, as large as a single strip allows.
 
-    Two cells wide and one tall is roughly 180x96dp. That is the opposite shape to the
-    column this started as, so the information lies down: status and countdown on the
-    first line, the name and the start time on the second, the room on a third that is
-    hidden when the launcher reports a box too short for it.
+    The top row is exactly the 3x2's header: the date on the left, the teaching week as
+    a quiet capsule on the right, so the three sizes read as one family. The rest is the
+    4dp bar and three lines: name, start time, room. The bar starts at the class itself,
+    because it marks the course and not the header.
 
-    The card, the tinted block inside it, the 3dp colour rail and the type scale are
-    the same ones the 3x2 widget uses, so the two sizes read as one family rather than
-    as two designs that happen to sit on the same home screen.
+    No countdown and no status word: the strip answers "which class, and when", and which
+    class it is already implies whether it is running. The name and the time never
+    truncate; the room is the one line allowed an ellipsis.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/widget_next_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
-    android:orientation="horizontal"
-    android:padding="@dimen/widget_padding">
+    android:orientation="vertical"
+    android:padding="@dimen/widget_padding_compact">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical"
-        android:background="@drawable/widget_headline_bg"
-        android:orientation="horizontal"
-        android:padding="@dimen/widget_block_padding">
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-        <ImageView
-            android:id="@+id/widget_next_rail"
-            android:layout_width="@dimen/widget_accent_width"
-            android:layout_height="match_parent"
-            android:background="@color/widget_headline"
-            android:contentDescription="@null" />
-
-        <LinearLayout
+        <TextView
+            android:id="@+id/widget_next_date"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
             android:layout_weight="1"
-            android:orientation="vertical">
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/widget_default_title"
+            android:textColor="@color/widget_ink_muted"
+            android:textSize="@dimen/widget_text_header"
+            android:textStyle="bold" />
 
-            <LinearLayout
+        <TextView
+            android:id="@+id/widget_next_week"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_pill_bg"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:paddingStart="@dimen/widget_pill_padding_h"
+            android:paddingTop="@dimen/widget_pill_padding_v"
+            android:paddingEnd="@dimen/widget_pill_padding_h"
+            android:paddingBottom="@dimen/widget_pill_padding_v"
+            android:textColor="@color/widget_accent"
+            android:textSize="@dimen/widget_text_pill"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="2dp"
+        android:layout_weight="1"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/widget_next_bar"
+            android:layout_width="@dimen/widget_bar"
+            android:layout_height="match_parent"
+            android:background="@color/widget_accent"
+            android:contentDescription="@null" />
+
+        <!-- The outer weight spends the strip's spare height; the inner one centres the
+             three lines inside it, which is worth the second level. -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="@dimen/widget_bar_inset"
+            android:layout_weight="1"
+            android:gravity="top"
+            android:orientation="vertical"
+            tools:ignore="NestedWeights">
+
+            <TextView
+                android:id="@+id/widget_next_name"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:baselineAligned="false"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/widget_default_name"
+                android:textColor="@color/widget_ink"
+                android:textSize="@dimen/widget_text_title_compact"
+                android:textStyle="bold" />
 
-                <TextView
-                    android:id="@+id/widget_next_status"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:text="@string/widget_next_status_default"
-                    android:textColor="@color/widget_ink_muted"
-                    android:textSize="@dimen/widget_text_title"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/widget_next_countdown_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
-                    android:textColor="@color/widget_ink_muted"
-                    android:textSize="@dimen/widget_text_title"
-                    android:visibility="gone" />
-
-                <Chronometer
-                    android:id="@+id/widget_next_countdown"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:countDown="true"
-                    android:textColor="@color/widget_ink"
-                    android:textSize="@dimen/widget_text_name"
-                    android:textStyle="bold"
-                    android:visibility="gone" />
-            </LinearLayout>
-
-            <LinearLayout
+            <TextView
+                android:id="@+id/widget_next_time"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="1dp"
-                android:baselineAligned="false"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:id="@+id/widget_next_name"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:text="@string/widget_default_name"
-                    android:textColor="@color/widget_ink"
-                    android:textSize="@dimen/widget_text_name"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/widget_next_time"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:textColor="@color/widget_ink"
-                    android:textSize="@dimen/widget_text_name"
-                    android:textStyle="bold" />
-            </LinearLayout>
+                android:fontFeatureSettings="tnum"
+                android:textColor="@color/widget_ink_muted"
+                android:textSize="@dimen/widget_text_time_compact" />
 
             <TextView
                 android:id="@+id/widget_next_room"
@@ -119,8 +106,8 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/widget_ink_muted"
-                android:textSize="@dimen/widget_text_detail" />
+                android:textColor="@color/widget_ink_faint"
+                android:textSize="@dimen/widget_text_meta" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

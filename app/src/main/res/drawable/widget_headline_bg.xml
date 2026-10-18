@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The block that carries the class in progress or the next one. Same tone as the
-     app's primary container, so the widget's focal point matches the app's. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="@color/widget_headline" />
-    <corners android:radius="@dimen/widget_corner_inner" />
-</shape>

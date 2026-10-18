@@ -1,87 +1,100 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    One class card.
+    One class in the 3x2 list.
 
-    Two lines, on purpose: the widget has to fit two of these plus the entry even
-    when the system font is scaled up, and a third line is what pushes the second
-    card out of the widget. The name may be ellipsized; the second line carries the
-    time and where it happens.
+    Three lines, in the order a person reads a timetable: what, when, where with whom.
+    The 4dp bar on the left is the course's own colour, the same one the detail screen
+    marks it with, so a row here can be matched to a row in the app.
 
-    Added to the widget as a nested RemoteViews (up to twice), so both cards can share
-    this one id set without one binding the other's views.
+    The time is tabular (tnum): two rows of times must line up digit for digit, which
+    proportional digits never quite do. There is no countdown on the item: the bar plus
+    the words "已结束" say all a list row can usefully say about state.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_card"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="@dimen/widget_card_gap"
-    android:background="@drawable/widget_headline_bg"
-    android:orientation="horizontal"
-    android:padding="@dimen/widget_block_padding">
-
-    <ImageView
-        android:id="@+id/widget_card_accent"
-        android:layout_width="@dimen/widget_accent_width"
-        android:layout_height="match_parent"
-        android:background="@color/widget_headline"
-        android:contentDescription="@null" />
+    android:orientation="vertical">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:id="@+id/widget_card"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="10dp"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:baselineAligned="false"
+        android:orientation="horizontal"
+        android:paddingTop="@dimen/widget_item_padding"
+        android:paddingBottom="@dimen/widget_item_padding">
+
+        <ImageView
+            android:id="@+id/widget_card_bar"
+            android:layout_width="@dimen/widget_bar"
+            android:layout_height="match_parent"
+            android:background="@color/widget_accent"
+            android:contentDescription="@null" />
 
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:layout_marginStart="@dimen/widget_bar_inset"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:baselineAligned="false"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_card_name"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="@string/widget_default_name"
+                    android:textColor="@color/widget_ink"
+                    android:textSize="@dimen/widget_text_title"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/widget_card_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:textColor="@color/widget_ended"
+                    android:textSize="@dimen/widget_text_status"
+                    android:visibility="gone" />
+
+
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/widget_card_name"
-                android:layout_width="0dp"
+                android:id="@+id/widget_card_time"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_marginTop="1dp"
+                android:ellipsize="end"
+                android:fontFeatureSettings="tnum"
+                android:maxLines="1"
+                android:textColor="@color/widget_ink_muted"
+                android:textSize="@dimen/widget_text_time" />
+
+            <TextView
+                android:id="@+id/widget_card_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:text="@string/widget_default_name"
-                android:textColor="@color/widget_ink"
-                android:textSize="@dimen/widget_text_name"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/widget_card_countdown_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:textColor="@color/widget_ink_muted"
-                android:textSize="@dimen/widget_text_title"
-                android:visibility="gone" />
-
-            <Chronometer
-                android:id="@+id/widget_card_countdown"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
-                android:countDown="true"
-                android:textColor="@color/widget_ink"
-                android:textSize="@dimen/widget_text_name"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                android:textColor="@color/widget_ink_faint"
+                android:textSize="@dimen/widget_text_meta" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/widget_card_detail"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="@string/widget_default_detail"
-            android:textColor="@color/widget_ink_muted"
-            android:textSize="@dimen/widget_text_detail" />
     </LinearLayout>
+
+    <ImageView
+        android:id="@+id/widget_card_divider"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/widget_divider_height"
+        android:background="@color/widget_divider"
+        android:contentDescription="@null" />
 </LinearLayout>

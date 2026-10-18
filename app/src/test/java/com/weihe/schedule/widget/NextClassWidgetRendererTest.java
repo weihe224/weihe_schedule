@@ -18,52 +18,60 @@ import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.rule.TodayPlan;
 
 /**
- * What the 1x2 widget says, state by state.
+ * What the 2x1 widget shows: the header shared with the 3x2, then one class.
  *
- * <p>At this size the wording is most of the design: there is no room to show two
- * things at once, so every state has to pick the one sentence that is true. The
- * helpers are static and take a {@link TodayPlan}, so all of that is testable without
- * a launcher.</p>
+ * <p>The strip no longer carries a status word or a countdown, so what is left to get
+ * right is the header (date and teaching week, in the same shape as the large widget),
+ * the three text lines, and the empty states -- which must never borrow a class that is
+ * not there.</p>
  */
 public class NextClassWidgetRendererTest {
 
     private static final LocalDate TERM_START = LocalDate.parse("2026-08-31");
     private static final LocalDate MONDAY = TERM_START;
 
-    // ============================================ the two live states
+    // ============================================ the header
 
     @Test
-    public void beforeClassTheStatusIsSimplyTheNextOne() {
+    public void theHeaderIsTheDatePlusTheWeekCapsule() {
         TodayPlan plan = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2));
 
-        assertEquals("\u4E0B\u4E00\u8282",
-                NextClassWidgetRenderer.statusLabel(plan, true));
-        assertEquals("08:15", NextClassWidgetRenderer.clockOf(plan.headline()));
-        assertEquals("\u8DDD\u4E0A\u8BFE",
-                NextClassWidgetRenderer.countdownLabelOf(plan.headline(), plan.now()));
+        assertEquals("8\u670831\u65E5 \u5468\u4E00", CourseWidgetRenderer.dateLine(plan));
+        assertEquals("\u7B2C1\u5468 (\u5355\u5468)", NextClassWidgetRenderer.pillText(plan));
+        assertEquals("\u7B2C1\u5468 \u5355\u5468", NextClassWidgetRenderer.weekLabel(plan));
     }
 
     @Test
-    public void duringClassTheStatusNamesTheNextStartNextToIt() {
-        TodayPlan plan = day(MONDAY.atTime(8, 20),
+    public void outsideTheTermTheHeaderHasNoCapsule() {
+        TodayPlan before = day(TERM_START.minusWeeks(2).atTime(9, 0), course(1L, 1, 1, 2));
+        TodayPlan after = day(TERM_START.plusWeeks(20).atTime(9, 0), course(1L, 1, 1, 2));
+
+        assertEquals("", NextClassWidgetRenderer.pillText(before));
+        assertEquals("", NextClassWidgetRenderer.pillText(after));
+        assertTrue(CourseWidgetRenderer.dateLine(before).contains("\u5468\u4E00"));
+    }
+
+    @Test
+    public void anEvenWeekSaysSoInTheCapsule() {
+        TodayPlan plan = day(TERM_START.plusWeeks(1).atTime(7, 0), course(1L, 1, 1, 2));
+
+        assertEquals("\u7B2C2\u5468 (\u53CC\u5468)", NextClassWidgetRenderer.pillText(plan));
+    }
+
+    // ============================================ which class
+
+    @Test
+    public void theClassIsTheRunningOneThenTheNextOne() {
+        TodayPlan before = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2));
+        TodayPlan during = day(MONDAY.atTime(8, 20),
                 course(1L, 1, 1, 2), course(2L, 1, 3, 4));
 
-        assertEquals("\u6B63\u5728\u4E0A\u8BFE \u00B7 \u4E0B\u8282 09:35",
-                NextClassWidgetRenderer.statusLabel(plan, true));
-        assertEquals("the hint costs a line, so it can be dropped",
-                "\u6B63\u5728\u4E0A\u8BFE",
-                NextClassWidgetRenderer.statusLabel(plan, false));
-        assertEquals("\u8DDD\u4E0B\u8BFE",
-                NextClassWidgetRenderer.countdownLabelOf(plan.headline(), plan.now()));
-    }
-
-    @Test
-    public void theLastClassOfTheDayHasNoHintToShow() {
-        TodayPlan plan = day(MONDAY.atTime(8, 20), course(1L, 1, 1, 2));
-
-        assertEquals("\u6B63\u5728\u4E0A\u8BFE",
-                NextClassWidgetRenderer.statusLabel(plan, true));
-        assertNull(plan.next());
+        assertEquals("before the first class it is that class", 1L,
+                before.headline().courseId());
+        assertEquals("08:15", NextClassWidgetRenderer.clockOf(before.headline()));
+        assertEquals("while one runs it is still that class", 1L,
+                during.headline().courseId());
+        assertEquals("09:35", NextClassWidgetRenderer.clockOf(during.next()));
     }
 
     // ============================================ the empty states
@@ -74,13 +82,11 @@ public class NextClassWidgetRendererTest {
         TodayPlan nothing = TodayPlan.of(Collections.<Course>emptyList(), semester(),
                 schedules(), null, MONDAY.atTime(9, 0), 2);
 
-        assertEquals("\u4ECA\u65E5\u8BFE\u7A0B\u5DF2\u7ED3\u675F",
-                NextClassWidgetRenderer.statusLabel(finished, true));
         assertEquals("\u4ECA\u5929\u7684\u8BFE\u90FD\u4E0A\u5B8C\u4E86",
                 NextClassWidgetRenderer.emptyTitle(finished));
+        assertEquals("\u70B9\u5F00\u770B\u770B\u4ECA\u5929",
+                NextClassWidgetRenderer.emptyHint(finished));
 
-        assertEquals("\u8FD8\u6CA1\u6709\u8BFE\u8868",
-                NextClassWidgetRenderer.statusLabel(nothing, true));
         assertEquals("\u8FD8\u6CA1\u6709\u8BFE\u8868",
                 NextClassWidgetRenderer.emptyTitle(nothing));
         assertEquals("\u70B9\u5F00\u6DFB\u52A0\u6216\u5BFC\u5165",
@@ -92,8 +98,6 @@ public class NextClassWidgetRendererTest {
         TodayPlan noClasses = day(MONDAY.atTime(9, 0), course(1L, 2, 1, 2));
 
         assertEquals(0, noClasses.todayCount());
-        assertEquals("\u4ECA\u65E5\u65E0\u8BFE",
-                NextClassWidgetRenderer.statusLabel(noClasses, true));
         assertEquals("\u4ECA\u5929\u6CA1\u6709\u8BFE",
                 NextClassWidgetRenderer.emptyTitle(noClasses));
     }
@@ -104,12 +108,12 @@ public class NextClassWidgetRendererTest {
         TodayPlan after = day(TERM_START.plusWeeks(20).atTime(9, 0), course(1L, 1, 1, 2));
 
         assertEquals("\u5B66\u671F\u8FD8\u6CA1\u5F00\u59CB",
-                NextClassWidgetRenderer.statusLabel(before, true));
+                NextClassWidgetRenderer.emptyTitle(before));
         assertEquals("\u5B66\u671F\u5DF2\u7ED3\u675F",
-                NextClassWidgetRenderer.statusLabel(after, true));
+                NextClassWidgetRenderer.emptyTitle(after));
     }
 
-    // ============================================ the two text lines
+    // ============================================ the text lines
 
     @Test
     public void theRoomIsWhateverTheTimetableSaysAndNothingWhenItSaysNothing() {
@@ -122,26 +126,17 @@ public class NextClassWidgetRendererTest {
         assertEquals("", NextClassWidgetRenderer.roomOf(withoutRoom));
         assertEquals("", NextClassWidgetRenderer.roomOf(null));
         assertEquals("", NextClassWidgetRenderer.clockOf(null));
-    }
-
-    @Test
-    public void aClassThatIsOverCountsDownToNothing() {
-        TodayPlan plan = day(MONDAY.atTime(23, 0), course(1L, 1, 1, 2));
-        TodayPlan.Session finished = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2)).headline();
-
-        assertNull(NextClassWidgetRenderer.countdownLabelOf(finished, plan.now()));
-        assertNull(NextClassWidgetRenderer.countdownLabelOf(null, plan.now()));
+        assertNull(day(MONDAY.atTime(23, 0), course(1L, 1, 1, 2)).headline());
     }
 
     // ============================================ what gives way first
 
     @Test
     public void theRoomLineIsTheOnlyThingThatCostsHeight() {
-        // On a 2x1 strip the status and the countdown share one line and the name and
-        // time share the next; only the room needs a row of its own. So the room is
-        // the one line with a height threshold, and that threshold has to sit at or
-        // under the height one cell really reports (about 99dp here) or it would only
-        // ever hide the line it was meant to protect.
+        // The strip is four lines: header, name, time, room. Only the room is optional,
+        // so it is the one line with a height threshold -- and that threshold has to
+        // sit at or under the height one cell really reports (about 96dp here) or it
+        // would only ever hide the line it was meant to protect.
         assertTrue("the room has to fit on a one-cell-tall strip",
                 NextClassWidgetRenderer.ROOM_MIN_HEIGHT_DP <= 99);
         assertTrue("and it should still be shown well below two cells",
@@ -150,7 +145,7 @@ public class NextClassWidgetRendererTest {
 
     // ---------------------------------------------------------------- fixtures
 
-    /** A day read the way the 1x2 widget reads it. */
+    /** A day read the way the 2x1 widget reads it. */
     private static TodayPlan day(LocalDateTime now, Course... courses) {
         return TodayPlan.of(Arrays.asList(courses), semester(), schedules(), null, now,
                 CourseWidgetRenderer.MAX_CARDS);

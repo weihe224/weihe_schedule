@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The widget's own surface: the same white card the app's screens use, with the
-     same hairline, so a widget and a card read as the same object. -->
+<!--
+    The widget's own surface: a translucent card rather than an opaque one.
+
+    Glass, not frosted glass: there is no blur behind a RemoteViews (the platform only
+    offers blur to the system's own surfaces), so the effect comes from a low-alpha
+    fill over whatever the wallpaper happens to be, plus a hairline edge. 85% is the
+    balance where the wallpaper is clearly visible but the ink ramp stays readable on
+    both a white and a near-black photo.
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/widget_surface" />
+    <solid android:color="@color/widget_glass" />
     <corners android:radius="@dimen/widget_corner" />
     <stroke
         android:width="@dimen/widget_stroke"

@@ -8,47 +8,47 @@ import android.widget.RemoteViews;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import com.weihe.schedule.MainActivity;
 import com.weihe.schedule.R;
 import com.weihe.schedule.design.Palette;
-import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.rule.TodayPlan;
 
 /**
- * Draws the 2x2 widget: what is happening now, and what comes after it.
+ * Draws the 2x2 widget: the same list as the 3x2, with the finished class as a footer.
  *
- * <h2>A square, not a shrunken 3x2</h2>
+ * <h2>The same items, not a second design</h2>
  *
- * <p>The 3x2 spends its width on a second card and an entry line. A square has less
- * of one and less of the other, so it keeps one main card at full size and reduces
- * the second class to a single line: the next class's start time and name, in the
- * muted voice, which is exactly how much a second class deserves when it is not the
- * one the person looked at the home screen for.</p>
+ * <p>The two rows are built with {@link CourseWidgetRenderer#itemView}, the very view
+ * the 3x2 list uses, and added to this layout's container. Reusing it is what makes the
+ * square read as the same widget at a different size: a 4dp course-colour bar, the
+ * name, the times, where it happens, and the same divider rules.</p>
  *
- * <h2>Which classes these are</h2>
+ * <h2>Which classes</h2>
  *
- * <p>The same rule the 3x2 uses, from the same helper: the headline first, which is
- * the class running if there is one and the next class otherwise, then the one after
- * it. The selection is not re-derived here -- {@link CourseWidgetRenderer#cards} is
- * the single answer to "what are the next two classes", and every size reads it.</p>
+ * <p>The headline first (running if there is one, the next class otherwise), then the
+ * class after it -- and, separately, one grey line at the bottom for the class that just
+ * ended. The footer is deliberately not part of the list: it is context, not a row to
+ * sit alongside the ones still to come.</p>
  *
  * <h2>Empty states</h2>
  *
- * <p>When the day has nothing left the card is replaced by the state block, not filled
+ * <p>When the day has nothing left the list is replaced by the state block, not filled
  * with a plausible-looking class. The wording comes from the 2x1 widget's helpers, so
  * the same day produces the same sentence on every size.</p>
  */
 final class SquareWidgetRenderer {
 
-    /** Below this height the second class line is dropped rather than squashed. */
+    /** Below this height the finished-class footer is dropped rather than squashed. */
     static final int SECONDARY_MIN_HEIGHT_DP = 150;
 
-    /** Below this height the room gives way, leaving the time alone on the detail line. */
-    static final int ROOM_MIN_HEIGHT_DP = 130;
+    /** The grey the finished class line is written in: read, but not competing. */
+    private static final int ENDED_GREY = 0xFFB9C0BD;
 
-    private static final DateTimeFormatter END_CLOCK = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
 
     private SquareWidgetRenderer() {
     }
@@ -57,108 +57,96 @@ final class SquareWidgetRenderer {
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 R.layout.widget_square);
         LocalDateTime now = LocalDateTime.now();
-        views.setTextViewText(R.id.widget_square_header, headerOf(plan));
-        views.setTextColor(R.id.widget_square_header, Palette.ON_SURFACE_VARIANT);
         views.setOnClickPendingIntent(R.id.widget_square_root, openApp(context));
 
-        List<TodayPlan.Session> cards = CourseWidgetRenderer.cards(plan);
-        boolean hasClass = !cards.isEmpty();
-        views.setViewVisibility(R.id.widget_square_card,
-                hasClass ? View.VISIBLE : View.GONE);
-        views.setViewVisibility(R.id.widget_square_empty,
-                hasClass ? View.GONE : View.VISIBLE);
+        views.setTextViewText(R.id.widget_square_date, CourseWidgetRenderer.dateLine(plan));
+        views.setTextColor(R.id.widget_square_date, Palette.ON_SURFACE_VARIANT);
+        String week = NextClassWidgetRenderer.pillText(plan);
+        views.setViewVisibility(R.id.widget_square_week,
+                week.isEmpty() ? View.GONE : View.VISIBLE);
+        views.setTextViewText(R.id.widget_square_week, week);
+        views.setTextColor(R.id.widget_square_week, Palette.PRIMARY);
 
-        if (!hasClass) {
+        List<TodayPlan.Session> items = items(plan);
+        // Cleared first: after an edit the day can be shorter, and a stale row would be
+        // a lie about the timetable.
+        views.removeAllViews(R.id.widget_square_cards);
+        for (int index = 0; index < items.size(); index++) {
+            views.addView(R.id.widget_square_cards, CourseWidgetRenderer.itemView(
+                    context, items.get(index), true, now));
+        }
+
+        boolean any = !items.isEmpty();
+        views.setViewVisibility(R.id.widget_square_cards, any ? View.VISIBLE : View.GONE);
+        views.setViewVisibility(R.id.widget_square_empty, any ? View.GONE : View.VISIBLE);
+        // Without rows the spacer has nothing to push, and two weights would split the
+        // card in half; hiding it lets the state block centre itself instead.
+        views.setViewVisibility(R.id.widget_square_spacer,
+                any ? View.VISIBLE : View.GONE);
+        views.setViewVisibility(R.id.widget_square_divider, View.GONE);
+        views.setViewVisibility(R.id.widget_square_ended_row, View.GONE);
+
+        if (!any) {
             views.setTextViewText(R.id.widget_square_empty_title,
                     NextClassWidgetRenderer.emptyTitle(plan));
             views.setTextColor(R.id.widget_square_empty_title, Palette.ON_SURFACE);
             views.setTextViewText(R.id.widget_square_empty_hint,
                     NextClassWidgetRenderer.emptyHint(plan));
             views.setTextColor(R.id.widget_square_empty_hint, Palette.ON_SURFACE_VARIANT);
-            views.setViewVisibility(R.id.widget_square_next, View.GONE);
             return views;
         }
 
-        TodayPlan.Session main = cards.get(0);
-        views.setTextViewText(R.id.widget_square_status,
-                NextClassWidgetRenderer.statusLabel(plan, false));
-        views.setTextColor(R.id.widget_square_status, Palette.ON_SURFACE_VARIANT);
-        views.setTextViewText(R.id.widget_square_name, main.name());
-        views.setTextColor(R.id.widget_square_name, Palette.ON_SURFACE);
-        views.setTextViewText(R.id.widget_square_detail,
-                detailOf(main, heightDp >= ROOM_MIN_HEIGHT_DP));
-        views.setTextColor(R.id.widget_square_detail, Palette.ON_SURFACE_VARIANT);
-        views.setInt(R.id.widget_square_rail, "setBackgroundColor", main.color());
-        WidgetChronometer.bind(views, R.id.widget_square_countdown_label,
-                R.id.widget_square_countdown, main, now);
-
-        TodayPlan.Session following = cards.size() > 1 ? cards.get(1) : null;
-        boolean showSecond = following != null && heightDp >= SECONDARY_MIN_HEIGHT_DP;
-        views.setViewVisibility(R.id.widget_square_next,
-                showSecond ? View.VISIBLE : View.GONE);
-        if (showSecond) {
-            views.setTextViewText(R.id.widget_square_next,
-                    secondaryText(plan, following));
-            views.setTextColor(R.id.widget_square_next, Palette.ON_SURFACE_VARIANT);
+        TodayPlan.Session finished = plan.previous();
+        boolean showFinished = finished != null && heightDp >= SECONDARY_MIN_HEIGHT_DP;
+        views.setViewVisibility(R.id.widget_square_divider,
+                showFinished ? View.VISIBLE : View.GONE);
+        views.setViewVisibility(R.id.widget_square_ended_row,
+                showFinished ? View.VISIBLE : View.GONE);
+        if (showFinished) {
+            views.setTextViewText(R.id.widget_square_ended, finishedText(finished));
+            views.setTextColor(R.id.widget_square_ended, ENDED_GREY);
+            views.setInt(R.id.widget_square_ended_bar, "setBackgroundColor",
+                    finished.color());
         }
         return views;
+    }
+
+    // -------------------------------------------------------------------- lists
+
+    /**
+     * The rows the list holds: the headline, then the class after it, at most two.
+     *
+     * <p>Not {@link CourseWidgetRenderer#cards}: that helper fills a free slot with the
+     * finished class, which would repeat the grey footer line here.</p>
+     */
+    static List<TodayPlan.Session> items(TodayPlan plan) {
+        if (plan == null || plan.headline() == null) {
+            return Collections.emptyList();
+        }
+        List<TodayPlan.Session> items = new ArrayList<>(CourseWidgetRenderer.MAX_CARDS);
+        items.add(plan.headline());
+        List<TodayPlan.Session> following = plan.following();
+        if (following != null && !following.isEmpty()
+                && items.size() < CourseWidgetRenderer.MAX_CARDS) {
+            items.add(following.get(0));
+        }
+        return items;
     }
 
     // -------------------------------------------------------------------- text
 
     /**
-     * The header: the weekday and, while the term runs, the teaching week.
+     * The footer: the class that just finished, and when.
      *
-     * <p>Not the full date as well: the 3x2 has room for "10月18日 周日 · 第5周 单周",
-     * and a square does not. The weekday is what a person checks against the timetable,
-     * and the week number is what tells them whether today's classes are the odd or
-     * even ones.</p>
+     * <p>{@code dd (09:35结束)}: the name stays readable, the time says which class it
+     * was, and the parenthesis keeps the line from being mistaken for another class
+     * still to come.</p>
      */
-    static String headerOf(TodayPlan plan) {
-        if (plan == null) {
-            return "";
-        }
-        String day = ScheduleUtils.dayName(plan.day().getDayOfWeek().getValue());
-        if (plan.week() <= 0 || plan.parity().isEmpty()) {
-            return day;
-        }
-        return day + " \u00B7 \u7B2C" + plan.week() + "\u5468 " + plan.parity();
-    }
-
-    /**
-     * The second class, as one muted line: {@code 下节 15:30 · 高等数学}.
-     *
-     * <p>The label says which class it is. When the main card is the class in progress
-     * this is the next one; when nothing is running, the main card already is the next
-     * one, so this is the one after that.</p>
-     */
-    static String secondaryText(TodayPlan plan, TodayPlan.Session session) {
+    static String finishedText(TodayPlan.Session session) {
         if (session == null) {
             return "";
         }
-        if (plan != null && session.ended(plan.now())) {
-            // The slot was filled with the class that just ended, so it says when it
-            // ended rather than pretending to be another upcoming class.
-            return "\u5DF2\u7ED3\u675F " + END_CLOCK.format(session.endAt())
-                    + " \u00B7 " + session.name();
-        }
-        String label = plan != null && plan.state() == TodayPlan.State.IN_CLASS
-                ? "\u4E0B\u8282" : "\u518D\u4E0B\u8282";
-        return label + " " + NextClassWidgetRenderer.clockOf(session)
-                + " \u00B7 " + session.name();
-    }
-
-    /** {@code 10:40 - 14:00 · 教学楼F楼F102多}, or just the times when there is no room. */
-    static String detailOf(TodayPlan.Session session, boolean withRoom) {
-        if (session == null) {
-            return "";
-        }
-        String time = session.timeRange();
-        if (!withRoom) {
-            return time;
-        }
-        String room = NextClassWidgetRenderer.roomOf(session);
-        return room.isEmpty() ? time : time + " \u00B7 " + room;
+        return session.name() + " (" + CLOCK.format(session.endAt()) + "\u7ED3\u675F)";
     }
 
     // ---------------------------------------------------------------- clicking

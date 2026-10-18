@@ -2,7 +2,6 @@ package com.weihe.schedule.widget;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.time.LocalDate;
@@ -19,9 +18,9 @@ import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.rule.TodayPlan;
 
 /**
- * What the widget shows, and what it says, without a launcher.
+ * What the 3x2 widget lists, and what it says around the list.
  *
- * <p>The card selection is the part most likely to be got wrong quietly: showing the
+ * <p>The selection rules are the part most likely to be got wrong quietly: showing the
  * day's first two classes at four in the afternoon looks fine in a screenshot and is
  * useless in a pocket. Every rule from the brief is pinned here instead.</p>
  */
@@ -30,7 +29,7 @@ public class CourseWidgetRendererTest {
     private static final LocalDate TERM_START = LocalDate.parse("2026-08-31");
     private static final LocalDate MONDAY = TERM_START;
 
-    // ============================================ which classes the widget shows
+    // ============================================ which classes the list holds
 
     @Test
     public void whileAClassRunsItKeepsItsPlaceBesideTheNextOne() {
@@ -100,7 +99,7 @@ public class CourseWidgetRendererTest {
         assertEquals(2, cards.size());
         assertEquals(1L, cards.get(0).courseId());
         assertEquals(2L, cards.get(1).courseId());
-        assertEquals("an upcoming class always wins the slot", false,
+        assertFalse("an upcoming class always wins the slot",
                 cards.get(1).ended(plan.now()));
     }
 
@@ -118,9 +117,8 @@ public class CourseWidgetRendererTest {
                 course(1L, 1, 1, 1), course(2L, 1, 2, 2), course(3L, 1, 3, 3),
                 course(4L, 1, 4, 4), course(5L, 1, 5, 5), course(6L, 1, 6, 6));
 
-        List<TodayPlan.Session> cards = CourseWidgetRenderer.cards(plan);
-
-        assertEquals(CourseWidgetRenderer.MAX_CARDS, cards.size());
+        assertEquals(CourseWidgetRenderer.MAX_CARDS,
+                CourseWidgetRenderer.cards(plan).size());
         assertEquals(2, CourseWidgetRenderer.MAX_CARDS);
     }
 
@@ -134,7 +132,7 @@ public class CourseWidgetRendererTest {
         assertEquals(3, CourseWidgetRenderer.totalOf(plan));
         assertEquals("the cards never add up to the day, which is why the line says so",
                 2, CourseWidgetRenderer.cards(plan).size());
-        assertEquals("\u67E5\u770B\u4ECA\u65E5\u5168\u90E8 3 \u8282\u8BFE\u7A0B",
+        assertEquals("\u67E5\u770B\u4ECA\u65E5\u5168\u90E8 3 \u8282\u8BFE\u7A0B \u203A",
                 CourseWidgetRenderer.entryText(CourseWidgetRenderer.totalOf(plan)));
     }
 
@@ -144,7 +142,7 @@ public class CourseWidgetRendererTest {
 
         assertEquals("both classes are still part of today", 2,
                 CourseWidgetRenderer.totalOf(evening));
-        assertEquals("\u67E5\u770B\u4ECA\u65E5\u5168\u90E8 2 \u8282\u8BFE\u7A0B",
+        assertEquals("\u67E5\u770B\u4ECA\u65E5\u5168\u90E8 2 \u8282\u8BFE\u7A0B \u203A",
                 CourseWidgetRenderer.entryText(CourseWidgetRenderer.totalOf(evening)));
     }
 
@@ -154,53 +152,48 @@ public class CourseWidgetRendererTest {
                 schedules(), null, MONDAY.atTime(9, 0), 2);
 
         assertEquals(0, CourseWidgetRenderer.totalOf(empty));
-        assertEquals("\u6253\u5F00\u4ECA\u65E5\u8BFE\u8868",
+        assertEquals("\u6253\u5F00\u4ECA\u65E5\u8BFE\u8868 \u203A",
                 CourseWidgetRenderer.entryText(0));
-        assertEquals("\u67E5\u770B\u4ECA\u65E5\u5168\u90E8 1 \u8282\u8BFE\u7A0B",
+        assertEquals("\u67E5\u770B\u4ECA\u65E5\u5168\u90E8 1 \u8282\u8BFE\u7A0B \u203A",
                 CourseWidgetRenderer.entryText(1));
     }
 
-    // ============================================ card contents
+    // ============================================ the item's text
 
     @Test
-    public void aCardReadsItsTimesThenWhereItHappens() {
-        TodayPlan.Session session = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2))
-                .headline();
+    public void aCardReadsWhereItHappensThenWhoTeachesIt() {
+        TodayPlan.Session session = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2)).headline();
 
-        String detail = CourseWidgetRenderer.detailOf(session);
-
-        assertEquals("08:15 - 09:35 \u00B7 A\u697C101 \u00B7 Prof. Li", detail);
+        assertEquals("A\u697C101 \u00B7 Prof. Li", CourseWidgetRenderer.metaOf(session));
     }
 
     @Test
-    public void aCardWithNoVenueOrTeacherFallsBackToThePeriodsRatherThanADanglingDot() {
+    public void aCardWithNoVenueOrTeacherFallsBackToItsPeriods() {
         TodayPlan.Session bare = sessionWith("", "");
         TodayPlan.Session venueOnly = sessionWith("A\u697C101", "");
+        TodayPlan.Session teacherOnly = sessionWith("", "Prof. Li");
 
-        assertEquals("08:15 - 09:35 \u00B7 \u7B2C 1-2 \u8282",
-                CourseWidgetRenderer.detailOf(bare));
-        assertEquals("08:15 - 09:35 \u00B7 A\u697C101", CourseWidgetRenderer.detailOf(venueOnly));
-        assertEquals("", CourseWidgetRenderer.detailOf(null));
+        assertEquals("\u7B2C 1-2 \u8282", CourseWidgetRenderer.metaOf(bare));
+        assertEquals("A\u697C101", CourseWidgetRenderer.metaOf(venueOnly));
+        assertEquals("Prof. Li", CourseWidgetRenderer.metaOf(teacherOnly));
+        assertEquals("", CourseWidgetRenderer.metaOf(null));
     }
 
     @Test
-    public void theDateLineCarriesTheWeekAndParityWhileTheTermRuns() {
-        String title = CourseWidgetRenderer.dateTitle(
-                day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2)));
+    public void theHeaderShowsTheDateAndLeavesTheWeekToTheCapsule() {
+        TodayPlan plan = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2));
 
-        assertTrue(title, title.contains("8\u670831\u65E5"));
-        assertTrue(title, title.contains("\u5468\u4E00"));
-        assertTrue(title, title.contains("\u7B2C1\u5468"));
-        assertTrue(title, title.contains("\u5355\u5468"));
+        assertEquals("8\u670831\u65E5 \u5468\u4E00", CourseWidgetRenderer.dateLine(plan));
+        assertEquals("\u7B2C1\u5468 (\u5355\u5468)", NextClassWidgetRenderer.pillText(plan));
     }
 
     @Test
-    public void theDateLineDropsTheWeekOutsideTheTerm() {
-        String title = CourseWidgetRenderer.dateTitle(
-                day(TERM_START.minusWeeks(3).atTime(9, 0), course(1L, 1, 1, 2)));
+    public void outsideTheTermTheHeaderHasNoCapsule() {
+        TodayPlan plan = day(TERM_START.minusWeeks(3).atTime(9, 0), course(1L, 1, 1, 2));
 
-        assertTrue(title, title.contains("\u5468\u4E00"));
-        assertFalse("no teaching week outside the term: " + title, title.contains("\u7B2C"));
+        assertTrue(CourseWidgetRenderer.dateLine(plan).contains("\u5468\u4E00"));
+        assertEquals("", NextClassWidgetRenderer.pillText(plan));
+        assertEquals("", NextClassWidgetRenderer.weekLabel(plan));
     }
 
     @Test
@@ -210,44 +203,17 @@ public class CourseWidgetRendererTest {
         TodayPlan outside = day(TERM_START.minusWeeks(2).atTime(9, 0), course(1L, 1, 1, 2));
         TodayPlan evening = day(MONDAY.atTime(23, 0), course(1L, 1, 1, 2));
 
-        assertEquals("\u8FD8\u6CA1\u6709\u8BFE\u8868", CourseWidgetRenderer.stateTitle(none));
+        assertEquals("\u8FD8\u6CA1\u6709\u8BFE\u8868",
+                NextClassWidgetRenderer.emptyTitle(none));
         assertEquals("\u70B9\u5F00\u6DFB\u52A0\u6216\u5BFC\u5165",
-                CourseWidgetRenderer.emptyDetail(none));
+                NextClassWidgetRenderer.emptyHint(none));
         assertEquals("\u5B66\u671F\u8FD8\u6CA1\u5F00\u59CB",
-                CourseWidgetRenderer.stateTitle(outside));
-        assertEquals("\u4ECA\u5929\u6CA1\u6709\u8BFE",
-                CourseWidgetRenderer.stateTitle(evening));
-        assertEquals("\u4ECA\u5929\u7684\u8BFE\u90FD\u4E0A\u5B8C\u4E86",
-                CourseWidgetRenderer.emptyDetail(evening));
-    }
-
-    // ============================================ countdowns
-
-    @Test
-    public void everyCardCountsDownToItsOwnClass() {
-        TodayPlan plan = day(MONDAY.atTime(8, 20),
-                course(1L, 1, 1, 2), course(2L, 1, 3, 4));
-        LocalDateTime now = plan.now();
-        List<TodayPlan.Session> cards = CourseWidgetRenderer.cards(plan);
-
-        assertEquals("a running class counts down to its end",
-                cards.get(0).endAt(), CourseWidgetRenderer.countdownTargetOf(cards.get(0), now));
-        assertEquals("\u8DDD\u4E0B\u8BFE",
-                CourseWidgetRenderer.countdownLabelOf(cards.get(0), now));
-        assertEquals("the next card counts down to that class's start",
-                cards.get(1).startAt(), CourseWidgetRenderer.countdownTargetOf(cards.get(1), now));
-        assertEquals("\u8DDD\u4E0A\u8BFE",
-                CourseWidgetRenderer.countdownLabelOf(cards.get(1), now));
-    }
-
-    @Test
-    public void aClassThatIsOverCountsDownToNothing() {
-        TodayPlan plan = day(MONDAY.atTime(23, 0), course(1L, 1, 1, 2));
-        TodayPlan.Session finished = day(MONDAY.atTime(7, 0), course(1L, 1, 1, 2)).headline();
-
-        assertNull(CourseWidgetRenderer.countdownTargetOf(finished, plan.now()));
-        assertNull(CourseWidgetRenderer.countdownLabelOf(finished, plan.now()));
-        assertNull(CourseWidgetRenderer.countdownTargetOf(null, plan.now()));
+                NextClassWidgetRenderer.emptyTitle(outside));
+        assertEquals("all of today is over, and that is not the same as an empty day",
+                "\u4ECA\u5929\u7684\u8BFE\u90FD\u4E0A\u5B8C\u4E86",
+                NextClassWidgetRenderer.emptyTitle(evening));
+        assertEquals("\u70B9\u5F00\u770B\u770B\u4ECA\u5929",
+                NextClassWidgetRenderer.emptyHint(evening));
     }
 
     @Test
