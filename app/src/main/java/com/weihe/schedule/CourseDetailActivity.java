@@ -280,28 +280,48 @@ public class CourseDetailActivity extends Activity {
      * <p>The text is shown exactly as stored, newlines included, because the line
      * breaks are the author's and are usually the point.</p>
      *
-     * <p>The way in sits at the end of the note, right-aligned, in both states. It
-     * used to be a text button on the heading row, which made this the one card whose
-     * title sat lower than the rest: the button's 48dp touch target is taller than
-     * any heading, and centring that row took the text down with it. Moving the
-     * target to where the note ends lines the three card headings up and leaves the
-     * entry where the reader already is.</p>
+     * <p>The way in sits at the top right, on the heading row, in both states: the
+     * card's own corner is where a reader looks for "add", and putting it there also
+     * removes the footer row that used to hold it -- so the card ends just under the
+     * note instead of carrying an empty band beneath it.</p>
+     *
+     * <p>The cost is height: a text button's 48dp touch target is taller than a
+     * heading, so this one heading row is taller than the others. The label is centred
+     * in it, which is the compromise that keeps the button usable without inflating the
+     * heading text.</p>
      */
     private View noteCard(String note) {
         LinearLayout card = card();
         boolean hasNote = note != null && !note.isEmpty();
 
-        card.addView(section("\u8BFE\u7A0B\u5907\u6CE8"));
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(section("\u8BFE\u7A0B\u5907\u6CE8"), new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        // A text button, not a filled one. Writing a note is a side errand on this
+        // screen, and the one filled button on it is still 编辑课程.
+        TextView noteAction = UiKit.textButton(this,
+                hasNote ? "\u7F16\u8F91" : "\u6DFB\u52A0\u5907\u6CE8",
+                Palette.PRIMARY, view -> openEditor(true));
+        // Trailing padding off: the label should end on the card's content edge even
+        // though the touch target still reaches it. The height comes down to 40dp from
+        // the stock 48dp, because a full target would push this card's heading a dozen
+        // dp below every other heading and leave a blank band above the note.
+        noteAction.setMinHeight(dp(40));
+        noteAction.setPadding(noteAction.getPaddingLeft(), dp(4), 0, dp(4));
+        header.addView(noteAction);
+        card.addView(header);
 
         if (hasNote) {
             TextView text = UiKit.text(this, note, UiTokens.Type.BODY_MEDIUM,
                     Palette.ON_SURFACE, false);
             text.setLineSpacing(dp(3), 1f);
-            card.addView(text, UiKit.stack(this, UiTokens.SPACE_M));
+            card.addView(text, UiKit.stack(this, UiTokens.SPACE_S));
         } else {
             card.addView(UiKit.text(this, "\u6682\u65E0\u5907\u6CE8",
                     UiTokens.Type.BODY_MEDIUM, Palette.ON_SURFACE_VARIANT, false),
-                    UiKit.stack(this, UiTokens.SPACE_M));
+                    UiKit.stack(this, UiTokens.SPACE_S));
             card.addView(UiKit.text(this,
                     "\u53EF\u8BB0\u5F55\u4F5C\u4E1A\u3001\u8003\u8BD5\u5B89\u6392\u3001"
                             + "\u5B66\u4E60\u8D44\u6599\u7B49",
@@ -309,15 +329,7 @@ public class CourseDetailActivity extends Activity {
                     UiKit.stack(this, UiTokens.SPACE_XS));
         }
 
-        LinearLayout footer = new LinearLayout(this);
-        footer.setOrientation(LinearLayout.HORIZONTAL);
-        footer.setGravity(Gravity.END);
-        // A text button, not a filled one. Writing a note is a side errand on this
-        // screen, and the one filled button on it is still 编辑课程.
-        footer.addView(UiKit.textButton(this,
-                hasNote ? "\u7F16\u8F91" : "\u6DFB\u52A0\u5907\u6CE8",
-                Palette.PRIMARY, view -> openEditor(true)));
-        card.addView(footer, UiKit.stack(this, UiTokens.SPACE_XS));
+
         return card;
     }
 
