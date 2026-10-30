@@ -315,7 +315,7 @@ public class EditCourseActivity extends Activity {
      * the user did not touch. The field stays a text field: what is offered is a
      * shortcut, not a set of allowed answers.</p>
      *
-     * <p>Laid out three to a line, the way the week picker lays out its cells, so
+     * <p>Venues use two columns and teacher names three, so
      * the row cannot grow sideways on a narrow phone. Cells share the width, and a
      * short last line is padded with spacers so its chips are the same size as the
      * ones above rather than stretching to fill.</p>
@@ -323,14 +323,13 @@ public class EditCourseActivity extends Activity {
      * <p>Nothing to offer means nothing is drawn: an empty band under a field
      * would read as a part of the form that failed to load.</p>
      */
-    private View suggestions(final EditText target, List<String> values, int topMargin) {
+    private View suggestions(final EditText target, List<String> values, int columns) {
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
         if (values.isEmpty()) {
             grid.setVisibility(View.GONE);
             return grid;
         }
-        final int columns = 3;
         LinearLayout line = null;
         for (int index = 0; index < values.size(); index++) {
             if (index % columns == 0) {
@@ -339,16 +338,18 @@ public class EditCourseActivity extends Activity {
                 LinearLayout.LayoutParams lineParams = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT);
-                lineParams.topMargin = index == 0 ? dp(topMargin) : dp(UiTokens.SPACE_S);
+                lineParams.topMargin = dp(UiTokens.SPACE_S);
                 grid.addView(line, lineParams);
             }
             final String value = values.get(index);
             TextView chip = UiKit.chip(this, value, false);
-            chip.setSingleLine(true);
+            chip.setMaxLines(2);
+            chip.setPadding(dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_XS),
+                    dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_XS));
             chip.setEllipsize(TextUtils.TruncateAt.END);
             chip.setOnClickListener(view -> fill(target, value));
             LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(
-                    0, dp(UiTokens.CHIP_HEIGHT), 1f);
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
             if (index % columns != 0) {
                 chipParams.leftMargin = dp(UiTokens.SPACE_S);
             }
@@ -389,9 +390,9 @@ public class EditCourseActivity extends Activity {
                 12, Palette.ON_SURFACE, true));
         section.addView(formField("\u8BFE\u7A0B\u540D\u79F0", nameInput, 11));
         section.addView(formField("\u4E0A\u8BFE\u5730\u70B9", locationInput, 11));
-        section.addView(suggestions(locationInput, locationSuggestions, 6));
+        section.addView(suggestions(locationInput, locationSuggestions, 2));
         section.addView(formField("\u4EFB\u8BFE\u6559\u5E08", teacherInput, 11));
-        section.addView(suggestions(teacherInput, teacherSuggestions, 6));
+        section.addView(suggestions(teacherInput, teacherSuggestions, 3));
         return section;
     }
 
@@ -519,17 +520,18 @@ public class EditCourseActivity extends Activity {
         LinearLayout rangeRow = new LinearLayout(this);
         rangeRow.setOrientation(LinearLayout.HORIZONTAL);
         rangeRow.setGravity(Gravity.CENTER_VERTICAL);
+        rangeRow.setBaselineAligned(false);
         startWeekInput = numberInput(course.startWeek);
         endWeekInput = numberInput(course.endWeek);
         rangeRow.addView(startWeekInput, new LinearLayout.LayoutParams(
-                0, dp(42), 1f));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView divider = UiKit.text(this, "\u81F3", UiTokens.Type.BODY_MEDIUM, Palette.ON_SURFACE_VARIANT, true);
         divider.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
                 dp(34), ViewGroup.LayoutParams.WRAP_CONTENT);
         rangeRow.addView(divider, dividerParams);
         rangeRow.addView(endWeekInput, new LinearLayout.LayoutParams(
-                0, dp(42), 1f));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         LinearLayout.LayoutParams rangeParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -598,8 +600,11 @@ public class EditCourseActivity extends Activity {
         input.setTextColor(Palette.ON_SURFACE);
         input.setTextSize(UiTokens.Type.BODY_MEDIUM);
         input.setGravity(Gravity.CENTER);
+        input.setIncludeFontPadding(false);
         input.setSingleLine(true);
-        input.setPadding(dp(8), dp(8), dp(8), dp(8));
+        input.setMinHeight(dp(UiTokens.TOUCH_TARGET));
+        input.setPadding(dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_S),
+                dp(UiTokens.SPACE_S), dp(UiTokens.SPACE_S));
         input.setBackground(UiKit.fill(this, Palette.SURFACE_CONTAINER_LOW, UiTokens.RADIUS_S));
         return input;
     }
@@ -954,7 +959,7 @@ public class EditCourseActivity extends Activity {
         strip.addView(colorRow, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
-        wrapper.addView(strip);
+        wrapper.addView(strip, UiKit.stack(this, UiTokens.SPACE_S));
         renderColorSwatches();
         LinearLayout.LayoutParams wrapperParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,

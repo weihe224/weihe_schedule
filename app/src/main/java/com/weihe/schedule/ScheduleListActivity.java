@@ -203,7 +203,7 @@ public class ScheduleListActivity extends Activity {
                 schedule.locationKeywords().isEmpty() ? Palette.OUTLINE : Palette.ON_SURFACE_VARIANT,
                 false);
         LinearLayout.LayoutParams keywordParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         keywordParams.topMargin = dp(8);
 

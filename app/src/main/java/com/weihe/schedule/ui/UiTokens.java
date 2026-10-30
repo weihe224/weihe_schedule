@@ -135,6 +135,8 @@ public final class UiTokens {
      * the card's edge rather than as a separate graphic.</p>
      */
     public static final int COURSE_RAIL_WIDTH = 5;
+    /** Minimum width of the day list time column; grows with the type scale. */
+    public static final int COURSE_TIME_MIN_WIDTH = 56;
     /** Height of the top app bar. */
     public static final int TOP_BAR_HEIGHT = 64;
     /** Size of a floating action button. */

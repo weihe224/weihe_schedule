@@ -207,7 +207,8 @@ public class SettingsActivity extends Activity {
         scroll.setClipToPadding(false);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(14), dp(14), dp(14), dp(20));
+        body.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_L),
+                dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_XL));
 
         // Ordered by how often each item is reached for. The term on screen and the
         // date its week 1 begins are one subject, so they sit together; then the
@@ -215,30 +216,30 @@ public class SettingsActivity extends Activity {
         // is laid out against; and last the data management -- importing and
         // backing up are done rarely and deliberately, and they belong at the end
         // rather than between the settings people change.
-        body.addView(sectionLabel("\u5B66\u671F\u7BA1\u7406"));
+        body.addView(sectionLabel("\u5B66\u671F\u7BA1\u7406", 0));
         body.addView(createSemesterGroup());
 
         // Named for what it changes rather than for where it sits: this is the
         // date week 1 begins, and moving it re-dates every course in the term.
-        body.addView(sectionLabel("\u5B66\u671F\u8D77\u59CB\u65E5\u671F"),
-                margins(dp(16)));
+        body.addView(sectionLabel("\u5B66\u671F\u8D77\u59CB\u65E5\u671F",
+                UiTokens.SPACE_M));
         body.addView(createSemesterStartCard());
 
-        body.addView(sectionLabel("\u4E0A\u8BFE\u63D0\u9192"), margins(dp(16)));
+        body.addView(sectionLabel("\u4E0A\u8BFE\u63D0\u9192", UiTokens.SPACE_M));
         body.addView(createReminderCard());
 
-        body.addView(sectionLabel("\u4E0A\u4E0B\u8BFE\u65F6\u95F4"), margins(dp(16)));
+        body.addView(sectionLabel("\u4E0A\u4E0B\u8BFE\u65F6\u95F4", UiTokens.SPACE_M));
         body.addView(createScheduleGroup());
 
-        body.addView(sectionLabel("\u8BFE\u8868\u6570\u636E"), margins(dp(16)));
+        body.addView(sectionLabel("\u8BFE\u8868\u6570\u636E", UiTokens.SPACE_M));
         body.addView(createDataGroup());
         // Only ever visible when a course payload actually failed to read, so the
         // page does not carry a diagnostic row for a situation most installs never
         // reach. refresh() decides.
         damagedCopyCard = createDamagedCopyCard();
-        body.addView(damagedCopyCard, margins(dp(10)));
+        body.addView(damagedCopyCard, margins(UiTokens.SPACE_M));
 
-        body.addView(createAboutCard(), margins(dp(20)));
+        body.addView(createAboutCard(), margins(UiTokens.SPACE_M));
 
         scroll.addView(body, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -415,8 +416,13 @@ public class SettingsActivity extends Activity {
                 view -> finish());
     }
 
-    private TextView sectionLabel(String text) {
-        return UiKit.sectionLabel(this, text);
+    private TextView sectionLabel(String text, int topMarginDp) {
+        TextView label = UiKit.sectionLabel(this, text);
+        LinearLayout.LayoutParams params =
+                (LinearLayout.LayoutParams) label.getLayoutParams();
+        // Preserve the shared gap below the heading; convert dp only once.
+        params.topMargin = dp(topMarginDp);
+        return label;
     }
 
     private LinearLayout.LayoutParams margins(int top) {

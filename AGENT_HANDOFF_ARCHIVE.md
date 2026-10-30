@@ -3771,3 +3771,27 @@ API 37 设备回归：测试前备份三份 preferences；导出取消后原课�
 清理：三份 preferences 逐字节回写原备份，再安装最终包并启动，原 weihe_schedule.xml 全部键值一致。仅删除本轮导出的 JSON 和 weihe-backup-refactor-invalid.json，下载列表与原列表一致。清理辅助脚本曾因默认 GBK 读取含中文文件名的清单失败，已改用显式 UTF-8 完成核对；应用原数据在此之前已成功还原。证据 results.json、导出内容、preview.png/invalid-preview.png 仅在被忽略的 .gradle-local/backup-refactor/。未修改原文件/权限、未 commit/push。
 
 限制：真实磁盘写满、云端提供方、系统杀死页面等未实机注入；流/仓库故障由 JVM 检查覆盖。本轮只做备份部分，Excel 流程后置。
+
+
+## 2026-10-30 界面对齐与间距修正（纯 UI）
+
+用户要求检查 App 内 UI/文字不对齐及不协调之处并修复，不新增功能。
+
+根因与改法：
+
+1. SettingsActivity 的 margins(int) 内部已经 dp(top)，调用又传 margins(dp(16))，在 2.625 密度下把 16dp 放大成约 42dp；外部 LayoutParams 还覆盖 sectionLabel 的底边距。改为传原始 token，标题修改已有参数保留 SPACE_S 下间距，组间复用 SPACE_M，页面横边距统一 SPACE_L。
+2. UiKit.sectionLabel 的 4dp 左缩进使关于页标题与正文错位，移除此隐式缩进。新增 infoRow：左标签 WRAP_CONTENT，右侧 0 宽度 + weight 分配余下空间，保留 SPACE_L 间隔，并以首行基线排版。AboutActivity/BackupPreviewActivity 共用，避免长文件名把左标签挤没；导出时间 T 改显示空格，日期与时间之间可换行，序列化不变。
+3. EditCourseActivity 地点选项三列全部易省略，改两列；教师保留三列。选项最多两行、统一 token 内边距，水平行内 MATCH_PARENT 高度使长短选项等高。周次输入从固定 42dp 改 WRAP_CONTENT + TOUCH_TARGET 最小高度；setMinHeight 放在 setSingleLine 后，避免 TextView 的行数设置覆盖像素最小高度。关闭范围行 baselineAligned、数字关闭额外字体 padding，使数字和“至”纵向居中。色块与标题增加 SPACE_S。
+4. CourseSearchActivity.guidance 用 card 再包已经有背景的 emptyState，截图出现两层白框，改为直接返回共用空状态。
+5. ScheduleListActivity 的 footnote 外层是 WRAP_CONTENT，即使内层使用 weight 也不会占满卡片，按钮随标签长度漂移；外层改 MATCH_PARENT，按钮统一靠右。
+6. MainActivity 原时间栏只设最小宽度，1.3 倍字体下 10-11 节的卡片撑宽，课程标题 x=289，而其他卡片 x=266。按当前文字 paint 测量 88-88 节并计入内边距，为所有卡片预留同样宽度；最小宽度 56dp 集中为 UiTokens.COURSE_TIME_MIN_WIDTH。正常/1.3 倍字体最终截图确认同列对齐，节次完整。
+
+验证与边界：
+
+- 最终脚本实际执行 --rerun-tasks testDebugUnitTest assembleDebug lintDebug，BUILD SUCCESSFUL，49 tasks executed，67 类 1196 项，0 failures/errors/skipped；lint-results-debug.txt 为 No issues found。保留既有 AGP 本地 AAPT2 实验性和 Gradle 弃用提示。git diff --check 通过。
+- ADB 覆盖安装，API 37 / emulator-5554 / 1080x2424 / 420 dpi；实际打开首页、设置、关于、课程详情、编辑课程、搜索、课表总览、学期列表、作息列表、编辑作息与恢复预览。修改页面正常字体目视复核，首页/设置/关于/编辑课程/作息列表/备份预览另核对 font_scale=1.3；不是仪器测试或 UI 自动化测试套件。
+- 临时将原 weihe-backup-20261014-1547.json 复制为 80 字符长文件名，只读预览验证换行，不执行恢复。备份时间大字体下按日期/时间换行，左标签完整。临时副本清理完成。
+- 三份 preferences 均先备份；检查前后键值一致，清理时逐字节与原副本核对，重新启动后仍一致；font_scale 恢复原 1.0。未保存课程/作息更改，未卸载、未改权限。
+- 证据在 .gradle-local/ui-review/（Git 忽略）：各 *before.png/*after.png、main-final.png/main-final-font130.png、course-final-font130.png/course-bottom-final*.png、schedules-final*.png、backup-final.png/backup-final-long-font130.png，以及 cleanup-result.json。
+- 未验证其他 API/厂商手机、横屏/分屏、2.0 倍字体与所有弹窗/异常状态。未新增功能、依赖或测试源码；未改存储契约。
+- 修改文件：MainActivity.java、SettingsActivity.java、AboutActivity.java、BackupPreviewActivity.java、CourseSearchActivity.java、EditCourseActivity.java、ScheduleListActivity.java、ui/UiKit.java、ui/UiTokens.java，以及两份交接文档。开始时 main/365fb2f 干净，全部本轮变更留在工作区，未暂存/commit/push。

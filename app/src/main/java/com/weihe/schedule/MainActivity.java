@@ -1212,17 +1212,16 @@ public class MainActivity extends Activity {
         if (clock.length > 1) {
             block.addView(timeLine(clock[1], dp(2)));
         }
-        // A minimum width rather than a fixed one. A fixed 56dp column starts the
-        // content at the same x on every card, which is worth having, but it also
-        // clips "1-2节" in half at a large font scale. Asking for 56dp and allowing
-        // more keeps the alignment on every card that fits and lets the rare wide
-        // one push the content instead of hiding the period.
+        // Reserve the same widest two-digit range for every card at this font
+        // scale, so a long range cannot shift just one course's content column.
+        int periodWidth = (int) Math.ceil(periods.getPaint().measureText("88-88\u8282"))
+                + block.getPaddingLeft() + block.getPaddingRight();
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                Math.max(dp(UiTokens.COURSE_TIME_MIN_WIDTH), periodWidth),
+                ViewGroup.LayoutParams.WRAP_CONTENT);
         params.leftMargin = dp(UiTokens.SPACE_M);
         params.topMargin = dp(UiTokens.SPACE_S);
         params.bottomMargin = dp(UiTokens.SPACE_S);
-        block.setMinimumWidth(dp(56));
         block.setLayoutParams(params);
         return block;
     }

@@ -233,11 +233,8 @@ public class CourseSearchActivity extends Activity {
      * the hint are what tell them apart.</p>
      */
     private View guidance(CourseSearchSummary summary) {
-        LinearLayout card = UiKit.card(this);
-        UiKit.elevate(card, UiTokens.RADIUS_L, UiTokens.ELEVATION_NONE);
-        card.addView(UiKit.emptyState(this, R.drawable.ic_search,
-                summary.headline(), summary.hint()));
-        return card;
+        return UiKit.emptyState(this, R.drawable.ic_search,
+                summary.headline(), summary.hint());
     }
 
     /**

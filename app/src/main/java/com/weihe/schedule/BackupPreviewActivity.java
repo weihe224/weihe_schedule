@@ -179,7 +179,7 @@ public class BackupPreviewActivity extends Activity {
         file.addView(section("\u5907\u4EFD\u6587\u4EF6"));
         addRow(file, "\u6587\u4EF6\u540D", preview.fileName());
         addRow(file, "\u683C\u5F0F\u7248\u672C", String.valueOf(preview.formatVersion()));
-        addRow(file, "\u5BFC\u51FA\u65F6\u95F4", preview.hasExportedAt() ? preview.exportedAt() : "\u672A\u77E5");
+        addRow(file, "\u5BFC\u51FA\u65F6\u95F4", preview.hasExportedAt() ? preview.exportedAt().replace('T', ' ') : "\u672A\u77E5");
         addRow(file, "\u5BFC\u51FA\u5E94\u7528", preview.hasAppVersionName()
                 ? preview.appVersionName() : "\u672A\u77E5");
         body.addView(spaced(file));
@@ -395,21 +395,7 @@ public class BackupPreviewActivity extends Activity {
 
     /** One label-and-value line inside a card. */
     private void addRow(LinearLayout card, String label, String value) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView name = UiKit.text(this, label, UiTokens.Type.BODY_MEDIUM,
-                Palette.ON_SURFACE_VARIANT, false);
-        row.addView(name, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView amount = UiKit.text(this, value, UiTokens.Type.BODY_MEDIUM,
-                Palette.ON_SURFACE, false);
-        amount.setGravity(Gravity.END);
-        row.addView(amount, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout row = UiKit.infoRow(this, label, value);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,

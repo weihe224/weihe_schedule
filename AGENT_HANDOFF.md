@@ -6,7 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
-> - **最新一轮：见文末「2026-10-30 备份流程提取」**。共享 BackupService 已接入设置与预览页面；1196 项测试、Debug 构建与 Lint 通过；模拟器导出/预览/恢复/取消/无效文件回归通过，原数据已还原。
+> - **最新一轮：见文末「2026-10-30 界面对齐与间距修正」**。设置、首页课程列、课程表单、搜索、关于与备份预览排版已修正；1196 项测试、Debug 构建与 Lint 通过；API 37 模拟器正常/1.3 倍字体目视核对，原数据与字体已还原。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -3038,3 +3038,15 @@ APK **1,202,536 B**。
 - **已验证（API 37）**：最终包已安装；导出选择器取消无新文件；实际导出仍为格式 1、1 学期/23 课程/3 作息表；预览选择器取消不改数据；恢复确认取消保留临时测试备注，确认恢复后活动课程中的备注被原内容替换；无效 JSON 显示原有失败提示。证据在 `.gradle-local/backup-refactor/`。
 - 清理：测试前三份 preferences 已逐字节还原，重新启动后的原课表全部配置键值一致；本轮导出文件与无效 JSON 已删除，原下载文件列表保持一致，未改权限。测试前导出明文与截图仅保留在 Git 忽略的本地验证目录。
 - **未验证**：其他系统/云端提供方实机、真实存储满或流关闭故障、Activity 被系统杀死后的交互；对应流/仓库失败路径为 JVM 验证。未新增依赖、未 commit/push。下一步可单独整理 Excel 导入，不与本轮混做。
+
+
+## 2026-10-30 界面对齐与间距修正
+
+- **已实现并已验证**：`SettingsActivity.java` 修正 dp 重复转换与分组标题下边距覆盖，统一页面边缘和分组间距；`ui/UiKit.java` 统一标题左边缘，新增标签保留宽度、值可换行的 `infoRow`，由 `AboutActivity.java` 与 `BackupPreviewActivity.java` 复用。预览导出时间用空格分隔日期/时间，允许自然换行，不改原文件。
+- **已实现并已验证**：`EditCourseActivity.java` 地点快捷项改为两列，最多两行且同排等高；教师保持三列；周次数值与“至”居中，输入框最小高度 48dp 并随文字高度增长；颜色标题和色块间增加统一间距。`CourseSearchActivity.java` 去掉空状态重复卡片；`ScheduleListActivity.java` 修正操作行宽度，使“设为默认”靠右。
+- **已实现并已验证**：`MainActivity.java` 时间栏按当前字体下的最长两位节次预留统一宽度，修复 1.3 倍字体时不同课程标题左边缘错开；最小宽度集中到 `ui/UiTokens.java`。
+- 完整验证：最终 `tools/verify-project.ps1 -JavaHome 'C:\Program Files\Java\jdk-20' -GradleUserHome './.gradle-local/home' -Offline` 执行 --rerun-tasks；67 类 / 1196 项 / 0 失败 / 0 错误；assembleDebug 成功；lintDebug `No issues found.`；git diff --check 通过。纯排版修改，未新增单元测试或仪器测试。
+- **已验证（API 37）**：覆盖安装最终包，主要页面逐页查看；修改页面核对正常字体，首页/设置/关于/课程表单/备份/作息列表还核对 1.3 倍字体。长文件名使用原备份的临时副本只读预览，不恢复。截图和清理证据保留在 Git 忽略目录 `.gradle-local/ui-review/`，包括 `main-final*.png`、`course*-final*.png`、`schedules-final*.png`、`backup-final*.png`、`cleanup-result.json`。
+- 数据与环境：检查前后三份 preferences 键值均一致；清理时逐字节核对原副本，重新启动后键值仍一致；临时长文件名备份已删除，系统字体恢复 1.0，未改课表、提醒配置、组件配置或权限。未添加功能/依赖，存储契约保持原样。
+- Git：本轮开始 main / HEAD `365fb2f`，工作区干净；本轮 9 个 Java 文件与两份交接文档未暂存，未 commit/push。
+- **未验证**：其他 API/厂商实机、横屏/分屏、2.0 倍字体、全部弹窗与错误状态。本轮针对可复现的排版问题；下一步如继续 UI 工作，可补这些设备与字体组合。

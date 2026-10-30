@@ -193,26 +193,12 @@ public class AboutActivity extends Activity {
 
     /** One labelled line: the name on the left, what it is on the right. */
     private View fact(String label, String value) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout row = UiKit.infoRow(this, label, value);
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         rowParams.topMargin = dp(UiTokens.SPACE_M);
         row.setLayoutParams(rowParams);
-
-        TextView name = UiKit.text(this, label, UiTokens.Type.BODY_MEDIUM,
-                Palette.ON_SURFACE_VARIANT, Typeface.NORMAL);
-        row.addView(name, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView content = UiKit.text(this, value, UiTokens.Type.BODY_MEDIUM,
-                Palette.ON_SURFACE, Typeface.NORMAL);
-        content.setGravity(Gravity.END);
-        row.addView(content, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
         return row;
     }
 

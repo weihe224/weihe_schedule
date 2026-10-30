@@ -198,10 +198,31 @@ public final class UiKit {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.leftMargin = dp(context, UiTokens.SPACE_XS);
         params.bottomMargin = dp(context, UiTokens.SPACE_S);
         label.setLayoutParams(params);
         return label;
+    }
+
+    /** A first-baseline-aligned fact whose value wraps without squeezing its label. */
+    public static LinearLayout infoRow(Context context, CharSequence label,
+            CharSequence value) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.TOP);
+        TextView name = text(context, label, UiTokens.Type.BODY_MEDIUM,
+                Palette.ON_SURFACE_VARIANT, Typeface.NORMAL);
+        row.addView(name, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView content = text(context, value, UiTokens.Type.BODY_MEDIUM,
+                Palette.ON_SURFACE, Typeface.NORMAL);
+        content.setGravity(Gravity.END);
+        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        valueParams.leftMargin = dp(context, UiTokens.SPACE_L);
+        row.addView(content, valueParams);
+        return row;
     }
 
     // ----------------------------------------------------------------------- text
