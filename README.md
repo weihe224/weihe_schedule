@@ -84,12 +84,16 @@
 
 ## 获取与运行
 
-### 环境要求
+### 环境要求与统一配置
 
-- Android Studio（支持 Android Gradle Plugin 8.13.0）
-- JDK 17 或更高版本
-- Android SDK Platform 34
-- Windows 用户可直接使用仓库自带的 `gradlew.bat`
+- Android Studio：需支持项目固定的 Android Gradle Plugin 8.13.0。
+- Gradle：所有入口使用仓库的 Wrapper（8.13），不要用机器上的其他 Gradle 替代。
+- Java：项目源码使用 Java 17；构建可选 JDK 17，本项目当前完整验证使用 JDK 20。其他 JDK 版本须先核对与 Gradle 8.13、AGP 8.13.0 的兼容性。
+- Android SDK：安装 Platform 34；Build Tools 版本由 AGP 选择。
+
+Android Studio 的 **Settings → Build, Execution, Deployment → Build Tools → Gradle** 中，Gradle JDK 应与命令行 `JAVA_HOME` 指向同一个 JDK。Studio 本身使用的运行时可以与构建 JDK 不同。配置原则见 [Android 官方 JDK 说明](https://developer.android.com/build/jdks)。
+
+SDK 路径由 Android Studio 写入本机 `local.properties` 的 `sdk.dir`；命令行也可使用本机的 `ANDROID_HOME`。这些路径不应写入共享的 `gradle.properties`。
 
 ### 在 Android Studio 中打开
 
@@ -97,18 +101,49 @@
    ```bash
    git clone https://github.com/weihe224/weihe_schedule.git
    ```
-2. 在 Android Studio 中选择 **Open**，打开包含 `settings.gradle` 的项目根目录。
-3. 等待 Gradle Sync 完成，并确认本机 Android SDK 配置正确。
+2. 选择 **Open**，打开包含 `settings.gradle` 的项目根目录。
+3. 核对 Gradle JDK 和 SDK，使用项目 Wrapper，同步项目。
 4. 选择 `app` 运行配置，在模拟器或已连接的 Android 设备上运行。
 
-### 在 Windows 命令行构建
+### 命令行与验证脚本
 
-在项目根目录运行：
+在项目根目录运行，与 Studio 使用同一套 Gradle 和本地配置：
 
-```bat
-:: 运行 JVM 单元测试、构建 Debug APK，并检查 Lint
-gradlew.bat --rerun-tasks testDebugUnitTest assembleDebug lintDebug
+```powershell
+# Windows：重新运行 JVM 单元测试、构建 Debug APK，并执行 Lint
+.\gradlew.bat --rerun-tasks testDebugUnitTest assembleDebug lintDebug
 ```
+
+macOS / Linux 使用 `./gradlew` 执行相同任务。
+
+Windows 也可以使用验证脚本，默认继承 `JAVA_HOME` 和 `GRADLE_USER_HOME`：
+
+```powershell
+.\tools\verify-project.ps1
+# 指定另一份已安装的 JDK（改为本机实际路径）：
+.\tools\verify-project.ps1 -JavaHome 'C:/path/to/jdk-20'
+# 依赖已缓存时可加 -Offline。
+```
+
+若终端的 PowerShell 执行策略禁止脚本，可直接使用上面的 Wrapper 命令，不必修改系统执行策略。
+
+脚本始终调用仓库的 `gradlew.bat`，不会自动改用 `.gradle-local/bin` 下的另一份 Gradle。它为当前执行设置项目内 Java 通信临时目录，结束后恢复环境变量和工作目录；不会安装 APK。受限执行环境仍需允许访问本机端口。
+
+如果需要使用已有的独立 Gradle 缓存，可显式指定用户目录（相对路径按项目根目录解析）：
+
+```powershell
+.\tools\verify-project.ps1 -GradleUserHome '.gradle-local/home' -Offline
+```
+
+指定 `-GradleUserHome` 时，缓存与用户配置都会从该目录读取。若希望 Studio 与此命令共享它，在 Studio 的 Gradle 设置中将 **Gradle user home** 也设为同一目录；否则保持两边默认用户目录。示例中的 `.gradle-local/home` 是可选的本机目录，新克隆不依赖它。
+
+### 可选的本机 AAPT2 兼容配置
+
+默认不指定 AAPT2 路径，使用 AGP 提供的工具。本项目当前已验证默认方式可完成构建。
+
+如果某台 Windows 电脑仍遇到 AAPT2 解包路径问题，可参考 [gradle-user.properties.example](gradle-user.properties.example)，仅将需要的设置放入 **Gradle 用户目录下的 `gradle.properties`**。未设置 `GRADLE_USER_HOME` 时通常为 `~/.gradle/gradle.properties`；使用上述独立缓存时则为 `.gradle-local/home/gradle.properties`。设置中的可执行文件路径必须改为本机实际 SDK 路径，Windows 也使用正斜杠。
+
+不要把机器路径重新放回仓库根目录的 `gradle.properties`。不需要兼容处理时，删除用户配置中的 `android.aapt2FromMavenOverride` 行即可恢复 AGP 默认工具。该覆盖属于 AGP 实验性选项，启用时出现相应提示是预期行为。
 
 Debug APK 默认输出到：
 

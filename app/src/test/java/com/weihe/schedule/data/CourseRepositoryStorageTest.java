@@ -41,6 +41,26 @@ import com.weihe.schedule.model.Semester;
  */
 public class CourseRepositoryStorageTest {
 
+    @Test
+    public void backupCountIncludesInactiveTermsWithoutSwitchingThem() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester original = repository.getActiveSemester();
+        Course first = new Course();
+        first.name = "First";
+        Course second = new Course();
+        second.name = "Second";
+        repository.replaceCourses(List.of(first, second));
+        Semester other = repository.addSemester(original.start().plusYears(1), "Other");
+        repository.setActiveSemester(other);
+        assertEquals(2, repository.totalCourseCount());
+        Course third = new Course();
+        third.name = "Third";
+        repository.replaceCourses(List.of(third));
+        assertEquals(3, repository.totalCourseCount());
+        assertEquals(other.id(), repository.getActiveSemester().id());
+    }
+
     private static final String KEY_COURSES_BACKUP = "courses_backup";
     private static final String KEY_BELL_SCHEDULES = "bell_schedules";
 

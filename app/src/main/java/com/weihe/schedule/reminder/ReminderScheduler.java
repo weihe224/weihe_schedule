@@ -10,7 +10,6 @@ import android.util.Log;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -51,9 +50,9 @@ import com.weihe.schedule.rule.ReminderPlan;
  *
  * <h2>Rebuilt, not patched</h2>
  *
- * <p>Every {@link #sync} cancels the whole previous ledger and registers the plan
- * again. That makes it idempotent whatever happened before -- a course deleted,
- * a lead time changed, a semester switched, an earlier cancel that failed -- and
+ * <p>Every {@link #sync} replaces the previous plan, preserving untouched alarms
+ * if registration fails. That makes it idempotent whatever happened before --
+ * a course deleted, a lead time changed, a semester switched, a failed cancel -- and
  * it keeps the number of registered alarms bounded by the plan's own cap instead
  * of growing with the term.</p>
  */
@@ -202,69 +201,54 @@ public final class ReminderScheduler {
      * at all, while the caller above promised the old plan was being kept.</p>
      *
      * <p>What the ledger records is what happened, not what was intended. A sync
-     * that stopped halfway stores the entries that were set, so the next sync -- and
-     * {@link #cancelAll} -- sees the alarms that exist rather than the ones that were
+     * that stopped halfway stores new entries alongside untouched old entries, so
+     * the next sync and {@link #cancelAll} see the alarms that exist rather than those
      * planned, and the retry converges instead of working from a stale idea of the
      * state.</p>
      *
-     * <p>Only slots the new plan does not reuse are cancelled, and only after the new
+     * <p>Only slots the new plan does not reuse are cancelled, and only after all new
      * ones are in place. A slot that is still used never passes through an empty
      * moment, and a slot that is no longer used is cleared in the same sync rather
      * than left to fire for a course that has moved.</p>
      *
-     * @return how many alarms were set; less than {@code entries.size()} when one was
-     *         refused, in which case the failure is rethrown after the ledger has
-     *         been brought up to date
+     * @return the plan size after a complete replacement
+     * @throws RuntimeException when registration or cleanup fails, after recording
+     *         successful changes alongside the old entries that remain
      */
     private static int register(Context context, List<ReminderSchedule.Entry> entries) {
         AlarmManager alarms = alarms(context);
+        if (alarms == null) {
+            // No service is not evidence that the old plan has disappeared.
+            throw new IllegalStateException("AlarmManager unavailable");
+        }
         List<ReminderSchedule.Entry> previous = ReminderSettings.scheduled(context);
-        List<ReminderSchedule.Entry> registered = new ArrayList<>();
         boolean exactAllowed = canScheduleExact(context);
+        return AlarmRegistration.replace(previous, entries, new AlarmRegistration.Store() {
+            @Override
+            public void set(ReminderSchedule.Entry entry) {
+                setAlarm(context, alarms, entry, exactAllowed);
+                Log.i(TAG, "alarm slot=" + entry.slot() + " course="
+                        + entry.courseId() + " at=" + entry.triggerAtMillis()
+                        + (exactAllowed ? " exact" : " inexact"));
+            }
 
-        RuntimeException failure = null;
-        if (alarms != null) {
-            // Registered again even when the plan has not changed, because
-            // re-asserting an alarm is how it gets repaired after something outside
-            // the app dropped it -- a reboot clears every alarm there is.
-            for (ReminderSchedule.Entry entry : entries) {
-                try {
-                    setAlarm(context, alarms, entry, exactAllowed);
-                    registered.add(entry);
-                    // Ids and instants only: enough to match a reminder against the
-                    // alarm log, and no course names or venues in a system log.
-                    Log.i(TAG, "alarm slot=" + entry.slot() + " course="
-                            + entry.courseId() + " at=" + entry.triggerAtMillis()
-                            + (exactAllowed ? " exact" : " inexact"));
-                } catch (RuntimeException refused) {
-                    failure = refused;
-                    Log.w(TAG, "alarm refused slot=" + entry.slot() + " course="
-                            + entry.courseId() + ": " + describe(refused));
-                    break;
+            @Override
+            public void restorePayload(ReminderSchedule.Entry entry) {
+                pendingIntent(context, entry);
+            }
+
+            @Override
+            public void cancel(int slot) {
+                ReminderScheduler.cancel(context, slot);
+            }
+
+            @Override
+            public void save(List<ReminderSchedule.Entry> ledger) {
+                if (!ledger.equals(previous)) {
+                    ReminderSettings.setScheduled(context, ledger);
                 }
             }
-        } else {
-            Log.w(TAG, "no AlarmManager; nothing can be registered");
-        }
-
-        for (ReminderSchedule.Entry stale : previous) {
-            if (!usesSlot(registered, stale.slot())) {
-                if (cancel(context, stale.slot())) {
-                    Log.i(TAG, "alarm cancelled slot=" + stale.slot() + " course="
-                            + stale.courseId() + " (no longer planned)");
-                }
-            }
-        }
-
-        if (!registered.equals(previous)) {
-            ReminderSettings.setScheduled(context, registered);
-        }
-        if (failure != null) {
-            // The ledger already describes what is actually registered, so the
-            // caller can report a failure without the state being a guess.
-            throw failure;
-        }
-        return registered.size();
+        });
     }
 
     /**
@@ -290,16 +274,6 @@ public final class ReminderScheduler {
         }
         alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.triggerAtMillis(),
                 intent);
-    }
-
-    /** Whether {@code slot} is one of the slots the new plan occupies. */
-    private static boolean usesSlot(List<ReminderSchedule.Entry> entries, int slot) {
-        for (ReminderSchedule.Entry entry : entries) {
-            if (entry.slot() == slot) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean cancel(Context context, int slot) {

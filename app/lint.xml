@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- Adaptive XML and generated legacy PNG fallbacks intentionally share names.
+         Limit this exception to launcher icons; other mixed resources still warn. -->
+    <issue id="IconXmlAndPng">
+        <ignore path="src/main/res/mipmap-*/ic_launcher.png" />
+        <ignore path="src/main/res/mipmap-*/ic_launcher_round.png" />
+    </issue>
+</lint>

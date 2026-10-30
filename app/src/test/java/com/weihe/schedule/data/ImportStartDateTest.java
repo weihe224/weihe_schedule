@@ -89,6 +89,37 @@ public class ImportStartDateTest {
         return null;
     }
 
+    @Test
+    public void diskFailureStillReloadsTheInMemoryImportedState() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester target = repository.getActiveSemester();
+        repository.getCourses();
+        preferences.failAfterMemoryUpdate(preferences.commitCount() + 1);
+        LocalDate moved = TERM_START.plusWeeks(1);
+
+        assertFalse(repository.replaceCoursesAt(courses(
+                course("Imported", 1, 12, Course.PARITY_ALL)), target, moved, 18));
+        assertEquals(List.of("Imported"), namesOf(repository.getCourses()));
+        assertEquals(moved, repository.getSemesterStart());
+        assertEquals(moved, startOf(repository, target.id()));
+    }
+
+    @Test
+    public void undoDiskFailureStillReloadsTheInMemoryRestoredState() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = repositoryFor(preferences);
+        Semester target = repository.getActiveSemester();
+        repository.replaceCourses(courses(course("Original", 1, 12, Course.PARITY_ALL)));
+        repository.replaceCoursesAt(courses(course("Imported", 1, 12,
+                Course.PARITY_ALL)), target, TERM_START, 18);
+        preferences.failAfterMemoryUpdate(preferences.commitCount() + 1);
+
+        assertFalse(repository.restorePreviousCourses());
+        assertEquals(List.of("Original"), namesOf(repository.getCourses()));
+        assertFalse(repository.hasPreviousCourses());
+    }
+
     // --------------------------------------------------- default comes from term
 
     @Test

@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import com.weihe.schedule.data.BackupCodec;
+import com.weihe.schedule.data.BackupFileName;
 import com.weihe.schedule.data.BackupPreview;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.data.RestoreReport;
@@ -68,12 +69,6 @@ public class BackupPreviewActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         uri = parse(getIntent().getStringExtra(EXTRA_URI));
-        String given = getIntent().getStringExtra(EXTRA_FILE_NAME);
-        if (given != null && !given.trim().isEmpty()) {
-            fileName = given;
-        } else if (uri != null) {
-            fileName = String.valueOf(uri.getLastPathSegment());
-        }
         // The app bar is the page surface, so both system bars take that colour and
         // keep dark icons on it; see Insets for why this cannot live in the theme.
         Insets.applyBrandedSystemBars(this);
@@ -117,6 +112,8 @@ public class BackupPreviewActivity extends Activity {
                 BackupCodec.Result result = BackupCodec.read(input, BackupCodec.MAX_BYTES);
                 if (result.isOk()) {
                     parsed = result.document();
+                    // URI path segments are provider IDs, not display names.
+                    fileName = BackupFileName.read(getContentResolver(), target);
                     preview = BackupPreview.of(fileName, parsed);
                 } else {
                     failure = result.problem();

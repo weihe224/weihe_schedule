@@ -523,6 +523,15 @@ public class CourseRepository {
         return coursesOf(semester).size();
     }
 
+    /** Counts the same arrangements across all terms that a backup exports. */
+    public int totalCourseCount() {
+        int total = 0;
+        for (Semester semester : getSemesters()) {
+            total += countCoursesOf(semester);
+        }
+        return total;
+    }
+
     /** The courses of any semester, without changing the active one. */
     public List<Course> coursesOf(Semester semester) {
         if (semester == null) {
@@ -758,9 +767,9 @@ public class CourseRepository {
      *
      * <p>Both payloads go into a single {@link SharedPreferences.Editor}: the
      * imported list, and the payload it replaces. One commit is what makes the
-     * safety net trustworthy -- an editor applies all-or-nothing, so an import
-     * can never land without the snapshot that undoes it, and a refused write
-     * cannot leave an irreversible overwrite behind.</p>
+     * safety net trustworthy: the imported payload and its undo snapshot move
+     * together. A failed disk write can still update the process's memory, so
+     * callers must re-read and reconcile reminders even when this returns false.</p>
      *
      * <p>The previous payload is kept as the <em>raw stored string</em>, not as a
      * re-serialised course list. Undoing then puts the store back byte for byte,
@@ -808,9 +817,9 @@ public class CourseRepository {
      * write would let the preview disagree with the timetable the moment the
      * import landed.</p>
      *
-     * <p>Both the courses and the date go into <em>one</em> editor: an editor
-     * applies all-or-nothing, so a refused write cannot save the date while the
-     * courses fail, which would move the whole term's dates for nothing. The
+     * <p>Both the courses and the date go into <em>one</em> editor, so their
+     * in-memory update is atomic. Disk persistence can still fail afterwards,
+     * and callers must not mistake a refusal for an unchanged state. The
      * pre-import course payload is kept in the same commit, so the undo that
      * {@link #restorePreviousCourses} performs covers the timetable; the date is
      * deliberately left where the user put it, because the undo restores the

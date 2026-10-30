@@ -6,7 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
-> - **最新一轮：见文末「AM. 2026-10-18 备注按钮改到右上角（修正 AL）」**（备注卡标题与「添加备注/编辑」同一行、按钮在右上角；AL 的左侧方案已被取代）。AK 及此前的组件规则仍然有效。
+> - **最新一轮：见文末「2026-10-30 构建可移植性整理」**。移除共享 SDK 工具绝对路径，Wrapper 入口统一；默认/本地覆盖两种模式完整检查通过，模拟器启动与三种组件回归通过。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -2982,3 +2982,48 @@ APK **1,202,536 B**。
 - 存在问题：gradle.properties 的 android.aapt2FromMavenOverride 写死 D:\Sdk，构建依赖本机目录。较大 Activity 与 CourseRepository 也增加维护成本。
 - 本轮验证：按 --offline --rerun-tasks 尝试 testDebugUnitTest assembleDebug lintDebug；普通、--no-daemon 与沙箱外重试均在任务执行前被 Gradle daemon / loopback connection 错误阻断。测试、构建、Lint 均未得到本轮结果；未运行模拟器或真机。没有修改业务代码，没有 commit 或 push。
 - 下一步：优先补齐真实写盘失败模型与提醒注册失败注入，再修复上述异常路径；恢复本机构建环境后重新执行三项检查。
+
+## 2026-10-30 可靠性修复
+
+- Git：HEAD `b655079`；本轮业务修改未提交、未推送。既有未跟踪 `app/release/` 保留。
+- **已实现并已验证（JVM）**：新增 `reminder/AlarmRegistration.java`，完整注册成功后才清理旧闹钟；中途失败保留成功替换项与未触碰旧项，恢复失败槽位旧 PendingIntent 参数，取消失败时保存仍保留的台账。依据：`AlarmRegistrationTest` 6 项。
+- **已实现但尚未充分验证（Android）**：`ReminderScheduler` 接入上述协调器；`SettingsActivity` 的导入、撤销分支无论写盘结果如何均同步提醒和组件。未改布局、文案、依赖或存储契约。
+- **已实现并已验证（JVM）**：`FakePreferences` 增加内存更新后写盘失败模式，新增导入、撤销与备份恢复回归各 1 项；修正 `CourseRepository` 的误导性事务注释。
+- 实测：JDK 20 javac --release 17 重新编译所有主源码和测试，使用本地 Android 34 android.jar、现有生成 R.jar 与现有依赖；直接运行 JUnitCore：**1170 项通过，0 失败**。输出在 `.gradle-local/review-check/junit-results.txt`，不等同于 Gradle 测试任务通过。
+- **存在问题 / 未验证**：Gradle（含 --rerun-tasks）、禁用 daemon、切换 Studio Java、IPv4 与沙箱外重试均被 daemon/loopback 连接错误阻断；assembleDebug、lintDebug 未完成。ADB 服务亦无法连接，未安装新包、未实机验证通知或小组件。SDK 绝对路径配置与大类拆分本轮未动。
+- 下一步：在可用构建环境中重跑 testDebugUnitTest assembleDebug lintDebug，随后检查导入/撤销后的桌面组件、通知和系统权限路径。
+
+
+## 2026-10-30 构建与设备回归
+
+- **已实现并已验证**：`tools/verify-project.ps1` 将 Java Unix Socket 临时目录设到项目内，并在结束后恢复环境变量；支持本地 Gradle 和 Wrapper。普通沙箱仍拒绝 TCP，完整检查与 ADB 通过获准的沙箱外执行完成。未改系统网络或全局 Java 配置。
+- **已实现并已验证**：`rule/SemesterSummary` 区分未开学、进行中和已结束，非教学期间不再显示“今天第几周”；`CourseRepository.totalCourseCount` 修正设置页备份摘要，统计全部学期。依据：`SemesterSummaryTest` 4 项、`CourseRepositoryStorageTest` 新增 1 项，以及最终包设置页实测。
+- **已实现并已验证**：`app/lint.xml` 仅对 `ic_launcher.png`、`ic_launcher_round.png` 与自适应 XML 共存的既有误报设置路径例外。未修改图标或全局关闭检测。
+- **已实现并已验证（完整 Gradle）**：最终 `--rerun-tasks testDebugUnitTest assembleDebug lintDebug` 全部成功，65 个测试类 / 1175 项 / 0 失败 / 0 错误；Lint `No issues found.`。SDK 路径覆盖实验性提示及 Gradle 弃用提示仍在，均非 Lint 问题。
+- **已实现并已验证（API 37 模拟器）**：最终 APK 覆盖安装；临时空学期 XLS 导入 1 门课程、撤销恢复为空、导出并预览 2 学期/24 门课程的备份、覆盖恢复成功；三种桌面组件在未来学期与恢复原学期后均目视核对。通知拒绝后 0 条排程，重新授权后 10 条；精确闹钟拒绝后仍安排 10 条并记录 inexact，授权后恢复。
+- 数据保护：测试前三份 SharedPreferences 已私下备份于被 Git 忽略的 `.gradle-local/device-verification/`；测试后逐字节还原再重新排程，原课表配置键值与测试前完全一致。临时学期和下载目录内本轮生成的测试 XLS/JSON 已清理，原权限已恢复，未卸载应用。
+- **未验证 / 待确认**：API 26–36、厂商真机后台限制、真实磁盘故障、通知到点投递和重启恢复未验证。SAF 备份预览“文件名”显示文档 ID（本次为 82），待后续单独修复。SDK 绝对路径配置和大类整理本轮未开展。
+- Git：本轮与上一轮代码仍未提交、未推送；用户既有 `app/release/` 未触碰。详细过程与证据路径见归档末尾。
+
+
+## 2026-10-30 文件名与提醒投递回归
+
+- **已实现并已验证**：`data/BackupFileName` 在后台通过 `OpenableColumns.DISPLAY_NAME` 查询名称，不再将 URI 文档 ID 当成文件名。`SettingsActivity` 不再传递错误名称，`BackupPreviewActivity` 自行读取元数据。缺失/空白/不可用时统一显示“未命名备份文件”，不阻止合法备份预览；Cursor 使用 try-with-resources 关闭。依据：`BackupFileNameTest` 新增 7 项，以及最终包在真实 Downloads SAF 文档上的文件名截图。
+- **已实现并已验证（完整构建）**：`tools/verify-project.ps1 -JavaHome ... -Offline` 带 --rerun-tasks 执行全部检查；66 个测试类 / 1182 项 / 0 失败 / 0 错误；assembleDebug 成功；lintDebug `No issues found.`。最终 Debug APK 已覆盖安装，未新增依赖或更改存储契约。
+- **已验证（API 37 模拟器）**：隔离测试课表的两条提醒经真实重启后由 BOOT_COMPLETED 自动恢复，无需手动启动应用；恢复前后课程 ID、日期和精确时间戳完全一致，系统闹钟实际存在。两次自然投递分别记录在预定时刻后约 17ms/23ms，系统通知栏均可见。第一条投递后，以应用 UID 重发同一旧广播三次均 dropped；每门课程只记录一次通知发布，两个已通知标记均持久化。系统另生成一条自动分组摘要，未误计为课程重复通知。
+- 数据恢复：三份 preferences 测试前备份到 Git 忽略的 `.gradle-local/round3/`，结束后逐字节恢复并启动应用重新排程；原课表全部配置键值一致，测试通知和测试 notified_ 标记均已清除。原文件、权限、用户 app/release/ 未改。
+- 本轮未修改提醒业务逻辑；首次提醒测试因临时数据误用 dayOfWeek 字段导致排到周一，已纠正为存储契约中的 day，并重新核验日期、重启、自然投递全流程；首次结果不作为准时投递证据。
+- **尚未验证**：API 26–36、不同云端文件提供方实机、厂商后台限制、深度休眠下投递、真实磁盘故障；本轮重复广播走的是旧槽位/时间戳拒绝分支，未单独构造 alreadyNotified 分支。
+- Git：本轮变更与既有未提交工作均保留，未 commit/push。详情与证据见归档末尾。
+
+
+## 2026-10-30 构建可移植性整理
+
+- **已实现并已验证**：共享 `gradle.properties` 删除本机 AAPT2 绝对路径。默认由 AGP 选择工具；原 Windows 兼容路径移到被忽略的 `.gradle-local/home/gradle.properties`。新增 `gradle-user.properties.example` 说明可选用户配置。未修改全局系统配置、依赖、SDK 版本或业务代码。
+- **已实现并已验证**：`tools/verify-project.ps1` 始终调用仓库 Wrapper，不再隐式选择 `.gradle-local/bin`；新增显式 `-GradleUserHome`，缺省继承 Gradle 标准用户目录规则。修复旧脚本将未设置环境变量恢复为空字符串的问题，退出时保留“未设置/已设置”的区别。
+- **已实现并已验证**：README 与 AGENTS.md 统一 Wrapper、JDK、SDK 和用户配置说明；Studio 与终端须选择相同 Gradle JDK/用户目录。未操控 IDE 设置或修改全局 PowerShell 策略。
+- 完整验证：默认 AAPT2 与本地覆盖两种模式均执行 --rerun-tasks testDebugUnitTest assembleDebug lintDebug 并成功，66 类 / 1182 项 / 0 失败 / 0 错误，Lint No issues found。实际 Gradle 属性核对：默认 null，本地覆盖为用户配置值。正常构建、无效 JDK、真实 Gradle 失败三种退出路径均验证环境变量与工作目录恢复。
+- **已验证（API 37）**：最终默认工具生成的 APK 覆盖安装，首页显示原课表，三种已放置组件目视正常，日志 refreshed=3/3。证据在 `.gradle-local/portability/`。未卸载、未改课表或权限，用户 app/release/ 未动。
+- 事实更正：旧文档曾认为本机必须覆盖 AAPT2；本轮 Wrapper 完整资源重建证明默认工具当前可用，因此覆盖仅作为本地可选兼容处理。启用覆盖时的 AGP 实验性提示、既有 Gradle 弃用提示仍然存在。
+- **尚未验证**：其他电脑、macOS/Linux、全新无缓存环境，以及 IDE 内点击 Sync/Run；本轮通过实际 Wrapper 项目配置和构建验证。SDK 路径整理完成，大类拆分尚未开始。
+- Git：所有既有与本轮工作均未 commit/push。详情见归档末尾。

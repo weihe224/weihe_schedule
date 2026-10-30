@@ -47,6 +47,18 @@ public class RestoreProtocolTest {
     private static final long OTHER_SEMESTER_ID = 1760000000000L;
     private static final String SEMESTER_NAME = "\u5927\u4E09\u4E0A";
 
+    @Test
+    public void diskFailureAfterMemoryUpdateRequiresAttention() {
+        FakePreferences preferences = new FakePreferences();
+        CourseRepository repository = seededRepository(preferences);
+        preferences.failAfterMemoryUpdate(preferences.commitCount() + 1);
+
+        RestoreReport report = repository.restoreFrom(documentOfTwoSemesters());
+
+        assertEquals(RestoreReport.Status.NEEDS_ATTENTION, report.status());
+        assertEquals(List.of("A", "B"), sortedNames(allCourses(repository)));
+    }
+
     // ============================================== the ordinary restore
 
     @Test

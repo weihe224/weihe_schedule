@@ -86,15 +86,14 @@ design/          Palette 等设计常量
 ## 5. 构建与测试
 
 ```powershell
-cd 'D:\vibe coding\Weihe\Weihe'
-$env:GRADLE_USER_HOME='D:\vibe coding\Weihe\Weihe\.gradle-local\home'
-$env:ANDROID_HOME='D:\Sdk'; $env:ANDROID_SDK_ROOT='D:\Sdk'
-& '.\.gradle-local\bin\gradle.bat' "-Dorg.gradle.vfs.watch=false" `
-    --rerun-tasks testDebugUnitTest assembleDebug lintDebug
+# 在包含 settings.gradle 的项目根目录执行，JAVA_HOME 与 Studio Gradle JDK 一致。
+.\tools\verify-project.ps1 -JavaHome $env:JAVA_HOME
+# 本机已有独立缓存时显式指定；新克隆不依赖 .gradle-local/bin。
+# .\tools\verify-project.ps1 -JavaHome $env:JAVA_HOME -GradleUserHome '.gradle-local/home' -Offline
 ```
 
 - **必须带 `--rerun-tasks`**，否则未变化的测试任务会被跳过，读到的是旧结果。
-- 环境：Gradle 8.13、JDK 20、AGP 8.13.0；`ANDROID_HOME=D:\Sdk`。
+- 环境：仓库 Wrapper 固定 Gradle 8.13、AGP 8.13.0，源码 Java 17，本机验证使用 JDK 20。SDK 路径在本地配置；AAPT2 可选覆盖仅放 `GRADLE_USER_HOME/gradle.properties`，详见 README。
 - 交付前**三项都要是绿的**：测试全通过、`assembleDebug` 成功、`lintDebug` 报
   `No issues found.`。
 - **项目没有 `androidTest` 源集**，不要写仪器测试，也不要声称跑过 UI 自动化。

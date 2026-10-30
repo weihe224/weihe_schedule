@@ -1,0 +1,6 @@
+# Optional settings for THIS machine, not the shared project gradle.properties.
+# Copy only the setting you need into GRADLE_USER_HOME/gradle.properties.
+# If GRADLE_USER_HOME is unset, the usual directory is ~/.gradle.
+# Omit the property to use AGP's bundled AAPT2 (the default).
+# Use forward slashes on Windows to avoid properties-file backslash escaping.
+# android.aapt2FromMavenOverride=/absolute/path/to/SDK/build-tools/35.0.0/aapt2.exe

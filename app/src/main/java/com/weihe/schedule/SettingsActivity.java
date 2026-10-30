@@ -52,6 +52,7 @@ import com.weihe.schedule.reminder.ReminderScheduler;
 import com.weihe.schedule.reminder.ReminderSettings;
 import com.weihe.schedule.rule.ReminderPlan;
 import com.weihe.schedule.rule.SemesterWeeks;
+import com.weihe.schedule.rule.SemesterSummary;
 import com.weihe.schedule.ui.Insets;
 import com.weihe.schedule.ui.Pickers;
 import com.weihe.schedule.ui.UiKit;
@@ -515,7 +516,11 @@ public class SettingsActivity extends Activity {
     }
 
     private void undoImport() {
-        if (!repository.restorePreviousCourses()) {
+        boolean restored = repository.restorePreviousCourses();
+        // A failed disk write may still have changed the process's preferences.
+        ReminderScheduler.sync(this);
+        CourseWidgetUpdater.refreshAll(this);
+        if (!restored) {
             // Deliberately not "数据未改变": a refused commit is not proof of
             // that, so the wording leaves the real state to be confirmed on screen.
             refresh();
@@ -642,7 +647,6 @@ public class SettingsActivity extends Activity {
     private void previewBackup(Uri uri) {
         Intent intent = new Intent(this, BackupPreviewActivity.class);
         intent.putExtra(BackupPreviewActivity.EXTRA_URI, uri.toString());
-        intent.putExtra(BackupPreviewActivity.EXTRA_FILE_NAME, displayNameOf(uri));
         startActivity(intent);
     }
 
@@ -1249,9 +1253,7 @@ public class SettingsActivity extends Activity {
         List<Course> courses = repository.getCourses();
         List<BellSchedule> schedules = repository.getBellSchedules();
         LocalDate start = repository.getSemesterStart();
-        int currentWeek = ScheduleUtils.currentWeek(start, LocalDate.now());
-        boolean inSession = !LocalDate.now().isBefore(active.start())
-                && !LocalDate.now().isAfter(active.lastDay());
+        LocalDate today = LocalDate.now();
 
         // Read from the store rather than remembered, so switching semester,
         // importing or undoing on another screen is reflected the moment this one
@@ -1276,13 +1278,12 @@ public class SettingsActivity extends Activity {
         semesterDetail.setText(ScheduleUtils.formatDate(active.start()) + " - "
                 + ScheduleUtils.formatDate(active.lastDay())
                 + " \u00B7 \u5171 " + active.weeks() + " \u5468"
-                + (inSession ? " \u00B7 \u8FDB\u884C\u4E2D" : " \u00B7 \u5DF2\u7ED3\u675F"));
+                + " \u00B7 " + SemesterSummary.status(active, today));
 
         semesterStartValue.setText(ScheduleUtils.formatFullDate(start));
         semesterStartDetail.setText("\u7B2C 1 \u5468\uFF1A" + start
                 + " \u00B7 \u5171 " + active.weeks()
-                + " \u5468 \u00B7 \u4ECA\u5929\u662F\u7B2C " + Math.min(currentWeek,
-                        active.weeks()) + " \u5468");
+                + " \u5468 \u00B7 " + SemesterSummary.todayLabel(active, today));
 
         // Read from the tables rather than from the default constant, because the
         // day is settable per schedule now and "每节 15 节" would be wrong the moment
@@ -1291,7 +1292,8 @@ public class SettingsActivity extends Activity {
         schedulesValue.setText(schedules.size() + " \u4E2A\u4F5C\u606F\u8868 \u00B7 "
                 + periodRange(schedules));
         backupValue.setText("\u5F85\u5BFC\u51FA\uFF1A" + semesters.size() + " \u4E2A\u5B66\u671F"
-                + " \u00B7 " + courses.size() + " \u95E8\u8BFE\u7A0B \u00B7 "
+                + " \u00B7 " + repository.totalCourseCount()
+                + " \u95E8\u8BFE\u7A0B \u00B7 "
                 + schedules.size() + " \u5F20\u4F5C\u606F\u8868");
     }
 
@@ -1672,18 +1674,18 @@ public class SettingsActivity extends Activity {
      */
     private void runImport(List<Course> courses, Semester target, LocalDate weekOne,
             int weeks) {
-        if (repository.replaceCoursesAt(courses, target, weekOne, weeks)) {
-            // The term the alarms were planned from has just been replaced wholesale.
-            ReminderScheduler.sync(this);
-            CourseWidgetUpdater.refreshAll(this);
+        boolean imported = repository.replaceCoursesAt(courses, target, weekOne, weeks);
+        // Reconcile with the state actually read back, even after a disk failure.
+        ReminderScheduler.sync(this);
+        CourseWidgetUpdater.refreshAll(this);
+        if (imported) {
             refresh();
             Toast.makeText(this, "\u8BFE\u8868\u5DF2\u5BFC\u5165",
                     Toast.LENGTH_SHORT).show();
             return;
         }
         // The store refused the write. "课表已导入" is a claim the app cannot back
-        // up, so it is not made -- and the date went with the courses, so neither
-        // is half-applied.
+        // up. The in-memory state may have changed despite the disk failure.
         refresh();
         UiKit.message(this, "\u5BFC\u5165\u672A\u5B8C\u6210",
                 "\u8BFE\u8868\u5199\u5165\u5931\u8D25\uFF0C\u5BFC\u5165\u53EF\u80FD"

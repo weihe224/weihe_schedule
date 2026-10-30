@@ -42,16 +42,24 @@ public final class FakePreferences implements SharedPreferences {
      * When above zero, the commit with this number reports failure without
      * changing anything.
      *
-     * <p>This is what a real store does when the write cannot be persisted: the
-     * in-memory map keeps the old values and {@code commit()} returns false.
+     * <p>This models a rejection before the memory update. Disk failures after
+     * the memory update are available through {@link #failAfterMemoryUpdate}.
      * Naming the commit lets a test fail exactly the one it means -- the restore,
      * or the rollback after it -- and leave the other able to succeed.</p>
      */
     private int failingCommitNumber;
+    private boolean failAfterMemoryUpdate;
+
+    /** Models the platform updating memory before reporting a disk failure. */
+    public void failAfterMemoryUpdate(int number) {
+        failingCommitNumber = number;
+        failAfterMemoryUpdate = true;
+    }
 
     /** Makes the {@code number}-th commit (counting from 1) fail. */
     public void failCommitNumber(int number) {
         failingCommitNumber = number;
+        failAfterMemoryUpdate = false;
     }
 
     /** How many commits have gone through. */
@@ -197,8 +205,11 @@ public final class FakePreferences implements SharedPreferences {
         @Override
         public boolean commit() {
             if (failingCommitNumber > 0 && commits + 1 == failingCommitNumber) {
-                // A refused commit leaves the store exactly as it was, which is
-                // what the real implementation does too.
+                if (failAfterMemoryUpdate) {
+                    apply();
+                    return false;
+                }
+                // Keep the pre-memory rejection mode for existing protocol tests.
                 pending.clear();
                 removals.clear();
                 clear = false;
