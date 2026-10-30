@@ -3754,3 +3754,20 @@ Lint 原有 IconXmlAndPng 两项源于有意保留旧 PNG 与自适应 XML。尝
 最后用默认 AAPT2 产物覆盖安装 API 37 模拟器，首页原课表与三种桌面小组件正常，刷新日志 3/3。截图 main.png/widgets.png、widget-refresh.log、期望失败日志和属性探针均留在被忽略的 .gradle-local/portability/，未新增业务测试或生产功能。未改课表/权限，未动 app/release/，未 commit/push。
 
 限制：没有在其他机器、macOS/Linux、无缓存新克隆或 Android Studio 内点击同步验证。项目 Wrapper 配置与完整构建已实际执行。下一项可按用户确认后再拆分大类，本轮不开始重构。
+
+
+## 2026-10-30 SettingsActivity 备份流程小步整理
+
+新增 data/BackupService，使用无 Android UI 依赖的 Source<T>、Result<T>、Loaded 和 Executor/Consumer 接口承接流与后台结果。默认每项操作使用 BackupIO 线程，回调由页面传入 runOnUiThread 执行器。prepare 保持选择目标前的快照与自检顺序；write 仅在输出流成功关闭后返回成功；load 包含校验与预览构造；restore 重新打开来源，不复用预览文档，最终写入仍委托 CourseRepository。两个 Activity 只传应用级 resolver/仓库工厂及 UI 回调，保留原中文反馈、确认步骤与 JSON 格式。Excel 导入未动，损坏副本仅改为调用共享错误文案函数。
+
+提取时发现原恢复代码在 try-with-resources 中先写仓库，随后 close 若失败会误报“恢复未开始”。新实现先完成读/close，再打开仓库；这是本轮一处异常顺序修正，正常路径与 UI 文案不变。新测试明确断言 close 抛 IOException 时连仓库工厂都不调用。
+
+BackupServiceTest 新增 14 项：打开选择器期间快照不受后续编辑影响；后台执行/关闭/回调顺序；null 输出、权限拒绝、写入与 close 失败；成功预览、无效预览不查元数据、空 IOException 文案；恢复重读最新文件、无效恢复不碰仓库、输入关闭失败、仓库提交拒绝的 RestoreReport、跨学期快照与活动选择。每个异步测试还核对回调次数，避免未回调时断言空跑。所有既有测试断言未改。
+
+最终完整检查实际执行 --rerun-tasks testDebugUnitTest assembleDebug lintDebug：67 类、1196 项（原 1182 + 14）、0 失败/错误；Debug APK 成功；Lint No issues found。AAPT2 实验性选项与 Gradle 弃用提示为既有信息，未隐藏。最终 Debug 包已覆盖安装。
+
+API 37 设备回归：测试前备份三份 preferences；导出取消后原课表与下载列表均无变化；实际导出 weihe-backup-20261030-1223.json，解析确认格式版本 1、1 学期、23 条课程、3 作息表；取消预览选择器不改课表。为证明恢复生效，临时在一条课程备注加入 __BackupServiceVerification__；恢复确认取消后该备注仍存在且无 restore_pending，确认覆盖恢复后活动课程里该备注消失，23 条课程恢复成功。恢复前安全快照中保留旧备注属于现有协议，验证时区别于活动课程，未误当成恢复失败。再选取本轮无效 JSON，页面显示“文件不是合法的 JSON 文本，可能已损坏”“当前课表没有任何改动”。已有预览截图和失败截图已目视核对，未声称执行 instrumentation/UI 自动化测试。
+
+清理：三份 preferences 逐字节回写原备份，再安装最终包并启动，原 weihe_schedule.xml 全部键值一致。仅删除本轮导出的 JSON 和 weihe-backup-refactor-invalid.json，下载列表与原列表一致。清理辅助脚本曾因默认 GBK 读取含中文文件名的清单失败，已改用显式 UTF-8 完成核对；应用原数据在此之前已成功还原。证据 results.json、导出内容、preview.png/invalid-preview.png 仅在被忽略的 .gradle-local/backup-refactor/。未修改原文件/权限、未 commit/push。
+
+限制：真实磁盘写满、云端提供方、系统杀死页面等未实机注入；流/仓库故障由 JVM 检查覆盖。本轮只做备份部分，Excel 流程后置。

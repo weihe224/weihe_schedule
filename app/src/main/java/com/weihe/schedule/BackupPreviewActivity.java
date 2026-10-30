@@ -2,6 +2,8 @@ package com.weihe.schedule;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.ContentResolver;
+import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -11,10 +13,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.io.IOException;
-import java.io.InputStream;
 
 import com.weihe.schedule.data.BackupCodec;
+import com.weihe.schedule.data.BackupService;
 import com.weihe.schedule.data.BackupFileName;
 import com.weihe.schedule.data.BackupPreview;
 import com.weihe.schedule.data.CourseRepository;
@@ -29,17 +30,10 @@ import com.weihe.schedule.widget.CourseWidgetUpdater;
 /**
  * Shows what a backup file contains, without applying any of it.
  *
- * <p>This screen is read-only by construction. It is handed the {@link Uri} the
- * picker returned, reads that file, asks {@link BackupCodec} to check it and
- * {@link BackupPreview} to describe it, and draws the answer. It builds no
- * repository, calls no method that writes, and has no code path that reaches
- * storage -- so the current timetable cannot change because someone looked at a
- * backup.</p>
- *
- * <p>The wording matters as much as the code: every heading says the numbers come
- * from the file, and the restore action is present but disabled, because the
- * write itself is not implemented yet. A screen that looked like a restore that
- * had already happened would be worse than no screen at all.</p>
+ * <p>Previewing only reads the selected file. After explicit confirmation,
+ * {@link BackupService} reopens and validates it before asking
+ * {@link CourseRepository} to apply it. Keeping file work out of the screen
+ * makes the same failure handling testable without Android UI.</p>
  */
 public class BackupPreviewActivity extends Activity {
     /** The picked document, as a string so the extra stays small. */
@@ -54,6 +48,7 @@ public class BackupPreviewActivity extends Activity {
 
     /** The checked document the restore would write, or null when unusable. */
     private BackupCodec.Document document;
+    private BackupService backupService;
 
     /**
      * True from the moment the user confirms until the outcome is on screen.
@@ -68,6 +63,7 @@ public class BackupPreviewActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        backupService = new BackupService(this::runOnUiThread);
         uri = parse(getIntent().getStringExtra(EXTRA_URI));
         // The app bar is the page surface, so both system bars take that colour and
         // keep dark icons on it; see Insets for why this cannot live in the theme.
@@ -104,42 +100,21 @@ public class BackupPreviewActivity extends Activity {
      */
     private void readInBackground() {
         final Uri target = uri;
-        new Thread(() -> {
-            String failure = null;
-            BackupCodec.Document parsed = null;
-            BackupPreview preview = null;
-            try (InputStream input = getContentResolver().openInputStream(target)) {
-                BackupCodec.Result result = BackupCodec.read(input, BackupCodec.MAX_BYTES);
-                if (result.isOk()) {
-                    parsed = result.document();
-                    // URI path segments are provider IDs, not display names.
-                    fileName = BackupFileName.read(getContentResolver(), target);
-                    preview = BackupPreview.of(fileName, parsed);
-                } else {
-                    failure = result.problem();
-                }
-            } catch (IOException unreadable) {
-                String message = unreadable.getMessage();
-                failure = message == null || message.trim().isEmpty()
-                        ? "\u65E0\u6CD5\u8BFB\u53D6\u6240\u9009\u6587\u4EF6" : message;
-            } catch (RuntimeException unexpected) {
-                failure = "\u8BFB\u53D6\u5907\u4EFD\u6587\u4EF6\u65F6\u51FA\u9519\uFF1A" + unexpected;
-            }
-            final String problem = failure;
-            final BackupCodec.Document checked = parsed;
-            final BackupPreview ready = preview;
-            runOnUiThread(() -> {
-                if (isFinishing()) {
-                    return;
-                }
-                if (problem != null) {
-                    showFailure(problem);
-                } else {
-                    document = checked;
-                    showPreview(ready);
-                }
-            });
-        }).start();
+        final ContentResolver resolver = getApplicationContext().getContentResolver();
+        backupService.load(() -> resolver.openInputStream(target),
+                () -> BackupFileName.read(resolver, target), result -> {
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+                    if (!result.isOk()) {
+                        showFailure(result.problem());
+                    } else {
+                        document = result.value().document();
+                        BackupPreview preview = result.value().preview();
+                        fileName = preview.fileName();
+                        showPreview(preview);
+                    }
+                });
     }
 
     // ------------------------------------------------------------------ layout
@@ -317,41 +292,21 @@ public class BackupPreviewActivity extends Activity {
         body.addView(UiKit.caption(this, "\u6B63\u5728\u8BFB\u53D6\u5E76\u6062\u590D\u5907\u4EFD\u6587\u4EF6\u2026"));
 
         final Uri target = uri;
-        new Thread(() -> {
-            String failure = null;
-            RestoreReport report = null;
-            try (InputStream input = getContentResolver().openInputStream(target)) {
-                BackupCodec.Result checked =
-                        BackupCodec.read(input, BackupCodec.MAX_BYTES);
-                if (!checked.isOk()) {
-                    failure = checked.problem();
-                } else {
-                    CourseRepository repository = new CourseRepository(
-                            getApplicationContext());
-                    report = repository.restoreFrom(checked.document());
-                }
-            } catch (IOException unreadable) {
-                String message = unreadable.getMessage();
-                failure = message == null || message.trim().isEmpty()
-                        ? "\u65E0\u6CD5\u8BFB\u53D6\u6240\u9009\u6587\u4EF6" : message;
-            } catch (RuntimeException unexpected) {
-                failure = "\u6062\u590D\u65F6\u51FA\u9519\uFF1A" + unexpected;
-            }
-            final String problem = failure;
-            final RestoreReport outcome = report;
-            runOnUiThread(() -> {
-                restoring = false;
-                if (isFinishing()) {
-                    return;
-                }
-                if (problem != null) {
-                    showRestoreFailure("\u6062\u590D\u672A\u5F00\u59CB", problem,
-                            "\u5F53\u524D\u8BFE\u8868\u6CA1\u6709\u4EFB\u4F55\u6539\u52A8\u3002");
-                } else {
-                    showRestoreOutcome(outcome);
-                }
-            });
-        }).start();
+        final Context app = getApplicationContext();
+        final ContentResolver resolver = app.getContentResolver();
+        backupService.restore(() -> resolver.openInputStream(target),
+                () -> new CourseRepository(app), result -> {
+                    restoring = false;
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+                    if (!result.isOk()) {
+                        showRestoreFailure("\u6062\u590D\u672A\u5F00\u59CB", result.problem(),
+                                "\u5F53\u524D\u8BFE\u8868\u6CA1\u6709\u4EFB\u4F55\u6539\u52A8\u3002");
+                    } else {
+                        showRestoreOutcome(result.value());
+                    }
+                });
     }
 
     /** Reports what the repository did, in the four states it can be in. */

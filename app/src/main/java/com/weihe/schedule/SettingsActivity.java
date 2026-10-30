@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.Dialog;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.ContentResolver;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
@@ -28,19 +29,16 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import com.weihe.schedule.model.BellSchedule;
-import com.weihe.schedule.model.BellSchedules;
 import com.weihe.schedule.model.Course;
 import com.weihe.schedule.model.ScheduleUtils;
 import com.weihe.schedule.model.Semester;
 import com.weihe.schedule.design.Palette;
 import com.weihe.schedule.data.BackupCodec;
+import com.weihe.schedule.data.BackupService;
 import com.weihe.schedule.data.BackupPreview;
 import com.weihe.schedule.data.CourseRepository;
 import com.weihe.schedule.data.DamagedCourseCopy;
@@ -103,6 +101,7 @@ public class SettingsActivity extends Activity {
     private View damagedCopyAction;
 
     private CourseRepository repository;
+    private BackupService backupService;
     private TextView semesterValue;
     private TextView semesterDetail;
     private TextView semesterStartValue;
@@ -123,6 +122,7 @@ public class SettingsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         repository = new CourseRepository(this);
+        backupService = new BackupService(this::runOnUiThread);
         // The app bar is the page surface, so both system bars take that colour and
         // keep dark icons on it; see Insets for why this cannot live in the theme.
         Insets.applyBrandedSystemBars(this);
@@ -546,23 +546,13 @@ public class SettingsActivity extends Activity {
      * storage key is touched.</p>
      */
     private void exportBackup() {
-        BackupCodec.Document document;
-        try {
-            document = buildBackup();
-        } catch (RuntimeException error) {
-            UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25",
-                    "\u8BFB\u53D6\u5F53\u524D\u8BFE\u8868\u65F6\u51FA\u9519\uFF1A" + error);
+        BackupService.Result<BackupCodec.Document> prepared =
+                backupService.prepare(repository, appVersionName());
+        if (!prepared.isOk()) {
+            UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25", prepared.problem());
             return;
         }
-        // Self-check: the very bytes that will be written are parsed back and
-        // validated before the user is asked where to put them.
-        BackupCodec.Result check = BackupCodec.parse(BackupCodec.write(document));
-        if (!check.isOk()) {
-            UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25",
-                    "\u751F\u6210\u7684\u5907\u4EFD\u672A\u901A\u8FC7\u81EA\u68C0\uFF1A"
-                            + check.problem());
-            return;
-        }
+        BackupCodec.Document document = prepared.value();
         pendingBackupDocument = document;
 
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -572,58 +562,23 @@ public class SettingsActivity extends Activity {
         startActivityForResult(intent, REQUEST_EXPORT_BACKUP);
     }
 
-    /** Reads everything worth keeping out of the current timetable. */
-    private BackupCodec.Document buildBackup() {
-        List<Semester> semesters = repository.getSemesters();
-        Map<Long, List<Course>> coursesBySemester = new LinkedHashMap<>();
-        for (Semester semester : semesters) {
-            coursesBySemester.put(Long.valueOf(semester.id()),
-                    repository.coursesOf(semester));
-        }
-        // getBellSchedules hands out its cached list rather than a copy, so take
-        // one before the document is built.
-        List<BellSchedule> schedules =
-                BellSchedules.copyOf(repository.getBellSchedules());
-        // Read after the schedules, so a store that has never chosen a default has
-        // adopted one by now and the file records what the user is actually using.
-        return BackupCodec.of(semesters, coursesBySemester, schedules,
-                repository.getActiveSemester().id(),
-                OffsetDateTime.now().toString(), appVersionName(),
-                repository.getDefaultScheduleId());
-    }
-
     /** Writes the already-checked backup to wherever the user pointed. */
     private void writeBackup(Uri uri, BackupCodec.Document document) {
         final String name = displayNameOf(uri);
-        new Thread(() -> {
-            String failure = null;
-            try (OutputStream output =
-                         getContentResolver().openOutputStream(uri, "wt")) {
-                if (output == null) {
-                    failure = "\u65E0\u6CD5\u5199\u5165\u6240\u9009\u4F4D\u7F6E";
-                } else {
-                    BackupCodec.writeTo(document, output);
-                }
-            } catch (IOException error) {
-                failure = writeFailureReason(error);
-            } catch (SecurityException denied) {
-                failure = "\u6CA1\u6709\u5199\u5165\u8BE5\u4F4D\u7F6E\u7684\u6743\u9650";
+        final ContentResolver resolver = getApplicationContext().getContentResolver();
+        backupService.write(() -> resolver.openOutputStream(uri, "wt"), document, result -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
             }
-            final String problem = failure;
-            runOnUiThread(() -> {
-                if (isFinishing()) {
-                    return;
-                }
-                if (problem != null) {
-                    UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25", problem);
-                    return;
-                }
-                Toast.makeText(this, "\u5DF2\u5BFC\u51FA "
-                        + BackupPreview.of(name, document).summary()
-                        + (name.isEmpty() ? "" : "\n" + name),
-                        Toast.LENGTH_LONG).show();
-            });
-        }).start();
+            if (!result.isOk()) {
+                UiKit.message(this, "\u5BFC\u51FA\u5931\u8D25", result.problem());
+                return;
+            }
+            Toast.makeText(this, "\u5DF2\u5BFC\u51FA "
+                    + BackupPreview.of(name, document).summary()
+                    + (name.isEmpty() ? "" : "\n" + name),
+                    Toast.LENGTH_LONG).show();
+        });
     }
 
     /** Picks a backup file and opens the read-only preview for it. */
@@ -782,7 +737,7 @@ public class SettingsActivity extends Activity {
                     copy.writeTo(output);
                 }
             } catch (IOException error) {
-                failure = writeFailureReason(error);
+                failure = BackupService.writeFailureReason(error);
             } catch (SecurityException denied) {
                 failure = "\u6CA1\u6709\u5199\u5165\u8BE5\u4F4D\u7F6E\u7684\u6743\u9650";
             }
@@ -834,17 +789,6 @@ public class SettingsActivity extends Activity {
         }
         int slash = segment.lastIndexOf('/');
         return slash >= 0 ? segment.substring(slash + 1) : segment;
-    }
-
-    private static String writeFailureReason(IOException error) {
-        String message = error.getMessage();
-        if (message == null || message.trim().isEmpty()) {
-            return "\u5199\u5165\u6587\u4EF6\u5931\u8D25\uFF0C\u8BF7\u6362\u4E00\u4E2A"
-                    + "\u4F4D\u7F6E\u518D\u8BD5";
-        }
-        return "\u5199\u5165\u6587\u4EF6\u5931\u8D25\uFF1A" + message
-                + "\n\u82E5\u662F\u5B58\u50A8\u7A7A\u95F4\u4E0D\u8DB3\uFF0C\u8BF7\u6E05"
-                + "\u7406\u540E\u91CD\u8BD5\u3002";
     }
 
     /** Which term is on screen, and the way to look at another one. */
