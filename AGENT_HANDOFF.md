@@ -2972,3 +2972,13 @@ CourseDetailActivity.noteCard(...)：
 --rerun-tasks testDebugUnitTest assembleDebug lintDebug → **BUILD SUCCESSFUL**；
 **1161 项 / 0 失败 / 0 错误**；lint **0 errors, 2 warnings**（既有 IconXmlAndPng）；
 APK **1,202,536 B**。
+
+## 2026-10-30 仓库分析（只读代码审查）
+
+- 范围：本地 HEAD `9b3cc29`；GitHub 默认分支 `287393d` 相比仅修改 README.md，业务源码一致。审查开始时工作区已有 README.md 修改与未跟踪 app/release/，均保留。
+- 已核实：72 个主源码 Java 文件、63 个 *Test.java 文件、静态统计 1161 个 @Test 标记；这些数量不是本轮测试通过数。
+- 存在问题（源码审查，未实机复现）：CourseRepository.replaceCoursesAt 的 commit 返回 false 后仍可能读到已更新内存；SettingsActivity.runImport 仅成功分支同步提醒与组件。FakePreferences.commit 的失败模型没有模拟内存已更新但写盘失败。
+- 存在问题（源码审查，未实机复现）：ReminderScheduler.register 中途注册失败后仍取消 previous 中所有不在 registered 的槽位，因此无法完整保留尚未替换的旧计划。
+- 存在问题：gradle.properties 的 android.aapt2FromMavenOverride 写死 D:\Sdk，构建依赖本机目录。较大 Activity 与 CourseRepository 也增加维护成本。
+- 本轮验证：按 --offline --rerun-tasks 尝试 testDebugUnitTest assembleDebug lintDebug；普通、--no-daemon 与沙箱外重试均在任务执行前被 Gradle daemon / loopback connection 错误阻断。测试、构建、Lint 均未得到本轮结果；未运行模拟器或真机。没有修改业务代码，没有 commit 或 push。
+- 下一步：优先补齐真实写盘失败模型与提醒注册失败注入，再修复上述异常路径；恢复本机构建环境后重新执行三项检查。

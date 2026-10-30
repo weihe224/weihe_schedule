@@ -1,250 +1,192 @@
-# 拾课（WeiheSchedule）
+<!-- README for the 拾课 Android app -->
 
-一个**纯 Java** 的 Android 课程表应用。面向高校学生：把教务系统导出的 Excel 课表导入进来，
-在手机上以周课表的形式查看、编辑和提醒。
+<p align="center">
+  <img src="icon.png" alt="拾课应用图标" width="112">
+</p>
 
-单机应用，**不需要账号、不联网、不上传任何数据**，全部内容保存在本机。
+<h1 align="center">拾课（WeiheSchedule）</h1>
 
----
+<p align="center">轻量、离线优先的 Android 课程表应用</p>
 
-## 主要功能
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white" alt="Android 8.0+">
+  <img src="https://img.shields.io/badge/Language-Java%2017-orange" alt="Java 17">
+  <img src="https://img.shields.io/badge/Version-1.1-blue" alt="Version 1.1">
+</p>
 
-以下均为当前代码中**实际存在**的功能。
+拾课面向高校学生，帮助你管理学期课表、快速查看每天和每周的课程，并通过上课提醒与手机桌面小组件减少漏课。应用以原生 Android API 和 Java 编写，课程数据保存在本机，不需要注册账号。
 
-### 课表查看
-- **课表总览**：整个学期一张网格，周一到周日为列，节次为行
-- **单周课表**：按周查看，显示每一列的具体日期
-- **首页**：当天课程列表、周次切换、星期导航、回到本周 / 回到今天
-- 同一门课一周上多次时，各次作为独立记录分别展示
-- 时间冲突的课程会被标出
+- **项目地址：** https://github.com/weihe224/weihe_schedule
+- **当前版本：** 1.1（versionCode 2）
+- **最低系统要求：** Android 8.0（API 26）
 
-### 课程管理
-- 新增 / 编辑 / 删除课程
-- **复制课程**：以现有课程为模板新建一条，不覆盖原记录
-- **课程搜索**：按名称、教师、地点搜索
-- **课程详情**：名称、时间、周次、地点、教师分层展示
-- **颜色**：9 种可选课程颜色；修改一条记录的颜色时，可选择**只改当前课次**或**同步本学期所有同名安排**（只改颜色，其他字段不动）
-- 教师 / 地点**快捷填充**：根据已有课程给出常用值
-- 编辑表单在页面重建或进程被回收后**恢复未保存的输入**
+## 功能一览
 
-### 学期与作息表
-- 多个学期，各自独立的课表与作息时间
-- 新建学期时**自动推算下一个学期名称**（如 `2026 秋季学期` → `2027 春季学期`）
-- 学期起始日期（第 1 周周一）可调整，课程周次对应的日期随之变化
-- **多套作息时间表**（不同教学楼上下课时间不同），按**地点关键字**自动匹配；
-  可指定一张默认作息表作为兜底
-- 每节课时长可配置，每日节次数量随课程动态增减
+### 课表查看与课程管理
 
-### 导入与备份
-- **Excel 导入**：读取教务系统导出的 `.xls` 课表（依赖内置的 jxl）
-- 导入时可指定**开学日期**与**学期总周数**
-- 导入前有预览与确认，导入后有问题报告
-- **备份导出**：导出为 JSON 文件（明文，含教师姓名与上课地点）
-- **备份预览与恢复**：恢复前可预览内容；恢复过程带快照与回滚，失败不会留下半套数据
+- **多种课表视图：** 查看单周课表、学期课表总览和当天课程。
+- **周次与日期对应：** 根据学期起始日期计算教学周，支持单双周课程。
+- **课程增删改查：** 添加、编辑、删除和复制课程，可记录课程名称、教师、地点、上课节次、周次等信息。
+- **课程备注：** 为课程补充学习或上课相关说明。
+- **搜索与冲突提示：** 按课程名称、教师或地点查找课程，并识别时间冲突。
+- **课程颜色：** 为课程设置标记色；同一门课程有多条时间安排时，可按需同步颜色。
 
-### 提醒
-- 上课提醒，可设置提前时间
-- 设备重启或应用更新后自动重新排程
+### 学期与作息时间表
 
-### 界面
-- 日期与时刻统一使用应用内的选择器（日期为月历，时间为时/分滚轮），全项目不使用系统日期/时间弹窗
-- 深绿色 + 浅色背景，统一的圆角、间距与字号规范
+- **多学期管理：** 每个学期拥有独立的课程数据。
+- **自定义学期信息：** 设置学期起始日期和总周数；新建学期时可沿用自动生成的学期名称。
+- **多套作息时间表：** 为不同教学区域维护不同的上下课时间，并可根据上课地点关键字匹配作息表。
+- **默认作息表：** 为未匹配到地点规则的课程指定兜底作息表。
+- **灵活设置节次：** 默认每节课 40 分钟、每天 15 节，可根据学校安排调整。
 
----
+### 课表导入与备份
+
+- **Excel 课表导入：** 当前支持读取 `.xls` 格式的课表文件。
+- **导入预览：** 导入前检查解析结果，导入后查看问题报告；导入时可设置开学日期和学期总周数。
+- **JSON 备份：** 导出课表、学期与作息表数据，便于保存或迁移。
+- **备份预览与恢复：** 恢复前可预览备份内容；恢复过程包含数据校验与回滚保护。
+
+> **请留意：** 导入课表会替换当前学期的课程安排，操作前请检查导入预览。JSON 备份为明文文件，可能包含课程、教师和上课地点等个人信息，请妥善保管，不要上传到公开仓库。
+
+### 上课提醒与桌面小组件
+
+- **上课提醒：** 可设置提前提醒时间；设备重启或应用更新后会尝试恢复提醒排程。
+- **三种桌面小组件：**
+  - **2×1：** 紧凑显示当前或下一门课。
+  - **2×2：** 显示当前或下一门课，并尽可能展示紧随其后的课程。
+  - **3×2：** 以列表形式展示最多两门相关课程。
+- **随课表更新：** 修改课程后，小组件会同步刷新；点击小组件可进入应用查看详情。
+
+> Android 13 及以上设备需要允许通知权限。Android 12 及以上设备的精确闹钟设置也可能影响提醒的准时程度；如果提醒没有出现，请检查应用内提醒设置和系统权限。桌面小组件受空间限制，不会展示全天的所有课程。
+
+## 界面与实现
+
+- 使用原生 Android Views 构建应用页面。
+- 桌面小组件使用 Android `RemoteViews` 所需的 XML 布局资源。
+- 使用应用内日期和时间选择器，保持界面交互一致。
+- 当前不包含账号系统、云端同步或网络请求功能。
 
 ## 技术栈
 
-以 `app/build.gradle` 与 `build.gradle` 的实际配置为准：
+| 项目                  | 配置                           |
+| --------------------- | ------------------------------ |
+| 开发语言              | Java 17                        |
+| Android Gradle Plugin | 8.13.0                         |
+| Gradle Wrapper        | 8.13                           |
+| compileSdk            | 34                             |
+| targetSdk             | 34                             |
+| minSdk                | 26（Android 8.0）              |
+| applicationId         | `com.weihe.schedule`           |
+| 主要依赖              | `jxl-2.6.12.jar`（读取 Excel） |
+| 单元测试              | JUnit 4.13.2                   |
 
-| 项 | 值 |
-|---|---|
-| 语言 | **Java**（项目内无 Kotlin 文件） |
-| UI | Android Views，**全部在 Java 中构建**（`res/layout` 不存在） |
-| Android Gradle Plugin | **8.13.0** |
-| Gradle | **8.13** |
-| Java 版本 | `sourceCompatibility` / `targetCompatibility` = **17** |
-| 编译 / 目标 SDK | `compileSdk` **34**，`targetSdk` **34** |
-| 最低 SDK | `minSdk` **26**（Android 8.0） |
-| 包名 / 版本 | `com.weihe.schedule`，`versionName 1.0` |
-| 依赖 | 仅 `libs/jxl-2.6.12.jar`（读取 Excel）与 `junit:junit:4.13.2`（测试） |
+项目未使用 Kotlin、Jetpack Compose、AndroidX 或数据库框架；主要业务逻辑放在可独立测试的 Java 类中。
 
-未使用 AndroidX、Material Components、Compose、Room 或任何第三方 UI / 网络库。
+## 获取与运行
 
----
+### 环境要求
 
-## 环境准备
+- Android Studio（支持 Android Gradle Plugin 8.13.0）
+- JDK 17 或更高版本
+- Android SDK Platform 34
+- Windows 用户可直接使用仓库自带的 `gradlew.bat`
 
-| 需要 | 说明 |
-|---|---|
-| **JDK** | **17 或更高**（本项目在 JDK 20 上构建通过；`sourceCompatibility` 为 17） |
-| **Android SDK** | 需安装 **Platform 34** 与对应 Build-Tools；设置 `ANDROID_HOME` 或 `sdk.dir` |
-| **Android Studio** | 任意支持 AGP 8.13 的版本（Ladybug 及以后）。**非必需** —— 命令行 Gradle 即可构建 |
-| 网络 | 首次构建需联网下载 Gradle 发行版与依赖（仓库已配置国内镜像优先） |
+### 在 Android Studio 中打开
 
-打开项目：Android Studio → `Open` → 选择项目根目录（含 `settings.gradle` 的那一层），
-等待 Gradle Sync 完成后即可运行 `app` 配置。
+1. 克隆仓库：
+   ```bash
+   git clone https://github.com/weihe224/weihe_schedule.git
+   ```
+2. 在 Android Studio 中选择 **Open**，打开包含 `settings.gradle` 的项目根目录。
+3. 等待 Gradle Sync 完成，并确认本机 Android SDK 配置正确。
+4. 选择 `app` 运行配置，在模拟器或已连接的 Android 设备上运行。
 
-> 本项目自带 Gradle Wrapper（`gradlew.bat` / `gradlew`）。若本机没有可用的 Gradle，
-> 用 Wrapper 即可；下文命令以 Wrapper 为例。
+### 在 Windows 命令行构建
 
----
-
-## 构建与测试
-
-在项目根目录执行（Windows）：
+在项目根目录运行：
 
 ```bat
-:: 单元测试
-gradlew.bat testDebugUnitTest
-
-:: 构建 Debug APK
-gradlew.bat assembleDebug
-
-:: Lint 检查
-gradlew.bat lintDebug
-
-:: 三个一起跑（推荐，改动后作为提交前门禁）
+:: 运行 JVM 单元测试、构建 Debug APK，并检查 Lint
 gradlew.bat --rerun-tasks testDebugUnitTest assembleDebug lintDebug
 ```
 
-- **务必带上 `--rerun-tasks`**：否则 Gradle 可能跳过未变化的测试任务，让你读到上一次的结果。
-- 测试报告：`app/build/reports/tests/testDebugUnitTest/index.html`
-- Lint 报告：`app/build/reports/lint-results-debug.html`（文本版 `lint-results-debug.txt`）
-- **构建产物**：`app/build/outputs/apk/debug/app-debug.apk`
+Debug APK 默认输出到：
 
-安装到已连接的设备 / 模拟器：
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+如果已安装 Android Platform Tools，并且设备已开启 USB 调试，可执行：
 
 ```bat
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-> 注意：`assembleDebug` **不会**自动安装。改了界面后如果设备上看起来没变化，
-> 先确认是否漏了上面的 `adb install`。
+注意：构建 APK 不会自动安装到手机；安装后若界面没有变化，请确认安装的是刚刚生成的文件。
 
-### 测试的边界
+### 构建签名版本
 
-- 测试全部是 **JVM 单元测试**（`app/src/test/`），覆盖业务规则、数据读写、颜色与对比度等。
-- 项目**没有仪器测试**（不存在 `app/src/androidTest/`），因此**界面行为无法自动化验证**，
-  涉及布局与交互的改动必须在设备或模拟器上手动走查。
+如需生成供长期使用或分发的签名 APK，可在 Android Studio 中选择：
 
----
+**Build → Generate Signed Bundle / APK… → APK**
 
-## 项目目录说明
+然后创建或选择自己的签名密钥。请将 keystore 和相关密码保存在仓库之外的安全位置，并妥善备份。后续覆盖安装升级通常需要继续使用同一签名密钥；更换密钥可能导致无法直接覆盖安装。
 
-```
+## 项目结构
+
+```text
 app/
-  build.gradle                 应用模块配置（SDK 版本、依赖）
-  libs/jxl-2.6.12.jar          Excel 读取库
-  src/
-    main/
-      AndroidManifest.xml
-      java/com/weihe/schedule/
-        *Activity.java          10 个页面（首页、课表总览、编辑课程、设置……）
-        model/                  数据模型与纯计算（Course / Semester / BellSchedule / ScheduleUtils）
-        data/                   数据读写：CourseRepository（唯一入口）、JSON 编解码、备份
-        rule/                   纯业务规则（查询、冲突、校验、草稿、周次、命名……）
-        reminder/               提醒的计算、调度与广播接收
-        importer/               Excel 读取与课表解析
-        ui/                     公共 UI 组件（UiKit / UiTokens / Pickers / WheelColumnView / Insets）
-        design/                 设计常量（Palette 调色板、色彩对比度计算）
-      res/
-        drawable/               图标（vector）
-        values/                 颜色、字符串、主题、动画
-    test/java/com/weihe/schedule/   JVM 单元测试
-build.gradle                   根构建脚本（插件版本）
-settings.gradle                模块与仓库配置
-gradlew.bat / gradlew          Gradle Wrapper
-tools/                         开发辅助脚本（图标生成、UI dump 等），不参与打包
+├── src/main/java/com/weihe/schedule/
+│   ├── *Activity.java   页面与交互
+│   ├── model/           课程、学期、作息表等数据模型
+│   ├── data/            本地存储、JSON 编解码与备份恢复
+│   ├── rule/            课程查询、冲突检测、周次等业务规则
+│   ├── importer/        Excel 读取与课表解析
+│   ├── reminder/        上课提醒与排程恢复
+│   ├── widget/          桌面小组件
+│   ├── ui/              公共 UI 组件与选择器
+│   └── design/          颜色与界面设计常量
+├── src/main/res/        图标、主题、动画和小组件资源
+└── src/test/            JVM 单元测试
+tools/                   图标生成及开发辅助工具
+AGENTS.md                项目开发规范
+AGENT_HANDOFF.md         当前开发状态与交接记录
+AGENT_HANDOFF_ARCHIVE.md 历史交接记录
 ```
 
-`app/src/main/res/` 下**没有 `layout/`** —— 界面全部由 Java 代码构建。
+## 测试
+
+测试主要针对不依赖 Android 运行时的业务逻辑、数据读写、课表导入、提醒计算和小组件渲染规则。
+
+```bat
+gradlew.bat --rerun-tasks testDebugUnitTest
+```
+
+测试报告：
+
+```text
+app/build/reports/tests/testDebugUnitTest/index.html
+```
+
+当前仓库以 JVM 单元测试为主，没有 Android Instrumentation 测试。因此，涉及页面布局、系统通知、桌面小组件和真实设备权限的改动，仍应在模拟器或实际设备上手动验证。
+
+## 数据与隐私
+
+- 课程、学期和作息时间表保存在设备本地的 `SharedPreferences` 中。
+- 当前代码没有配置账号登录、云端同步或网络请求功能。
+- 应用会按功能申请通知、精确闹钟及开机完成广播相关权限，用于上课提醒和恢复排程。
+- 备份文件是明文 JSON。请勿将真实课表、备份文件、签名密钥或密码提交到公开仓库。
+
+## 参与开发
+
+准备修改代码前，建议先阅读：
+
+- [AGENTS.md：长期开发规范](AGENTS.md)
+- [AGENT_HANDOFF.md：当前项目状态](AGENT_HANDOFF.md)
+- [AGENT_HANDOFF_ARCHIVE.md：历史交接记录](AGENT_HANDOFF_ARCHIVE.md)
+
+遇到问题时，可在 GitHub 仓库的 Issues 中提交复现步骤、Android 版本和相关日志。请不要附带包含个人课程信息的备份文件。
 
 ---
 
-## 数据与兼容性
-
-### 数据保存在哪里
-
-全部使用 `SharedPreferences`，**没有数据库、没有网络**：
-
-| 存储 | 内容 |
-|---|---|
-| `weihe_schedule` | 学期、课程、作息表、备份快照 |
-| `weihe_schedule_reminders` | 提醒设置与已排程的提醒 |
-
-对数据的读写**只经过** `data/CourseRepository`，页面不直接访问 `SharedPreferences`。
-
-### 关键格式
-
-- **日期**：`yyyy-MM-dd` 字符串
-- **时刻**：作息表的每节起止时间存的是**自午夜起的整数分钟**（如 `495` 表示 08:15）
-- **晚课**：以 `24:xx` 表示（上限 `29:59`），使晚间节次仍属于当天的课表
-- **课程颜色**：每条课程自带一个 ARGB 整数
-- **按学期分键**：`courses:<学期id>`、`semester_start:<学期id>`
-
-### 兼容要求（改动前务必注意）
-
-1. **不要更改上述键名、JSON 结构与字段含义** —— 已有用户的课表会读不出来。
-2. **课程颜色以每条记录自带的值为准**：调色板可以调整，但**已保存的颜色不会被重新上色**；
-   不在当前调色板中的旧颜色仍会被保留并在选择器中显示出来。
-3. **作息表时长的兼容**：存储中缺少时长字段的旧数据按默认值（40 分钟）解释，不会读取失败。
-4. **导入**：导入会替换当前学期的课表，操作前会二次确认。
-5. **备份是明文 JSON**，包含教师姓名与上课地点；导出与恢复都以文件形式由用户自己保管。
-
-### 隐私
-
-应用不联网、不上报任何数据、不申请与课程表无关的权限。请勿把本机的备份文件
-（含个人课表信息）提交到仓库。
-
----
-
-## 开发规范与项目状态
-
-| 文档 | 用途 |
-|---|---|
-| [`AGENTS.md`](AGENTS.md) | **长期开发规范**：技术栈约束、分层与编码规范、构建与测试要求、工作区保护规则 |
-| [`AGENT_HANDOFF.md`](AGENT_HANDOFF.md) | **当前项目状态的唯一有效文档**：已完成/未完成、未提交修改、已知问题、下一步任务 |
-| [`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md) | **历史归档**：更早的交接记录与逐轮开发日志，仅作背景参考，其中的完成度判断可能已过期 |
-
-贡献代码前请先读 `AGENTS.md`；了解当前进度与遗留问题请读 `AGENT_HANDOFF.md`。
-
-## 构建产物与个人安装
-
-构建命令见上文「构建与测试」。产物有两个：
-
-| 产物 | 路径 | 可安装 | 说明 |
-|---|---|---|---|
-| **Debug** | `app/build/outputs/apk/debug/app-debug.apk` | ✅ | 由 `~/.android/debug.keystore` 签名。**个人自用就用它** |
-| Release | `app/build/outputs/apk/release/app-release-unsigned.apk` | ❌ | 项目**未配置发布签名**，产物是未签名的，装不上 |
-
-Release 配置当前是 `minifyEnabled false`，所以 Debug 与 Release 的**代码行为一致**，
-Debug 包并非"功能更少的版本"。可用 `apksigner verify --print-certs <apk>` 复核签名者。
-
-安装到手机：
-
-```powershell
-& 'D:\Sdk\platform-tools\adb.exe' install -r 'app\build\outputs\apk\debug\app-debug.apk'
-```
-
-也可以把 APK 直接拷进手机，用文件管理器点开安装（需允许"安装未知应用"）。
-
-> ⚠️ **换签名前必须先导出备份。** 如果手机上已装的「拾课」是用**另一把密钥**签名的，
-> 覆盖安装会报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，唯一的办法是卸载旧版；
-> 而卸载会连同 `SharedPreferences` 里的课表、学期、作息表一并删除，**无法恢复**。
-> 所以：先打开「设置 → 课表数据 → 导出备份」，把文件存到手机之外，再动签名。
-
-想长期自用并换成自己的密钥：在 Android Studio 里
-**Build → Generate Signed Bundle / APK… → APK → Create new…**，
-把 keystore 存到**仓库之外**的目录，口令记进密码管理器，勾选 **V1 + V2** 签名。
-**这把密钥要永久保存**：日后升级、换机都要用它才能覆盖安装。
-
-## 图标资源
-
-图标**不是手工维护的**，而是由 `tools/IconForge.java` 从根目录的 `icon.png` 统一生成：
-
-```powershell
-java tools/IconForge.java icon.png app/src/main/res tools/out
-```
-
-它一次产出五个密度所需的全部图层，并写出 `tools/out/icon-masks.png`（各启动器遮罩下的对照图）。
-详见 [`AGENTS.md`](AGENTS.md) 第 9 节。
+<sub>说明：本仓库当前未提供单独的 LICENSE 文件；在确认授权前，请勿假定项目可以自由再分发或用于商业用途。</sub>
