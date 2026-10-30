@@ -68,17 +68,17 @@
 
 ## 技术栈
 
-| 项目                  | 配置                           |
-| --------------------- | ------------------------------ |
-| 开发语言              | Java 17                        |
-| Android Gradle Plugin | 8.13.0                         |
-| Gradle Wrapper        | 8.13                           |
-| compileSdk            | 34                             |
-| targetSdk             | 34                             |
-| minSdk                | 26（Android 8.0）              |
-| applicationId         | `com.weihe.schedule`           |
-| 主要依赖              | `jxl-2.6.12.jar`（读取 Excel） |
-| 单元测试              | JUnit 4.13.2                   |
+| 项目 | 配置 |
+| --- | --- |
+| 开发语言 | Java 17 |
+| Android Gradle Plugin | 8.13.0 |
+| Gradle Wrapper | 8.13 |
+| compileSdk | 34 |
+| targetSdk | 34 |
+| minSdk | 26（Android 8.0） |
+| applicationId | `com.weihe.schedule` |
+| 主要依赖 | `jxl-2.6.12.jar`（读取 Excel） |
+| 单元测试 | JUnit 4.13.2 |
 
 项目未使用 Kotlin、Jetpack Compose、AndroidX 或数据库框架；主要业务逻辑放在可独立测试的 Java 类中。
 
