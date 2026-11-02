@@ -3795,3 +3795,25 @@ API 37 设备回归：测试前备份三份 preferences；导出取消后原课�
 - 证据在 .gradle-local/ui-review/（Git 忽略）：各 *before.png/*after.png、main-final.png/main-final-font130.png、course-final-font130.png/course-bottom-final*.png、schedules-final*.png、backup-final.png/backup-final-long-font130.png，以及 cleanup-result.json。
 - 未验证其他 API/厂商手机、横屏/分屏、2.0 倍字体与所有弹窗/异常状态。未新增功能、依赖或测试源码；未改存储契约。
 - 修改文件：MainActivity.java、SettingsActivity.java、AboutActivity.java、BackupPreviewActivity.java、CourseSearchActivity.java、EditCourseActivity.java、ScheduleListActivity.java、ui/UiKit.java、ui/UiTokens.java，以及两份交接文档。开始时 main/365fb2f 干净，全部本轮变更留在工作区，未暂存/commit/push。
+
+
+## 2026-11-02 阴影裁切与备注间距
+
+用户截图指出首页浮动按钮、设置底部关于卡片阴影被截断，以及课程备注标题上方空白过大。
+
+- MainActivity：浮动列已关闭裁切，但外层 FrameLayout 默认 clipChildren 仍限制后代阴影到列边界，截图形成方形硬边。外层设置 clipChildren(false)，按钮位置、大小与阴影强度不变，双按钮和单按钮均可正常布局。
+- SettingsActivity：body 默认 clipChildren/clipToPadding，卡片阴影无法进入四周页面 padding。关闭 body 的这两种裁切，保留 ScrollView 的可滚动视口及原 padding，底部关于卡片阴影完整。
+- CourseDetailActivity：备注标题行被 40dp 的 noteAction 撑高，上下留白多于其他标题。移除动作的最小高度与垂直 padding，让标题行采用自然文本高度；在 card 布局后将动作 hit rect 转到卡片坐标、纵向扩展至 UiTokens.TOUCH_TARGET，裁到卡片边界，注册 TouchDelegate 保留可点区域。非空备注文本与原作者换行未改。
+- 最终 tools/verify-project.ps1 使用 JDK20、本地缓存、Offline，实际 --rerun-tasks，BUILD SUCCESSFUL，49 tasks executed；1196 项测试 0 失败/错误，Lint No issues found。首轮 Lint 提示未使用 Rect.intersect 返回值，已用条件分支处理并完整重跑。
+- 覆盖安装最终 Debug APK；API 37 / emulator-5554 实际核对首页下一周时两枚浮动按钮的柔和阴影、设置滚动到底后的完整关于卡片阴影、课程详情备注标题留白。点击“添加备注”可进入备注输入；最终包另点击其可见边界上方 16px，确认 TouchDelegate 生效。没有保存课程改动，也未更改系统字体、权限或数据。截图和层级证据在 .gradle-local/ui-review/nov2-main-after.png、nov2-settings-after.png、nov2-note-final.png、nov2-note-touch-target.png/XML。
+- 未验证：其他系统/厂商实机、大字体/横屏、非空备注实机显示；本轮没有新增功能、依赖、测试源码或修改存储契约。
+- 初始 main / 3be09c2 干净；修改 MainActivity.java、SettingsActivity.java、CourseDetailActivity.java 和两份交接文档，未 commit/push。
+
+
+## 2026-11-02 三个小组件只读分析
+
+用户请求分析现有三个组件，未要求实施。核对widget包、4份布局、3份provider元信息、widget资源、TodayPlan与测试以及写入后的刷新调用。实际读取API37当前桌面，未改变时钟或课程，截图 .gradle-local/ui-review/widgets-analysis.png。3x2列表与2x2均最多两项，2x1只显示headline；2x1打开首页，另两种列表项打开详情。共用活动学期计划与边界闹钟，系统事件由ReminderRestoreReceiver触发。描述中的倒计时已与实现不符；max(minH,maxH)高度估算和固定阈值有适配局限；当前2x2长课程名省略且底部留白；周次括号格式不同。
+
+用忽略目录WidgetAnalysis.java加载现有纯Java编译产物验证：A 08:00–11:40、B 09:00–09:40、当前10:30，实际输出 headline=A、following=[B]、previous=B。TodayPlan.following未过滤已结束的重叠课，SquareWidgetRenderer.items取B为第二条，足够高时previous又将B放入结束页脚。本地逻辑复现，不是实机远程布局复现。previous本身按开始排序覆盖，重叠情况下“最近结束”也应复核。未修改代码或测试期望。
+
+既有JVM结果：TodayPlanTest28项、CourseWidgetRendererTest16项、NextClassWidgetRendererTest9项、SquareWidgetRendererTest9项，共62；本轮未重跑测试/构建/Lint，测试主要覆盖纯逻辑与阈值，不能证明真实尺寸布局或闹钟投递。建议先修重叠边界并补测试，再做尺寸/字体/状态文案适配。前轮未提交UI修改保持原样，本轮仅追加分析交接。

@@ -186,6 +186,8 @@ public class MainActivity extends Activity {
     private View buildRoot() {
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Palette.SURFACE);
+        // Descendant FAB shadows extend beyond the floating column bounds.
+        frame.setClipChildren(false);
         frame.setOnTouchListener(weekSwipeListener());
 
         LinearLayout page = new LinearLayout(this);

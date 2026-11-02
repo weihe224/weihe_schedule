@@ -285,10 +285,8 @@ public class CourseDetailActivity extends Activity {
      * removes the footer row that used to hold it -- so the card ends just under the
      * note instead of carrying an empty band beneath it.</p>
      *
-     * <p>The cost is height: a text button's 48dp touch target is taller than a
-     * heading, so this one heading row is taller than the others. The label is centred
-     * in it, which is the compromise that keeps the button usable without inflating the
-     * heading text.</p>
+     * <p>The visible action follows the heading height; a touch delegate preserves
+     * the full target without adding empty space above and below the heading.</p>
      */
     private View noteCard(String note) {
         LinearLayout card = card();
@@ -304,14 +302,23 @@ public class CourseDetailActivity extends Activity {
         TextView noteAction = UiKit.textButton(this,
                 hasNote ? "\u7F16\u8F91" : "\u6DFB\u52A0\u5907\u6CE8",
                 Palette.PRIMARY, view -> openEditor(true));
-        // Trailing padding off: the label should end on the card's content edge even
-        // though the touch target still reaches it. The height comes down to 40dp from
-        // the stock 48dp, because a full target would push this card's heading a dozen
-        // dp below every other heading and leave a blank band above the note.
-        noteAction.setMinHeight(dp(40));
-        noteAction.setPadding(noteAction.getPaddingLeft(), dp(4), 0, dp(4));
+        noteAction.setMinHeight(0);
+        noteAction.setMinimumHeight(0);
+        noteAction.setPadding(noteAction.getPaddingLeft(), 0, 0, 0);
         header.addView(noteAction);
         card.addView(header);
+        card.post(() -> {
+            android.graphics.Rect hit = new android.graphics.Rect();
+            noteAction.getHitRect(hit);
+            hit.offset(header.getLeft(), header.getTop());
+            int extra = Math.max(0, dp(UiTokens.TOUCH_TARGET) - hit.height());
+            hit.top -= extra / 2;
+            hit.bottom += extra - extra / 2;
+            hit.left -= dp(UiTokens.SPACE_S);
+            if (hit.intersect(0, 0, card.getWidth(), card.getHeight())) {
+                card.setTouchDelegate(new android.view.TouchDelegate(hit, noteAction));
+            }
+        });
 
         if (hasNote) {
             TextView text = UiKit.text(this, note, UiTokens.Type.BODY_MEDIUM,

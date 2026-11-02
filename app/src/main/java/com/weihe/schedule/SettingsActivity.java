@@ -207,6 +207,9 @@ public class SettingsActivity extends Activity {
         scroll.setClipToPadding(false);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
+        // Card shadows must be allowed into the reserved page padding.
+        body.setClipChildren(false);
+        body.setClipToPadding(false);
         body.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_L),
                 dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_XL));
 
