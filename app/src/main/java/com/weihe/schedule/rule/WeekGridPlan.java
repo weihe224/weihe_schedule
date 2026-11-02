@@ -400,6 +400,11 @@ public final class WeekGridPlan {
      * rather than optimal: it can need one lane more than strictly necessary,
      * which is the price of an implementation simple enough to be tested.</p>
      */
+    private static int endOf(List<Course> unit) {
+        // The lead changes with the teaching week; reserved geometry must not.
+        return unit.stream().mapToInt(course -> course.endPeriod).max().orElseThrow();
+    }
+
     private static Cluster clusterOf(List<Course> cluster, int day, int endPeriod,
             int currentWeek) {
         List<List<Course>> units = CourseStacking.unitsOf(cluster, currentWeek);
@@ -420,7 +425,7 @@ public final class WeekGridPlan {
                 chosen = laneEnds.size() - 1;
             }
             laneEnds.set(chosen,
-                    Math.max(laneEnds.get(chosen), unit.get(0).endPeriod));
+                    Math.max(laneEnds.get(chosen), endOf(unit)));
             laneOfUnit.add(chosen);
         }
         int laneCount = Math.max(1, laneEnds.size());
@@ -436,8 +441,8 @@ public final class WeekGridPlan {
                     && units.get(index).get(0).startPeriod == startPeriod) {
                 List<Course> unit = units.get(index);
                 blocks.add(new Block(unit, day, startPeriod,
-                        unit.get(0).endPeriod, laneOfUnit.get(index), laneCount));
-                cellEnd = Math.max(cellEnd, unit.get(0).endPeriod);
+                        endOf(unit), laneOfUnit.get(index), laneCount));
+                cellEnd = Math.max(cellEnd, endOf(unit));
                 index++;
             }
             blocks.sort(Comparator.comparingInt(Block::lane));

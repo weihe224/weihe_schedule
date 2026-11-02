@@ -232,8 +232,8 @@ public class WeekGridActivity extends Activity {
         recomputeGeometry();
         repository = new CourseRepository(this);
         semesterStart = repository.getSemesterStart();
-        currentWeek = ScheduleUtils.currentWeek(semesterStart, LocalDate.now());
-        selectedWeek = Math.max(1, Math.min(ScheduleUtils.SEMESTER_WEEKS,
+        currentWeek = ScheduleUtils.currentWeek(semesterStart, LocalDate.now(), repository.getActiveSemester().weeks());
+        selectedWeek = Math.max(1, Math.min(repository.getActiveSemester().weeks(),
                 getIntent().getIntExtra(EXTRA_WEEK, currentWeek)));
         // A pinch scales around the point between the fingers, so the day being
         // looked at stays under them instead of sliding off the edge.
@@ -723,7 +723,7 @@ public class WeekGridActivity extends Activity {
 
     private void stepWeek(int delta) {
         int next = selectedWeek + delta;
-        if (next < 1 || next > ScheduleUtils.SEMESTER_WEEKS) {
+        if (next < 1 || next > repository.getActiveSemester().weeks()) {
             return;
         }
         selectedWeek = next;
@@ -946,6 +946,9 @@ public class WeekGridActivity extends Activity {
     }
 
     private void render() {
+        currentWeek = ScheduleUtils.currentWeek(semesterStart, LocalDate.now(),
+                repository.getActiveSemester().weeks());
+        selectedWeek = Math.max(1, Math.min(repository.getActiveSemester().weeks(), selectedWeek));
         styleChip(semesterChip, wholeSemester);
         styleChip(weekChip, !wholeSemester);
         styleTodayButton();
@@ -982,7 +985,11 @@ public class WeekGridActivity extends Activity {
         for (int day = 0; day < DAY_COUNT; day++) {
             perDay.add(new ArrayList<WeekGridPlan.Cluster>());
         }
-        int leadWeek = wholeSemester ? currentWeek : selectedWeek;
+        int leadWeek = wholeSemester
+                ? (com.weihe.schedule.rule.ReminderPlan.isInSemester(
+                        repository.getActiveSemester(), LocalDate.now())
+                        ? currentWeek : com.weihe.schedule.rule.CourseStacking.NO_WEEK)
+                : selectedWeek;
         for (WeekGridPlan.Cluster cluster : WeekGridPlan.plan(shown, leadWeek)) {
             perDay.get(cluster.day() - 1).add(cluster);
         }
@@ -1160,7 +1167,7 @@ public class WeekGridActivity extends Activity {
             String date = "";
             boolean isToday = false;
             if (!wholeSemester) {
-                LocalDate value = ScheduleUtils.dateOf(semesterStart, selectedWeek, day);
+                LocalDate value = ScheduleUtils.dateOf(semesterStart, selectedWeek, day, repository.getActiveSemester().weeks());
                 date = ScheduleUtils.formatDate(value);
                 isToday = value.equals(today);
             }

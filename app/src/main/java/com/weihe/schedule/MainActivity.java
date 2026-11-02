@@ -107,7 +107,7 @@ public class MainActivity extends Activity {
         repository = new CourseRepository(this);
         semesterStart = repository.getSemesterStart();
         LocalDate today = LocalDate.now();
-        currentWeek = ScheduleUtils.currentWeek(semesterStart, today);
+        currentWeek = ScheduleUtils.currentWeek(semesterStart, today, repository.getActiveSemester().weeks());
         selectedWeek = currentWeek;
         selectedDay = today.getDayOfWeek().getValue();
         // The app bar is the page surface, so the status bar takes the same colour
@@ -282,7 +282,7 @@ public class MainActivity extends Activity {
         LocalDate today = LocalDate.now();
         // Worked out here rather than read from currentWeek, so the target cannot
         // depend on that field having been refreshed since the date last changed.
-        int targetWeek = TodayTarget.week(semesterStart, today);
+        int targetWeek = TodayTarget.week(semesterStart, today, repository.getActiveSemester().weeks());
         int targetDay = TodayTarget.day(today);
         motionDirection = selectedWeek != targetWeek
                 ? Integer.signum(targetWeek - selectedWeek)
@@ -302,7 +302,7 @@ public class MainActivity extends Activity {
      */
     private boolean isShowingToday() {
         return TodayTarget.isShowing(selectedWeek, selectedDay, semesterStart,
-                LocalDate.now());
+                LocalDate.now(), repository.getActiveSemester().weeks());
     }
 
     /**
@@ -498,7 +498,7 @@ public class MainActivity extends Activity {
      * æ¬å¨" is visible without reading.</p>
      */
     private void showWeekPicker() {
-        int columns = ScheduleUtils.weekPickerColumns(ScheduleUtils.SEMESTER_WEEKS);
+        int columns = ScheduleUtils.weekPickerColumns(repository.getActiveSemester().weeks());
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
         grid.setPadding(dp(UiTokens.SPACE_L), dp(UiTokens.SPACE_XS),
@@ -510,7 +510,7 @@ public class MainActivity extends Activity {
         final android.app.Dialog[] sheet = new android.app.Dialog[1];
 
         LinearLayout line = null;
-        for (int week = 1; week <= ScheduleUtils.SEMESTER_WEEKS; week++) {
+        for (int week = 1; week <= repository.getActiveSemester().weeks(); week++) {
             if ((week - 1) % columns == 0) {
                 line = new LinearLayout(this);
                 line.setOrientation(LinearLayout.HORIZONTAL);
@@ -778,7 +778,7 @@ public class MainActivity extends Activity {
     }
 
     private void stepWeek(int delta) {
-        int next = Math.max(1, Math.min(ScheduleUtils.SEMESTER_WEEKS,
+        int next = Math.max(1, Math.min(repository.getActiveSemester().weeks(),
                 selectedWeek + delta));
         if (next == selectedWeek) {
             return;
@@ -828,14 +828,15 @@ public class MainActivity extends Activity {
         Semester active = repository.getActiveSemester();
         semesterStart = repository.getSemesterStart();
         LocalDate today = LocalDate.now();
-        currentWeek = ScheduleUtils.currentWeek(semesterStart, today);
-        selectedWeek = Math.max(1, Math.min(ScheduleUtils.SEMESTER_WEEKS, selectedWeek));
+        currentWeek = ScheduleUtils.currentWeek(semesterStart, today, repository.getActiveSemester().weeks());
+        selectedWeek = Math.max(1, Math.min(repository.getActiveSemester().weeks(), selectedWeek));
         selectedDay = Math.max(1, Math.min(7, selectedDay));
 
         // One slot, one fact. On the current week it says so; otherwise the chip
         // beside it offers the way back. Showing both would be two names for the
         // same thing, which is what the old card did.
-        boolean showingCurrentWeek = selectedWeek == currentWeek;
+        boolean showingCurrentWeek = selectedWeek == currentWeek
+                && com.weihe.schedule.rule.ReminderPlan.isInSemester(active, today);
         parityPill.setText("\u672C\u5468");
         parityPill.setVisibility(showingCurrentWeek ? View.VISIBLE : View.GONE);
         // The accent is the one highlighted tile in the app's own icon, which is
@@ -921,7 +922,7 @@ public class MainActivity extends Activity {
         LocalDate today = LocalDate.now();
         for (int day = 1; day <= 7; day++) {
             boolean selected = day == selectedDay;
-            LocalDate dateValue = ScheduleUtils.dateOf(semesterStart, selectedWeek, day);
+            LocalDate dateValue = ScheduleUtils.dateOf(semesterStart, selectedWeek, day, repository.getActiveSemester().weeks());
             boolean isToday = dateValue.equals(today);
             LinearLayout item = new UiKit.PressFeedback(this);
             item.setOrientation(LinearLayout.VERTICAL);
@@ -1004,7 +1005,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderCourses() {
-        LocalDate date = ScheduleUtils.dateOf(semesterStart, selectedWeek, selectedDay);
+        LocalDate date = ScheduleUtils.dateOf(semesterStart, selectedWeek, selectedDay, repository.getActiveSemester().weeks());
         boolean isToday = date.equals(LocalDate.now());
         // Today leads with the fact that it is today, because that is the state the
         // user needs to recognise; any other date leads with its own name, because

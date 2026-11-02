@@ -480,6 +480,59 @@ public class TodayPlanTest {
         plan(courses(course(1, 1, 1, 2)), MONDAY.atTime(23, 0)).completed().clear();
     }
 
+    @Test
+    public void actualSemesterLengthControlsBothWidgetsAndReminderBoundaries() {
+        Semester shortTerm = new Semester(1L, TERM_START, "Short", 2);
+        List<Course> input = courses(course(1, 1, 1, 2));
+        LocalDate thirdMonday = MONDAY.plusWeeks(2);
+        TodayPlan p = TodayPlan.of(input, shortTerm, schedules(), null,
+                thirdMonday.atTime(7, 0), 10);
+        assertEquals(TodayPlan.State.OUTSIDE_TERM, p.state());
+        assertTrue(p.completed().isEmpty());
+        assertTrue(ReminderPlan.onDate(input, shortTerm, schedules(), thirdMonday,
+                10, thirdMonday.atTime(7, 0)).reminders().isEmpty());
+        assertNull(ReminderPlan.forCourseOnDay(input, shortTerm, schedules(),
+                1L, thirdMonday, 10));
+        assertFalse(ReminderPlan.upcoming(input, shortTerm, schedules(), MONDAY,
+                30, 10, MONDAY.atTime(7, 0), 100).reminders().isEmpty());
+        for (Reminder reminder : ReminderPlan.upcoming(input, shortTerm, schedules(),
+                MONDAY, 30, 10, MONDAY.atTime(7, 0), 100).reminders()) {
+            assertTrue(reminder.startAt().toLocalDate().isBefore(thirdMonday));
+        }
+    }
+
+    @Test
+    public void semesterGateIncludesFirstAndLastDaysButNotTheirNeighbours() {
+        Semester term = new Semester(1L, TERM_START, "Short", 2);
+        assertFalse(ReminderPlan.isInSemester(term, MONDAY.minusDays(1)));
+        assertTrue(ReminderPlan.isInSemester(term, MONDAY));
+        assertTrue(ReminderPlan.isInSemester(term, MONDAY.plusDays(13)));
+        assertFalse(ReminderPlan.isInSemester(term, MONDAY.plusDays(14)));
+        assertFalse(ReminderPlan.isInSemester(null, MONDAY));
+        assertFalse(ReminderPlan.isInSemester(term, null));
+    }
+
+    @Test
+    public void movingStartOrSwitchingSemesterRecalculatesTheSameDay() {
+        LocalDate day = MONDAY.plusWeeks(2);
+        Semester shortTerm = new Semester(1L, TERM_START, "Short", 2);
+        Semester moved = shortTerm.startingOn(TERM_START.plusWeeks(1));
+        Semester longTerm = new Semester(2L, TERM_START, "Long", 4);
+        assertFalse(ReminderPlan.isInSemester(shortTerm, day));
+        assertTrue(ReminderPlan.isInSemester(moved, day));
+        assertTrue(ReminderPlan.isInSemester(longTerm, day));
+    }
+
+    @Test
+    public void navigationAndTodayTargetClampToTheActualLastWeek() {
+        assertEquals(1, ScheduleUtils.currentWeek(TERM_START, MONDAY.minusDays(1), 2));
+        assertEquals(2, ScheduleUtils.currentWeek(TERM_START, MONDAY.plusWeeks(3), 2));
+        assertEquals(MONDAY.plusWeeks(1), ScheduleUtils.dateOf(TERM_START, 18, 1, 2));
+        assertEquals(2, TodayTarget.week(TERM_START, MONDAY.plusWeeks(3), 2));
+        assertTrue(TodayTarget.isShowing(2, 1, TERM_START, MONDAY.plusWeeks(3), 2));
+        assertEquals(18, ScheduleUtils.currentWeek(TERM_START, MONDAY.plusWeeks(20)));
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private static TodayPlan plan(List<Course> courses, LocalDateTime now) {

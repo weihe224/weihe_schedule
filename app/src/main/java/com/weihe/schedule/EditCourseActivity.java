@@ -154,7 +154,7 @@ public class EditCourseActivity extends Activity {
             course.dayOfWeek = Math.max(1,
                     Math.min(7, getIntent().getIntExtra(EXTRA_DAY, 1)));
             course.startWeek = 1;
-            course.endWeek = ScheduleUtils.SEMESTER_WEEKS;
+            course.endWeek = repository.getActiveSemester().weeks();
         }
         // Read once, before the form is built, from the courses the term already
         // holds. Opening the editor must change nothing, so this only reads -- and it
@@ -504,10 +504,10 @@ public class EditCourseActivity extends Activity {
         firstHalfChip = quickChip("\u524D\u516B\u5468");
         secondHalfChip = quickChip("\u540E\u516B\u5468");
         allWeeksChip.setOnClickListener(view ->
-                applyWeeks(1, ScheduleUtils.SEMESTER_WEEKS));
-        firstHalfChip.setOnClickListener(view -> applyWeeks(1, FIRST_HALF_END));
+                applyWeeks(1, repository.getActiveSemester().weeks()));
+        firstHalfChip.setOnClickListener(view -> applyWeeks(1, Math.min(QUICK_WEEKS, repository.getActiveSemester().weeks())));
         secondHalfChip.setOnClickListener(view ->
-                applyWeeks(SECOND_HALF_START, ScheduleUtils.SEMESTER_WEEKS));
+                applyWeeks(Math.max(1, repository.getActiveSemester().weeks() - QUICK_WEEKS + 1), repository.getActiveSemester().weeks()));
         quickRow.addView(allWeeksChip, chipParams(0, 0));
         quickRow.addView(firstHalfChip, chipParams(8, 0));
         quickRow.addView(secondHalfChip, chipParams(8, 0));
@@ -622,11 +622,11 @@ public class EditCourseActivity extends Activity {
                 endWeekInput.getText().toString());
 
         styleQuickChip(allWeeksChip,
-                isRange(start, end, 1, ScheduleUtils.SEMESTER_WEEKS));
-        styleQuickChip(firstHalfChip, isRange(start, end, 1, FIRST_HALF_END));
+                isRange(start, end, 1, repository.getActiveSemester().weeks()));
+        styleQuickChip(firstHalfChip, isRange(start, end, 1, Math.min(QUICK_WEEKS, repository.getActiveSemester().weeks())));
         styleQuickChip(secondHalfChip,
-                isRange(start, end, SECOND_HALF_START,
-                        ScheduleUtils.SEMESTER_WEEKS));
+                isRange(start, end, Math.max(1, repository.getActiveSemester().weeks() - QUICK_WEEKS + 1),
+                        repository.getActiveSemester().weeks()));
 
         refreshWeekSummary();
     }
@@ -657,6 +657,11 @@ public class EditCourseActivity extends Activity {
         weekSummary.setText(WeekSelection.summary(start, end, parity));
         weekSummary.setTextColor(WeekSelection.meetsOnNoWeek(start, end, parity)
                 ? Palette.ERROR : Palette.ON_SURFACE_VARIANT);
+        if (end > repository.getActiveSemester().weeks()) {
+            weekSummary.append(" \u00B7 \u8D85\u51FA\u672C\u5B66\u671F "
+                    + repository.getActiveSemester().weeks() + " \u5468\u8303\u56F4");
+            weekSummary.setTextColor(Palette.ERROR);
+        }
     }
 
     private boolean isRange(Integer start, Integer end, int from, int to) {

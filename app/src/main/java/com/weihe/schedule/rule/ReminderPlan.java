@@ -251,6 +251,13 @@ public final class ReminderPlan {
         return week >= 1 && week <= ScheduleUtils.SEMESTER_WEEKS;
     }
 
+    /** The actual term length, rather than the legacy default-length ceiling. */
+    public static boolean isInSemester(Semester semester, LocalDate date) {
+        if (semester == null || date == null) return false;
+        int week = rawWeekOf(semester.start(), date);
+        return week >= 1 && week <= semester.weeks();
+    }
+
     /** Whether the feature supports this lead time. */
     public static boolean supportsLeadMinutes(int leadMinutes) {
         return leadMinutes >= MIN_LEAD_MINUTES && leadMinutes <= MAX_LEAD_MINUTES;
@@ -426,7 +433,7 @@ public final class ReminderPlan {
             skipped.add(new SkippedCourse(null, day, Skipped.UNSUPPORTED_LEAD_TIME));
             return new Plan(reminders, skipped);
         }
-        if (semester == null || !isWithinSemester(semester.start(), day)) {
+        if (semester == null || !isInSemester(semester, day)) {
             skipped.add(new SkippedCourse(null, day, Skipped.OUTSIDE_SEMESTER));
             return new Plan(reminders, skipped);
         }
@@ -507,7 +514,7 @@ public final class ReminderPlan {
         boolean anyDayOutside = false;
         for (int offset = 0; offset < days; offset++) {
             LocalDate day = from.plusDays(offset);
-            if (!isWithinSemester(semester.start(), day)) {
+            if (!isInSemester(semester, day)) {
                 anyDayOutside = true;
                 continue;
             }
@@ -559,7 +566,7 @@ public final class ReminderPlan {
             String defaultId) {
         if (courses == null || semester == null || day == null
                 || !supportsLeadMinutes(leadMinutes)
-                || !isWithinSemester(semester.start(), day)) {
+                || !isInSemester(semester, day)) {
             return null;
         }
         int week = rawWeekOf(semester.start(), day);

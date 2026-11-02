@@ -44,10 +44,14 @@ public final class ScheduleUtils {
     }
 
     public static int currentWeek(LocalDate semesterStart, LocalDate today) {
+        return currentWeek(semesterStart, today, SEMESTER_WEEKS);
+    }
+
+    public static int currentWeek(LocalDate semesterStart, LocalDate today, int weeks) {
         LocalDate firstMonday = mondayOf(semesterStart);
         long days = java.time.temporal.ChronoUnit.DAYS.between(firstMonday, today);
         int week = (int) Math.floorDiv(days, 7L) + 1;
-        return Math.max(1, Math.min(SEMESTER_WEEKS, week));
+        return Math.max(1, Math.min(Semester.clampWeeks(weeks), week));
     }
 
     public static LocalDate weekStart(LocalDate semesterStart, int week) {
@@ -64,7 +68,11 @@ public final class ScheduleUtils {
      * a date outside the week it asked for.</p>
      */
     public static LocalDate dateOf(LocalDate semesterStart, int week, int day) {
-        int safeWeek = Math.max(1, Math.min(SEMESTER_WEEKS, week));
+        return dateOf(semesterStart, week, day, SEMESTER_WEEKS);
+    }
+
+    public static LocalDate dateOf(LocalDate semesterStart, int week, int day, int weeks) {
+        int safeWeek = Math.max(1, Math.min(Semester.clampWeeks(weeks), week));
         int safeDay = Math.max(1, Math.min(7, day));
         return weekStart(semesterStart, safeWeek).plusDays(safeDay - 1L);
     }

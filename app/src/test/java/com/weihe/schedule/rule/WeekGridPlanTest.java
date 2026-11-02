@@ -417,6 +417,23 @@ public class WeekGridPlanTest {
                 WeekGridPlan.maxLaneCount(week));
     }
 
+    @Test
+    public void differentLengthAlternativesReserveLongestSpanRegardlessOfLead() {
+        List<Course> input = Arrays.asList(inWeeks(1, 1, 8, 9, 10, 18),
+                inWeeks(2, 1, 8, 10, 1, 9), inWeeks(3, 1, 10, 11, 1, 18));
+        for (int leadWeek : new int[] {8, 12}) {
+            WeekGridPlan.Cluster cluster = WeekGridPlan.plan(input, leadWeek).get(0);
+            WeekGridPlan.Block stack = cluster.cells().get(0).blocks().get(0);
+            assertEquals(2, stack.courseCount());
+            assertEquals(8, stack.startPeriod());
+            assertEquals(10, stack.endPeriod());
+            assertEquals(3, stack.periodSpan());
+            assertEquals(2, cluster.laneCount());
+            assertEquals(leadWeek == 8 ? 2L : 1L, stack.course().id);
+            assertEquals(10, cluster.cells().get(0).endPeriod());
+        }
+    }
+
     private static Course inWeeks(long id, int day, int startPeriod, int endPeriod,
             int startWeek, int endWeek) {
         Course course = course(id, day, startPeriod, endPeriod);

@@ -231,7 +231,7 @@ public final class TodayPlan {
             return empty(State.NO_TIMETABLE, day, semester, 0, now);
         }
         int week = ReminderPlan.rawWeekOf(semester.start(), day);
-        if (!ReminderPlan.isWithinSemester(semester.start(), day)) {
+        if (!ReminderPlan.isInSemester(semester, day)) {
             return empty(State.OUTSIDE_TERM, day, semester, week, now);
         }
 

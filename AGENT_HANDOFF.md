@@ -6,7 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
-> - **最新一轮：见文末「2026-11-02 课表总览悬浮按钮阴影」**。页面外层容器关闭子视图/内边距裁剪；1218项测试与Lint通过，未生成或安装APK，阴影待用户实机确认。
+> - **最新一轮：见文末「2026-11-02 学期范围与周次导航一致性」**。提醒/组件按实际学期长度判断，首页与总览导航同步；1224项测试与Lint通过，未生成APK，待用户实机确认。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -3145,3 +3145,20 @@ APK **1,202,536 B**。
 - **已实现但尚未充分验证**：用户截图显示课表总览右下两按钮阴影呈矩形截断。WeekGridActivity.buildRoot中action列已有clipChildren=false、clipToPadding=false，外层FrameLayout却仍默认裁剪子节点；外层补齐两项false，让阴影越过action列边界绘制。按钮尺寸、位置、间距与抬升高度不变，与首页处理一致。
 - 仅修改WeekGridActivity.java及交接文档。执行Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug，1218项0失败错误跳过，Lint No issues found；git diff --check通过。此类裁剪配置不新增镜像测试。
 - 遵守用户要求，没有生成或安装APK，没有拿旧设备画面作为本轮验证。vivo X200s / Android16上的最终阴影完整性待用户实测。既有未提交组件改动保留，未commit/push。
+
+
+## 2026-11-02 不同结束节次课程堆叠
+
+- **已实现并经规则测试验证，待实机确认**：用户截图中周一8-9节与8-10节课程分栏，原因是CourseStacking.canStack及unitsOf分组要求起止节次完全相同；用户明确确认结束节次不同也应堆叠。改为同日、同开始节次、周次互不重叠即可堆叠，真实同周冲突仍拆分。sameSlot仍保留精确起止范围判断，新增内部startsTogether用于堆叠分组，partition逐个核对canStack，防止错误输入合并不同开始的课程。
+- WeekGridPlan的laneEnds、Block.endPeriod和Cell.endPeriod统一取堆叠内最大结束节次，不再取顶部课程的结束节次，保证当前周顶部课程切换后仍预留完整空间、不与后续课程覆盖。课程原始节次、周次、详情和点击堆叠列表均未修改。
+- 按用户确认的新规则更新原不同结束节次不可堆叠的测试，新增2项覆盖不同长度/真实冲突/不同开始不合并、不同当前周的顶部选择、最长跨度与相邻课程分栏。Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug成功，1220项0失败错误跳过，Lint No issues found，git diff --check通过。未生成/安装APK，vivo Android16显示效果由用户实测。
+- 修改CourseStacking.java、WeekGridPlan.java、对应两个测试类和交接文档；未写课表数据，未commit/push。
+
+
+## 2026-11-02 学期范围与周次导航一致性
+
+- **已实现并经规则测试验证，页面待实机确认**：ReminderPlan新增isInSemester(Semester,date)，onDate/upcoming/forCourseOnDay和TodayPlan均改用实际semester.weeks，修复短学期结束后仍按18周排程/显示的问题。旧日期版isWithinSemester保留默认18周语义兼容既有调用与测试，不再作为生产提醒/组件入口判断。
+- ScheduleUtils.currentWeek/dateOf新增带实际周数重载，旧签名仍默认18周；TodayTarget新增带周数重载。首页周选择器、前后周导航、回今天和日期条按活动学期长度；学期外不显示“本周”标记。总览导航按实际长度，onResume重载数据后render重新计算当前/所选周，学期外总览不再按夹取的最后一周挑堆叠顶部课程。
+- 编辑器新课程默认结束周及全学期/前八周/后八周快捷项按实际周数。手动填写超出学期的范围会在周次摘要显示红色提示，不静默改写已有课程，保留原1-18周存储兼容；已有缩短学期保护会拒绝遗留越界课程的缩短操作，仍保持原规则。原修改日期、学期周数和切换学期流程已有ReminderScheduler.sync及组件刷新，本轮核对保留。
+- 新增4项边界/跨模块回归：首末日、学期前后、短学期提醒onDate/upcoming/forCourseOnDay与组件一致、移动开学日期、切换长度不同学期、导航与返回今天夹取边界。完整非打包检查Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug：1224项0失败/错误/跳过，Lint No issues found；原课程堆叠回归继续通过，git diff --check通过。未生成或安装APK。
+- **未验证**：真实页面交互、系统已注册提醒的实际撤销/投递、vivo X200s/Android16跨日与组件展示，待用户实测。没有改变存储格式/课表数据；前轮不同结束节次堆叠修改保留，未commit/push。

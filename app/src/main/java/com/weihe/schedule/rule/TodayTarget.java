@@ -44,6 +44,15 @@ public final class TodayTarget {
         return ScheduleUtils.currentWeek(semesterStart, today);
     }
 
+    public static int week(LocalDate semesterStart, LocalDate today, int weeks) {
+        return ScheduleUtils.currentWeek(semesterStart, today, weeks);
+    }
+
+    public static boolean isShowing(int selectedWeek, int selectedDay,
+            LocalDate semesterStart, LocalDate today, int weeks) {
+        return selectedWeek == week(semesterStart, today, weeks) && selectedDay == day(today);
+    }
+
     /** The weekday to show, 1 (Monday) to 7 (Sunday), as the screen numbers them. */
     public static int day(LocalDate today) {
         return today.getDayOfWeek().getValue();

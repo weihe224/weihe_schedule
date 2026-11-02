@@ -18,7 +18,7 @@ import com.weihe.schedule.model.ScheduleUtils;
  * narrow to read. They are one slot, so they belong on one card.</p>
  *
  * <p>The test is deliberately narrow. Two courses may share a card only when
- * they occupy the same weekday and the same period range <em>and</em> their
+ * they occupy the same weekday and start period <em>and</em> their
  * teaching weeks never meet. Two lessons that really do clash -- the same week,
  * the same time -- keep their own lanes, because hiding a clash would be worse
  * than showing a narrow column.</p>
@@ -102,9 +102,14 @@ public final class CourseStacking {
         return false;
     }
 
-    /** Whether two courses may share one stacked card. */
+    private static boolean startsTogether(Course a, Course b) {
+        return a != null && b != null && a.dayOfWeek == b.dayOfWeek
+                && a.startPeriod == b.startPeriod;
+    }
+
+    /** Whether two courses may share one card, even with different end periods. */
     public static boolean canStack(Course a, Course b) {
-        return sameSlot(a, b) && !weeksMeet(a, b);
+        return startsTogether(a, b) && !weeksMeet(a, b);
     }
 
     /**
@@ -152,7 +157,7 @@ public final class CourseStacking {
 
     private static boolean fitsIn(List<Course> stack, Course course) {
         for (Course member : stack) {
-            if (weeksMeet(member, course)) {
+            if (!canStack(member, course)) {
                 return false;
             }
         }
@@ -163,7 +168,7 @@ public final class CourseStacking {
      * The units the grid's lane packing should see.
      *
      * <p>Each unit is either a lone course or a stack of alternatives, and each
-     * unit occupies exactly one period range. That is what lets the packing
+     * unit reserves the longest period range among its members. That is what lets the packing
      * treat a stack as one thing: a stack takes the lane its slot needs, instead
      * of a lane per course, which is the whole point.</p>
      *
@@ -179,13 +184,11 @@ public final class CourseStacking {
         }
         int index = 0;
         while (index < courses.size()) {
-            // The courses of one slot are contiguous in the sorted order, so the
-            // run can be taken in one pass without grouping first. Two courses
-            // that start together but end differently are different slots, which
-            // is why the run is bounded by the end period too.
+            // Different lengths can be alternatives at the same start. Keep the
+            // whole start-period run together; week conflicts still split stacks.
             int runEnd = index;
             while (runEnd < courses.size()
-                    && sameSlot(courses.get(index), courses.get(runEnd))) {
+                    && startsTogether(courses.get(index), courses.get(runEnd))) {
                 runEnd++;
             }
             units.addAll(partition(courses.subList(index, runEnd), currentWeek));

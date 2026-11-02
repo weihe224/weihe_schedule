@@ -140,13 +140,12 @@ public class CourseStackingTest {
     }
 
     @Test
-    public void aDifferentTimeRangeMayNotShareACard() {
-        // Never the same week, but not the same slot either: one is a three period
-        // lesson and the other a two, so they are not alternatives for each other.
+    public void differentEndPeriodsCanShareACardInDisjointWeeks() {
+        // A shorter and longer lesson can be alternatives at one start period.
         Course shortOne = inWeeks(1, 2, 3, 4, 1, 9);
         Course longOne = inWeeks(2, 2, 3, 5, 10, 18);
 
-        assertFalse(CourseStacking.canStack(shortOne, longOne));
+        assertTrue(CourseStacking.canStack(shortOne, longOne));
     }
 
     // --------------------------------------------------------------- partition
@@ -288,6 +287,17 @@ public class CourseStackingTest {
     public void nothingIsAUnitOfNothing() {
         assertTrue(CourseStacking.unitsOf(null, CourseStacking.NO_WEEK).isEmpty());
         assertTrue(CourseStacking.unitsOf(new ArrayList<Course>(), CourseStacking.NO_WEEK).isEmpty());
+    }
+
+    @Test
+    public void differentLengthsStackButRealWeekConflictsStaySeparate() {
+        Course shortOne = inWeeks(1, 1, 8, 9, 10, 18);
+        Course longOne = inWeeks(2, 1, 8, 10, 1, 9);
+        assertEquals(1, CourseStacking.unitsOf(Arrays.asList(shortOne, longOne), 8).size());
+        longOne.endWeek = 10;
+        assertFalse(CourseStacking.canStack(shortOne, longOne));
+        assertEquals(2, CourseStacking.unitsOf(Arrays.asList(shortOne, longOne), 8).size());
+        assertFalse(CourseStacking.canStack(shortOne, inWeeks(3, 1, 9, 10, 1, 9)));
     }
 
     private static List<Long> ids(List<Course> courses) {
