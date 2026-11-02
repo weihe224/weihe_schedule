@@ -202,5 +202,8 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/square_widget_info" />
         </receiver>
+        <service android:name=".widget.ScrollableWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
     </application>
 </manifest>

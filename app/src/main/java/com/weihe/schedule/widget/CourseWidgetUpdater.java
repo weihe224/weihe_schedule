@@ -55,9 +55,8 @@ public final class CourseWidgetUpdater {
             return;
         }
 
-        // Two cards and the headline's successor are all the big layout can show;
-        // asking for more would only make the plan carry a list nothing reads.
-        TodayPlan plan = CourseWidgetDataSource.read(app, CourseWidgetRenderer.MAX_CARDS);
+        // Collection widgets retain every remaining course for vertical scrolling.
+        TodayPlan plan = CourseWidgetDataSource.read(app, Integer.MAX_VALUE);
         int updated = 0;
         for (int id : ids) {
             try {

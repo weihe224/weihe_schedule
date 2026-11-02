@@ -46,6 +46,9 @@ final class NextClassWidgetRenderer {
     }
 
     static RemoteViews render(Context context, TodayPlan plan) {
+        if (plan != null && plan.headline() != null) {
+            return ScrollableWidgetRenderer.render(context, plan, true);
+        }
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 R.layout.widget_next_class);
         TodayPlan.Session session = plan == null ? null : plan.headline();

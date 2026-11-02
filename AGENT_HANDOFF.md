@@ -6,7 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
-> - **最新一轮：见文末「2026-11-02 小组件尺寸识别与命名修正」**。降低与目标格数冲突的最小放置/缩放尺寸，三个名称标注3×2、2×1、2×2；1211项测试、构建和Lint通过，API37安装核对；vivo X200s / Android16待实机确认。
+> - **最新一轮：见文末「2026-11-02 小组件文字单行省略」**。组件文字单行、末尾省略，内部滚动保留；用户要求此后不再生成APK，由用户实机测试。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -3111,3 +3111,21 @@ APK **1,202,536 B**。
 - 完整脚本--rerun-tasks：67类/1211项，0失败/错误；assembleDebug成功，lintDebug No issues found。仅元信息与名称调整，未增加镜像资源测试；未修改课程数据、系统字体/密度或现有组件位置。
 - **已实现但尚未充分验证**：只有Android17/API37模拟器，没有Android16/vivo桌面；不能据此断言用户机型已修复。建议覆盖更新后移除旧组件并重新添加以更新桌面保存的跨度，不需卸载应用。具体桌面网格尚未知。
 - Git：main / HEAD `43efb9c`，本轮3份provider XML、widget.xml与2份交接文档；前几轮Java/布局/测试改动仍未提交，全部保留，未commit/push。下一步核对vivo重新添加后的实际尺寸。
+
+
+## 2026-11-02 自然高度与组件内部滚动
+
+- **已撤回并已验证**：上一轮完成课程列表按用户指令完整撤销，源码恢复到用户提交fa3c928，1211项检查通过并覆盖安装；副本仅存忽略目录 .gradle-local/widget-completed-reverted。当前不含completed规则、布局或服务。
+- **已实现并已验证（API37）**：本轮取消widget_course_card根节点weight与课程行match_parent高度。新增ScrollableWidgetRenderer/Service与三份widget_scrolling布局；非空课程使用自然高度ListView，三个尺寸均读取全部未结束课程，不再以两条为限，日期/周次固定。完整尺寸追加最近结束课程作为上下文，小条显示当前与后续课程，空状态沿用原版。课程行点击详情，日期或完整尺寸页脚打开课表。
+- Android12+使用RemoteCollectionItems，Android8-11使用受BIND_REMOTEVIEWS保护的服务。统一plan.now判断结束状态；原MAX_CARDS及选择辅助方法保留供旧空状态渲染路径/测试使用，实际非空界面由新集合渲染器接管。
+- **验证**：新增2项测试覆盖四门课程不截断、两种行格式、最近结束上下文与全天结束不恢复列表。最终--rerun-tasks 1213项/0失败错误跳过，assembleDebug成功，lintDebug No issues found，git diff --check通过。API37覆盖安装，目视自然高度；小条滑动露出第二门完整信息，三种组件分别进入正确课程详情。证据 .gradle-local/widget-sizing/scroll-*.png/XML。临时系统时间在finally恢复，auto_time恢复原值；未编辑课表/字体/密度/组件尺寸。
+- **未验证**：vivo X200s / Android16、Android8-11服务路径、大字号与长列表实机滚动。多于两门数据由规则测试覆盖，模拟器当天仅两门。
+- Git：HEAD fa3c928，本轮修改及交接文档未提交，未commit/push；此前尺寸与命名修正保留。
+
+
+## 2026-11-02 小组件文字单行省略
+
+- **已实现并已验证（API37）**：widget布局TextView统一maxLines=1、ellipsize=end，移除balanced换行策略。课程名称、教师、地点及其他组件文案不再多行展开；保留自然高度和集合列表滚动。源码仅调整widget XML，前轮工作完整保留。
+- 用户要求到达前已完成--rerun-tasks验证：1213项/0失败错误，Debug构建成功，Lint No issues found；已覆盖安装并目视确认2×2长课名显示省略号。截图 .gradle-local/widget-sizing/single-line.png。没有改数据或系统时间。
+- **后续执行约束（用户明确要求）**：不再生成APK，用户在本次开发结束后自行实机测试。此要求覆盖AGENTS.md中assembleDebug和安装要求；后续可运行不产出APK的单元测试/Lint等检查，不再调用包含assembleDebug的完整verify脚本或安装包。vivo X200s / Android16待用户实测。
+- Git修改未提交，未commit/push。

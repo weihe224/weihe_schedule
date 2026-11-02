@@ -54,6 +54,9 @@ final class SquareWidgetRenderer {
     }
 
     static RemoteViews render(Context context, TodayPlan plan) {
+        if (plan != null && plan.headline() != null) {
+            return ScrollableWidgetRenderer.render(context, plan, false);
+        }
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 R.layout.widget_square);
         LocalDateTime now = plan == null ? LocalDateTime.now() : plan.now();

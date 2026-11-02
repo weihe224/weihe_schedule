@@ -51,6 +51,9 @@ public final class CourseWidgetRenderer {
     }
 
     static RemoteViews render(Context context, TodayPlan plan) {
+        if (plan != null && plan.headline() != null) {
+            return ScrollableWidgetRenderer.render(context, plan, false);
+        }
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 R.layout.widget_course);
         LocalDateTime now = plan == null ? LocalDateTime.now() : plan.now();
@@ -105,6 +108,15 @@ public final class CourseWidgetRenderer {
      */
     static RemoteViews itemView(Context context, TodayPlan.Session session,
             boolean last, LocalDateTime now) {
+        return itemView(context, session, last, now, false);
+    }
+
+    static RemoteViews collectionItem(Context context, TodayPlan.Session session, LocalDateTime now) {
+        return itemView(context, session, false, now, true);
+    }
+
+    private static RemoteViews itemView(Context context, TodayPlan.Session session,
+            boolean last, LocalDateTime now, boolean collection) {
         RemoteViews item = new RemoteViews(context.getPackageName(),
                 R.layout.widget_course_card);
         boolean ended = session.ended(now);
@@ -134,7 +146,7 @@ public final class CourseWidgetRenderer {
         // A divider between items, never after the last one: a hairline hanging above
         // the entry line reads as a missing third class.
         item.setViewVisibility(R.id.widget_card_divider, last ? View.GONE : View.VISIBLE);
-        item.setOnClickPendingIntent(R.id.widget_card,
+        if (!collection) item.setOnClickPendingIntent(R.id.widget_card,
                 openCourse(context, session.courseId()));
         return item;
     }

@@ -3874,3 +3874,21 @@ Provider最小可读尺寸：Course 240x180、Next160x88、Square160x190 dp；ta
 widget.xml名称分别改为今日课程（3×2）、下一节（2×1）、接下来的课（2×2）。完整verify-project脚本离线--rerun-tasks，67类1211项、0失败0错误，assembleDebug成功，lintDebug No issues found。aapt2直接核对产物三份provider的目标格数与最小尺寸；adb install -r成功，打开MainActivity回桌面，UI树三组件host名称更新且课程信息保持完整，目视截图 .gradle-local/widget-sizing/final.png。本轮不动课程、权限、系统字体密度与组件位置；没有增加仅复制XML声明的测试。
 
 限制：验证设备仅Android17/API37模拟器，不是Android16/vivo系统桌面；不能保证厂商桌面遵循目标格数。已建议覆盖更新后移除旧组件重新添加，避免桌面保留旧跨度，无需卸载应用。用户尚未提供桌面网格，vivo实机结果待确认。Git HEAD43efb9c，保留之前全部未提交工作；未commit/push。
+
+
+## 2026-11-02 自然高度与组件内部滚动
+
+- **已撤回并已验证**：上一轮完成课程列表按用户指令完整撤销，源码恢复到用户提交fa3c928，1211项检查通过并覆盖安装；副本仅存忽略目录 .gradle-local/widget-completed-reverted。当前不含completed规则、布局或服务。
+- **已实现并已验证（API37）**：本轮取消widget_course_card根节点weight与课程行match_parent高度。新增ScrollableWidgetRenderer/Service与三份widget_scrolling布局；非空课程使用自然高度ListView，三个尺寸均读取全部未结束课程，不再以两条为限，日期/周次固定。完整尺寸追加最近结束课程作为上下文，小条显示当前与后续课程，空状态沿用原版。课程行点击详情，日期或完整尺寸页脚打开课表。
+- Android12+使用RemoteCollectionItems，Android8-11使用受BIND_REMOTEVIEWS保护的服务。统一plan.now判断结束状态；原MAX_CARDS及选择辅助方法保留供旧空状态渲染路径/测试使用，实际非空界面由新集合渲染器接管。
+- **验证**：新增2项测试覆盖四门课程不截断、两种行格式、最近结束上下文与全天结束不恢复列表。最终--rerun-tasks 1213项/0失败错误跳过，assembleDebug成功，lintDebug No issues found，git diff --check通过。API37覆盖安装，目视自然高度；小条滑动露出第二门完整信息，三种组件分别进入正确课程详情。证据 .gradle-local/widget-sizing/scroll-*.png/XML。临时系统时间在finally恢复，auto_time恢复原值；未编辑课表/字体/密度/组件尺寸。
+- **未验证**：vivo X200s / Android16、Android8-11服务路径、大字号与长列表实机滚动。多于两门数据由规则测试覆盖，模拟器当天仅两门。
+- Git：HEAD fa3c928，本轮修改及交接文档未提交，未commit/push；此前尺寸与命名修正保留。
+
+
+## 2026-11-02 小组件文字单行省略
+
+- **已实现并已验证（API37）**：widget布局TextView统一maxLines=1、ellipsize=end，移除balanced换行策略。课程名称、教师、地点及其他组件文案不再多行展开；保留自然高度和集合列表滚动。源码仅调整widget XML，前轮工作完整保留。
+- 用户要求到达前已完成--rerun-tasks验证：1213项/0失败错误，Debug构建成功，Lint No issues found；已覆盖安装并目视确认2×2长课名显示省略号。截图 .gradle-local/widget-sizing/single-line.png。没有改数据或系统时间。
+- **后续执行约束（用户明确要求）**：不再生成APK，用户在本次开发结束后自行实机测试。此要求覆盖AGENTS.md中assembleDebug和安装要求；后续可运行不产出APK的单元测试/Lint等检查，不再调用包含assembleDebug的完整verify脚本或安装包。vivo X200s / Android16待用户实测。
+- Git修改未提交，未commit/push。

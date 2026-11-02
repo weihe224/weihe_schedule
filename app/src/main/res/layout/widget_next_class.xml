@@ -23,15 +23,12 @@
             android:textColor="@color/widget_ink_muted"
             android:textSize="@dimen/widget_text_header"
             android:textStyle="bold"
-            android:includeFontPadding="false"
-            android:breakStrategy="balanced" />
+            android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
         <TextView
             android:id="@+id/widget_next_week"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/widget_pill_bg"
-            android:ellipsize="end"
-            android:maxLines="1"
             android:paddingStart="@dimen/widget_pill_padding_h"
             android:paddingTop="@dimen/widget_pill_padding_v"
             android:paddingEnd="@dimen/widget_pill_padding_h"
@@ -39,8 +36,7 @@
             android:textColor="@color/widget_accent"
             android:textSize="@dimen/widget_text_pill"
             android:textStyle="bold"
-            android:includeFontPadding="false"
-            android:breakStrategy="balanced" />
+            android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
     </LinearLayout>
     <!-- Keep the remaining-height frame separate from the natural-height row:
          merging them stretches the colour rail instead of centring the course. -->
@@ -78,8 +74,7 @@
                     android:textColor="@color/widget_ink"
                     android:textSize="@dimen/widget_text_title_compact"
                     android:textStyle="bold"
-                    android:includeFontPadding="false"
-                    android:breakStrategy="balanced" />
+                    android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -93,8 +88,7 @@
                         android:fontFeatureSettings="tnum"
                         android:textColor="@color/widget_ink_muted"
                         android:textSize="@dimen/widget_text_time_compact"
-                        android:includeFontPadding="false"
-                        android:breakStrategy="balanced" />
+                        android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
                     <TextView
                         android:id="@+id/widget_next_room"
                         android:layout_width="0dp"
@@ -102,10 +96,9 @@
                         android:textColor="@color/widget_ink_faint"
                         android:textSize="@dimen/widget_text_meta"
                         android:includeFontPadding="false"
-                        android:breakStrategy="balanced"
                         android:layout_weight="1"
                         android:layout_marginStart="@dimen/widget_gap"
-                        android:gravity="end" />
+                        android:gravity="end" android:maxLines="1" android:ellipsize="end" />
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>

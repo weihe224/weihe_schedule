@@ -271,6 +271,27 @@ public class CourseWidgetRendererTest {
         }
     }
 
+    @Test
+    public void scrollingListsKeepEveryUpcomingCourseAcrossSizes() {
+        TodayPlan p = TodayPlan.of(Arrays.asList(course(1, 1, 1, 2),
+                course(2, 1, 3, 4), course(3, 1, 5, 6), course(4, 1, 7, 8)),
+                semester(), schedules(), null, MONDAY.atTime(7, 0), Integer.MAX_VALUE);
+        assertEquals(4, ScrollableWidgetRenderer.sessions(p, false).size());
+        assertEquals(4, ScrollableWidgetRenderer.sessions(p, true).size());
+        assertEquals(4L, ScrollableWidgetRenderer.sessions(p, true).get(3).courseId());
+    }
+
+    @Test
+    public void scrollingKeepsPreviousContextWithoutRestoringCompletedDayMode() {
+        TodayPlan p = day(MONDAY.atTime(10, 0), course(1, 1, 1, 2),
+                course(2, 1, 4, 5));
+        assertEquals(2, ScrollableWidgetRenderer.sessions(p, false).size());
+        assertEquals(1, ScrollableWidgetRenderer.sessions(p, true).size());
+        TodayPlan ended = day(MONDAY.atTime(23, 0), course(1, 1, 1, 2));
+        assertTrue(ScrollableWidgetRenderer.sessions(ended, false).isEmpty());
+        assertTrue(ScrollableWidgetRenderer.sessions(ended, true).isEmpty());
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     /** A day read the way the widget reads it: two cards is all it asks for. */
