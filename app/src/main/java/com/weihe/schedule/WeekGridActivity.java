@@ -322,6 +322,10 @@ public class WeekGridActivity extends Activity {
 
     private View buildRoot() {
         FrameLayout frame = new FrameLayout(this);
+        // The action column allows shadows outside its bounds; its parent must
+        // also allow them or both FAB shadows are cut to the column rectangle.
+        frame.setClipChildren(false);
+        frame.setClipToPadding(false);
         frame.setBackgroundColor(Palette.SURFACE);
 
         LinearLayout root = new LinearLayout(this);

@@ -6,7 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
-> - **最新一轮：见文末「2026-11-02 保留已完成课程与整条置灰」**。沿用现有滚动课程行，结束后整条置灰；全天结束保留当日全部课程。1218项测试和Lint通过，未生成APK，待用户实机验证。
+> - **最新一轮：见文末「2026-11-02 课表总览悬浮按钮阴影」**。页面外层容器关闭子视图/内边距裁剪；1218项测试与Lint通过，未生成或安装APK，阴影待用户实机确认。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -3138,3 +3138,10 @@ APK **1,202,536 B**。
 - **验证**：仅执行Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug，未运行assembleDebug、未生成/安装APK。1218项，0失败/错误/跳过；Lint No issues found，git diff --check通过。新增5项规则与跨尺寸列表测试，覆盖完整课程数量/顺序/去重、重叠课程精确结束、跨日、删除和不可变列表；按用户新需求更新原“全天结束为空”测试期望，其他断言未放宽。
 - **未验证**：本轮实际渲染颜色、长课名与结束标签同排、滑动和点击的手机表现，vivo X200s / Android16及旧版服务适配路径，均由用户随后实机确认。不把上轮截图当本轮验证证据。
 - 修改TodayPlan、三个组件渲染器、ScrollableWidgetRenderer、小条行XML、两个测试类和交接文档。未改存储格式、课表数据、尺寸声明；未commit/push。后续继续遵守不生成APK的用户要求。
+
+
+## 2026-11-02 课表总览悬浮按钮阴影
+
+- **已实现但尚未充分验证**：用户截图显示课表总览右下两按钮阴影呈矩形截断。WeekGridActivity.buildRoot中action列已有clipChildren=false、clipToPadding=false，外层FrameLayout却仍默认裁剪子节点；外层补齐两项false，让阴影越过action列边界绘制。按钮尺寸、位置、间距与抬升高度不变，与首页处理一致。
+- 仅修改WeekGridActivity.java及交接文档。执行Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug，1218项0失败错误跳过，Lint No issues found；git diff --check通过。此类裁剪配置不新增镜像测试。
+- 遵守用户要求，没有生成或安装APK，没有拿旧设备画面作为本轮验证。vivo X200s / Android16上的最终阴影完整性待用户实测。既有未提交组件改动保留，未commit/push。
