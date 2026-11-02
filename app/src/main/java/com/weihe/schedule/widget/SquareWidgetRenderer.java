@@ -54,7 +54,7 @@ final class SquareWidgetRenderer {
     }
 
     static RemoteViews render(Context context, TodayPlan plan) {
-        if (plan != null && plan.headline() != null) {
+        if (plan != null && (plan.headline() != null || plan.allFinished())) {
             return ScrollableWidgetRenderer.render(context, plan, false);
         }
         RemoteViews views = new RemoteViews(context.getPackageName(),

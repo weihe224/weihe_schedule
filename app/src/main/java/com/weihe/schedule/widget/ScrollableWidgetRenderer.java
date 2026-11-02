@@ -59,7 +59,12 @@ final class ScrollableWidgetRenderer {
 
     static java.util.List<TodayPlan.Session> sessions(TodayPlan plan, boolean compact) {
         java.util.List<TodayPlan.Session> rows = new java.util.ArrayList<>();
-        if (plan == null || plan.headline() == null) return rows;
+        if (plan == null) return rows;
+        if (plan.allFinished()) {
+            rows.addAll(plan.completed());
+            return rows;
+        }
+        if (plan.headline() == null) return rows;
         rows.add(plan.headline());
         rows.addAll(plan.following());
         if (!compact && plan.previous() != null) rows.add(plan.previous());
@@ -76,6 +81,19 @@ final class ScrollableWidgetRenderer {
             row.setTextViewText(R.id.widget_next_room, session.location());
             row.setTextColor(R.id.widget_next_room, com.weihe.schedule.design.Palette.ON_SURFACE_VARIANT);
             row.setInt(R.id.widget_next_bar, "setBackgroundColor", session.color());
+            boolean ended = session.ended(now);
+            row.setTextColor(R.id.widget_next_name, ended ? CourseWidgetRenderer.ENDED_GREY
+                    : com.weihe.schedule.design.Palette.ON_SURFACE);
+            row.setTextColor(R.id.widget_next_time, ended ? CourseWidgetRenderer.ENDED_GREY
+                    : com.weihe.schedule.design.Palette.ON_SURFACE);
+            if (ended) {
+                row.setTextColor(R.id.widget_next_room, CourseWidgetRenderer.ENDED_GREY);
+                row.setInt(R.id.widget_next_bar, "setBackgroundColor", CourseWidgetRenderer.ENDED_GREY);
+            }
+            row.setTextViewText(R.id.widget_next_status, "\u5DF2\u7ED3\u675F");
+            row.setTextColor(R.id.widget_next_status, CourseWidgetRenderer.ENDED_GREY);
+            row.setViewVisibility(R.id.widget_next_status,
+                    ended ? android.view.View.VISIBLE : android.view.View.GONE);
             clickId = R.id.scrolling_row;
         } else {
             row = CourseWidgetRenderer.collectionItem(context, session, now);

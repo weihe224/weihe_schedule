@@ -6,7 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
-> - **最新一轮：见文末「2026-11-02 小组件文字单行省略」**。组件文字单行、末尾省略，内部滚动保留；用户要求此后不再生成APK，由用户实机测试。
+> - **最新一轮：见文末「2026-11-02 保留已完成课程与整条置灰」**。沿用现有滚动课程行，结束后整条置灰；全天结束保留当日全部课程。1218项测试和Lint通过，未生成APK，待用户实机验证。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -3129,3 +3129,12 @@ APK **1,202,536 B**。
 - 用户要求到达前已完成--rerun-tasks验证：1213项/0失败错误，Debug构建成功，Lint No issues found；已覆盖安装并目视确认2×2长课名显示省略号。截图 .gradle-local/widget-sizing/single-line.png。没有改数据或系统时间。
 - **后续执行约束（用户明确要求）**：不再生成APK，用户在本次开发结束后自行实机测试。此要求覆盖AGENTS.md中assembleDebug和安装要求；后续可运行不产出APK的单元测试/Lint等检查，不再调用包含assembleDebug的完整verify脚本或安装包。vivo X200s / Android16待用户实测。
 - Git修改未提交，未commit/push。
+
+
+## 2026-11-02 保留已完成课程与整条置灰
+
+- **已实现（代码/资源核对），尚待实机验证**：沿用现有三个滚动组件，不新增结束页。TodayPlan保存按开始时间/id排序、去重、不可变的completed列表；allFinished要求todayCount>0且全部结束。三个渲染器在headline存在或allFinished时走原ScrollableWidgetRenderer；全天结束返回全部completed，不受following预算限制。白天课程顺序保持原规则。
+- CourseWidgetRenderer结束行的名称、起止时间、教师、地点、色条与状态统一灰色0xFF747D78，活动课程原颜色保留。小条紧凑行新增默认GONE的右侧已结束标签，结束时显示，名称/开始时间/地点/色条同步置灰；单行省略、自然高度、滚动、详情点击与日期周次入口保留。
+- **验证**：仅执行Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug，未运行assembleDebug、未生成/安装APK。1218项，0失败/错误/跳过；Lint No issues found，git diff --check通过。新增5项规则与跨尺寸列表测试，覆盖完整课程数量/顺序/去重、重叠课程精确结束、跨日、删除和不可变列表；按用户新需求更新原“全天结束为空”测试期望，其他断言未放宽。
+- **未验证**：本轮实际渲染颜色、长课名与结束标签同排、滑动和点击的手机表现，vivo X200s / Android16及旧版服务适配路径，均由用户随后实机确认。不把上轮截图当本轮验证证据。
+- 修改TodayPlan、三个组件渲染器、ScrollableWidgetRenderer、小条行XML、两个测试类和交接文档。未改存储格式、课表数据、尺寸声明；未commit/push。后续继续遵守不生成APK的用户要求。

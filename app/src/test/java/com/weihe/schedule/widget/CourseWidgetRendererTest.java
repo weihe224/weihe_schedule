@@ -282,14 +282,27 @@ public class CourseWidgetRendererTest {
     }
 
     @Test
-    public void scrollingKeepsPreviousContextWithoutRestoringCompletedDayMode() {
+    public void scrollingKeepsPreviousContextAndRetainsCompletedDay() {
         TodayPlan p = day(MONDAY.atTime(10, 0), course(1, 1, 1, 2),
                 course(2, 1, 4, 5));
         assertEquals(2, ScrollableWidgetRenderer.sessions(p, false).size());
         assertEquals(1, ScrollableWidgetRenderer.sessions(p, true).size());
         TodayPlan ended = day(MONDAY.atTime(23, 0), course(1, 1, 1, 2));
-        assertTrue(ScrollableWidgetRenderer.sessions(ended, false).isEmpty());
-        assertTrue(ScrollableWidgetRenderer.sessions(ended, true).isEmpty());
+        assertEquals(1, ScrollableWidgetRenderer.sessions(ended, false).size());
+        assertEquals(1, ScrollableWidgetRenderer.sessions(ended, true).size());
+    }
+
+    @Test
+    public void everyWidgetRetainsTheWholeCompletedDayInChronologicalOrder() {
+        TodayPlan p = day(MONDAY.atTime(23, 0), course(3, 1, 5, 6),
+                course(1, 1, 1, 2), course(2, 1, 3, 4));
+        for (boolean compact : new boolean[] {true, false}) {
+            List<TodayPlan.Session> rows = ScrollableWidgetRenderer.sessions(p, compact);
+            assertEquals(3, rows.size());
+            assertEquals(1L, rows.get(0).courseId());
+            assertEquals(3L, rows.get(2).courseId());
+            for (TodayPlan.Session row : rows) assertTrue(row.ended(p.now()));
+        }
     }
 
     // ---------------------------------------------------------------- fixtures

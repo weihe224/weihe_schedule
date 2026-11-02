@@ -442,6 +442,44 @@ public class TodayPlanTest {
         assertEquals(MONDAY.plusDays(1).atTime(0, 5), p.nextRefreshAt());
     }
 
+    @Test
+    public void completedDayRetainsEveryUniqueCourseInStartOrder() {
+        Course first = course(1, 1, 1, 2);
+        TodayPlan p = plan(courses(course(3, 1, 5, 6), first,
+                course(2, 1, 3, 4), first), MONDAY.atTime(23, 0), 0);
+        assertTrue(p.allFinished());
+        assertEquals(3, p.completed().size());
+        assertEquals(1L, p.completed().get(0).courseId());
+        assertEquals(2L, p.completed().get(1).courseId());
+        assertEquals(3L, p.completed().get(2).courseId());
+    }
+
+    @Test
+    public void completionWaitsForAllOverlapsAtTheExactEndBoundary() {
+        List<Course> input = courses(course(1, 1, 1, 4), course(2, 1, 2, 2));
+        TodayPlan before = plan(input, MONDAY.atTime(10, 54, 59));
+        assertFalse(before.allFinished());
+        assertEquals(1, before.completed().size());
+        assertTrue(plan(input, MONDAY.atTime(10, 55)).allFinished());
+    }
+
+    @Test
+    public void completedRowsResetAcrossDaysAndAfterDeletion() {
+        List<Course> input = courses(course(1, 1, 1, 2));
+        TodayPlan tomorrow = plan(input, MONDAY.plusDays(1).atTime(23, 0));
+        assertFalse(tomorrow.allFinished());
+        assertTrue(tomorrow.completed().isEmpty());
+        TodayPlan removed = plan(Collections.emptyList(), MONDAY.atTime(23, 0));
+        assertFalse(removed.allFinished());
+        assertTrue(removed.completed().isEmpty());
+        assertFalse(plan(input, MONDAY.atTime(7, 0)).allFinished());
+    }
+
+    @Test(expected = UnsupportedOperationException.class)
+    public void completedRowsAreImmutable() {
+        plan(courses(course(1, 1, 1, 2)), MONDAY.atTime(23, 0)).completed().clear();
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private static TodayPlan plan(List<Course> courses, LocalDateTime now) {

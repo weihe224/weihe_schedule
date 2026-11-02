@@ -180,6 +180,7 @@ public final class TodayPlan {
     private final Session next;
     private final Session previous;
     private final List<Session> following;
+    private final List<Session> completed;
     private final int laterToday;
     /** Every class placed on the day, including the ones already over. */
     private final int todayCount;
@@ -191,7 +192,7 @@ public final class TodayPlan {
     private TodayPlan(State state, LocalDate day, String semesterLabel, int week,
             String parity, Session current, Session next, Session previous,
             List<Session> following, int laterToday, int todayCount,
-            LocalDateTime now, LocalDateTime nextEndAt) {
+            LocalDateTime now, LocalDateTime nextEndAt, List<Session> completed) {
         this.state = state;
         this.day = day;
         this.semesterLabel = semesterLabel;
@@ -201,6 +202,7 @@ public final class TodayPlan {
         this.next = next;
         this.previous = previous;
         this.following = Collections.unmodifiableList(following);
+        this.completed = Collections.unmodifiableList(new ArrayList<>(completed));
         this.laterToday = laterToday;
         this.todayCount = todayCount;
         this.now = now;
@@ -296,11 +298,15 @@ public final class TodayPlan {
             }
         }
 
+        List<Session> completed = new ArrayList<>();
+        for (Session session : today) {
+            if (session.ended(now)) completed.add(session);
+        }
         State state = current != null ? State.IN_CLASS
                 : next != null ? State.UPCOMING : State.NO_CLASS_TODAY;
         return new TodayPlan(state, day, semester.label(), week,
                 ScheduleUtils.parityName(week), current, next, previous, following,
-                later, today.size(), now, nextEndAt);
+                later, today.size(), now, nextEndAt, completed);
     }
 
     private static TodayPlan empty(State state, LocalDate day, Semester semester,
@@ -308,7 +314,7 @@ public final class TodayPlan {
         return new TodayPlan(state, day,
                 semester == null ? "" : semester.label(), week,
                 week <= 0 ? "" : ScheduleUtils.parityName(week),
-                null, null, null, new ArrayList<Session>(), 0, 0, now, null);
+                null, null, null, new ArrayList<Session>(), 0, 0, now, null, Collections.emptyList());
     }
 
     /**
@@ -339,6 +345,15 @@ public final class TodayPlan {
         LocalDateTime endAt = day.atStartOfDay()
                 .plusMinutes(schedule.endMinute(course.endPeriod));
         return new Session(course, schedule.name(), startAt, endAt);
+    }
+
+    /** Finished sessions in start order, regardless of the following-row budget. */
+    public List<Session> completed() {
+        return completed;
+    }
+
+    public boolean allFinished() {
+        return todayCount > 0 && completed.size() == todayCount;
     }
 
     public State state() {

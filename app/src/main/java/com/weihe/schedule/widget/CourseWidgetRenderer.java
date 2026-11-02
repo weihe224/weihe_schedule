@@ -43,7 +43,7 @@ public final class CourseWidgetRenderer {
     static final int MAX_CARDS = 2;
 
     /** The grey a finished class uses for both its bar and its label. */
-    private static final int ENDED_GREY = 0xFFB9C0BD;
+    static final int ENDED_GREY = 0xFF747D78;
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("M\u6708d\u65E5");
 
@@ -51,7 +51,7 @@ public final class CourseWidgetRenderer {
     }
 
     static RemoteViews render(Context context, TodayPlan plan) {
-        if (plan != null && plan.headline() != null) {
+        if (plan != null && (plan.headline() != null || plan.allFinished())) {
             return ScrollableWidgetRenderer.render(context, plan, false);
         }
         RemoteViews views = new RemoteViews(context.getPackageName(),
@@ -122,19 +122,19 @@ public final class CourseWidgetRenderer {
         boolean ended = session.ended(now);
 
         item.setTextViewText(R.id.widget_card_name, session.name());
-        item.setTextColor(R.id.widget_card_name, Palette.ON_SURFACE);
+        item.setTextColor(R.id.widget_card_name, ended ? ENDED_GREY : Palette.ON_SURFACE);
         item.setTextViewText(R.id.widget_card_time, session.timeRange());
-        item.setTextColor(R.id.widget_card_time, Palette.ON_SURFACE_VARIANT);
+        item.setTextColor(R.id.widget_card_time, ended ? ENDED_GREY : Palette.ON_SURFACE_VARIANT);
         item.setTextViewText(R.id.widget_card_meta,
                 session.location().trim().isEmpty() && session.teacher().trim().isEmpty()
                         ? session.periodLabel() : session.location().trim());
         item.setTextViewText(R.id.widget_card_teacher, session.teacher().trim());
-        item.setTextColor(R.id.widget_card_teacher, Palette.ON_SURFACE_VARIANT);
-        item.setTextColor(R.id.widget_card_meta, Palette.ON_SURFACE_VARIANT);
+        item.setTextColor(R.id.widget_card_teacher, ended ? ENDED_GREY : Palette.ON_SURFACE_VARIANT);
+        item.setTextColor(R.id.widget_card_meta, ended ? ENDED_GREY : Palette.ON_SURFACE_VARIANT);
 
-        // The bar is the course's own colour, the same one the detail screen marks it
-        // with, so a person can match a row on the home screen to a row in the app.
-        item.setInt(R.id.widget_card_bar, "setBackgroundColor", session.color());
+        // Finished rows lose their course colour together with their text;
+        // active rows retain the same colour cue as the course detail screen.
+        item.setInt(R.id.widget_card_bar, "setBackgroundColor", ended ? ENDED_GREY : session.color());
 
         item.setViewVisibility(R.id.widget_card_status,
                 ended ? View.VISIBLE : View.GONE);
