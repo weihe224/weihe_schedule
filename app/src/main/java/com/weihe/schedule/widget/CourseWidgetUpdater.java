@@ -3,7 +3,6 @@ package com.weihe.schedule.widget;
 import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
-import android.os.Bundle;
 import android.util.Log;
 
 import com.weihe.schedule.rule.TodayPlan;
@@ -72,10 +71,7 @@ public final class CourseWidgetUpdater {
         }
         for (int id : nextIds) {
             try {
-                int height = heightDp(app, manager, id);
-                manager.updateAppWidget(id,
-                        NextClassWidgetRenderer.render(app, plan, height));
-                Log.i(TAG, "next-class widget=" + id + " height=" + height + "dp");
+                manager.updateAppWidget(id, NextClassWidgetRenderer.render(app, plan));
                 updated++;
             } catch (RuntimeException failed) {
                 Log.w(TAG, "update failed for next-class widget " + id, failed);
@@ -85,7 +81,7 @@ public final class CourseWidgetUpdater {
         for (int id : squareIds) {
             try {
                 manager.updateAppWidget(id,
-                        SquareWidgetRenderer.render(app, plan, heightDp(app, manager, id)));
+                        SquareWidgetRenderer.render(app, plan));
                 updated++;
             } catch (RuntimeException failed) {
                 Log.w(TAG, "update failed for square widget " + id, failed);
@@ -114,28 +110,4 @@ public final class CourseWidgetUpdater {
         }
     }
 
-    /**
-     * The height the launcher is currently giving one widget, in dp.
-     *
-     * <p>0 when the size cannot be read. Both renderers treat that as "assume the
-     * smallest", which drops the optional lines instead of clipping them.</p>
-     */
-    private static int heightDp(Context app, AppWidgetManager manager, int widgetId) {
-        try {
-            Bundle options = manager.getAppWidgetOptions(widgetId);
-            if (options == null) {
-                return 0;
-            }
-            // The options carry a range, not the current size. On the phone this was
-            // built for a 1x2 widget reports 99dp..203dp while actually being about
-            // 152dp tall, so neither end is the truth; the larger end is the one that
-            // does not hide lines the widget really has room for.
-            int min = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
-            int max = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
-            Log.i(TAG, "options widget=" + widgetId + " minH=" + min + " maxH=" + max);
-            return Math.max(min, max);
-        } catch (RuntimeException unsupported) {
-            return 0;
-        }
-    }
 }

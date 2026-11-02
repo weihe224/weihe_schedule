@@ -133,6 +133,31 @@ public class SquareWidgetRendererTest {
                 SquareWidgetRenderer.SECONDARY_MIN_HEIGHT_DP >= 120);
     }
 
+    @Test
+    public void endedOverlapIsOnlyTheFooterWhileFutureCourseKeepsSecondRow() {
+        TodayPlan p = day(MONDAY.atTime(10, 0), course(1, 1, 1, 8),
+                course(2, 1, 2, 2), course(3, 1, 9, 9));
+        List<TodayPlan.Session> rows = SquareWidgetRenderer.items(p);
+        assertEquals(2, rows.size());
+        assertEquals(1L, rows.get(0).courseId());
+        assertEquals(3L, rows.get(1).courseId());
+        assertEquals(2L, p.previous().courseId());
+        for (TodayPlan.Session row : rows) {
+            assertTrue(row.courseId() != p.previous().courseId());
+        }
+    }
+
+    @Test
+    public void duplicateInputCannotRepeatAListRow() {
+        Course a = course(1, 1, 1, 4);
+        Course b = course(2, 1, 6, 6);
+        List<TodayPlan.Session> rows = SquareWidgetRenderer.items(
+                day(MONDAY.atTime(8, 20), a, a, b));
+        assertEquals(2, rows.size());
+        assertEquals(1L, rows.get(0).courseId());
+        assertEquals(2L, rows.get(1).courseId());
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     /** A day read the way the square widget reads it. */

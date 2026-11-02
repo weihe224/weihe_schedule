@@ -53,9 +53,9 @@ public final class CourseWidgetRenderer {
     static RemoteViews render(Context context, TodayPlan plan) {
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 R.layout.widget_course);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = plan == null ? LocalDateTime.now() : plan.now();
 
-        views.setTextViewText(R.id.widget_date, dateLine(plan));
+        views.setTextViewText(R.id.widget_date, compactDateLine(plan));
         views.setTextColor(R.id.widget_date, Palette.ON_SURFACE_VARIANT);
 
         String week = NextClassWidgetRenderer.weekLabel(plan);
@@ -113,7 +113,11 @@ public final class CourseWidgetRenderer {
         item.setTextColor(R.id.widget_card_name, Palette.ON_SURFACE);
         item.setTextViewText(R.id.widget_card_time, session.timeRange());
         item.setTextColor(R.id.widget_card_time, Palette.ON_SURFACE_VARIANT);
-        item.setTextViewText(R.id.widget_card_meta, metaOf(session));
+        item.setTextViewText(R.id.widget_card_meta,
+                session.location().trim().isEmpty() && session.teacher().trim().isEmpty()
+                        ? session.periodLabel() : session.location().trim());
+        item.setTextViewText(R.id.widget_card_teacher, session.teacher().trim());
+        item.setTextColor(R.id.widget_card_teacher, Palette.ON_SURFACE_VARIANT);
         item.setTextColor(R.id.widget_card_meta, Palette.ON_SURFACE_VARIANT);
 
         // The bar is the course's own colour, the same one the detail screen marks it
@@ -219,6 +223,13 @@ public final class CourseWidgetRenderer {
             return "";
         }
         return DATE.format(plan.day()) + " "
+                + ScheduleUtils.dayName(plan.day().getDayOfWeek().getValue());
+    }
+
+    /** A compact date leaves room for the full teaching-week label at larger fonts. */
+    static String compactDateLine(TodayPlan plan) {
+        return plan == null ? "" : plan.day().getMonthValue() + "/"
+                + plan.day().getDayOfMonth() + " "
                 + ScheduleUtils.dayName(plan.day().getDayOfWeek().getValue());
     }
 

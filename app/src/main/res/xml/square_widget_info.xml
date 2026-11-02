@@ -1,17 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-    Metadata for the 2x2 widget.
-
-    Two cells by two, using the platform's own cell arithmetic (70dp per cell minus
-    30dp): 110dp each way. The square shape is what the layout is drawn for, and the
-    renderer still reads the height the launcher reports so a shorter box drops the
-    secondary line instead of clipping it.
-
-    updatePeriodMillis is the platform floor of 30 minutes and only ever a safety net;
-    the widget is redrawn on class boundaries and data changes by the same alarm the
-    other two sizes use.
--->
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Cell targets control modern launchers. Keep legacy and resize minima low
+     enough that a stricter launcher does not promote the requested row count.
+     These values describe placement, not a promise that arbitrary text fits. -->
+<appwidget-provider
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:description="@string/widget_square_description"
     android:initialLayout="@layout/widget_square"

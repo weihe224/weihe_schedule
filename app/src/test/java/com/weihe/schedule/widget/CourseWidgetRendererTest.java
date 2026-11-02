@@ -227,6 +227,50 @@ public class CourseWidgetRendererTest {
         assertFalse("folding must not collapse ids that differ high up", wide == one);
     }
 
+    @Test
+    public void aFutureClassWinsOverAnEndedOverlap() {
+        TodayPlan p = day(MONDAY.atTime(10, 0), course(1, 1, 1, 8),
+                course(2, 1, 2, 2), course(3, 1, 9, 9));
+        List<TodayPlan.Session> rows = CourseWidgetRenderer.cards(p);
+        assertEquals(1L, rows.get(0).courseId());
+        assertEquals(3L, rows.get(1).courseId());
+    }
+
+    @Test
+    public void endedFallbackUsesLatestEndAndNeverRepeatsHeadline() {
+        TodayPlan p = day(MONDAY.atTime(11, 0), course(1, 1, 1, 4),
+                course(2, 1, 2, 2), course(3, 1, 6, 6));
+        List<TodayPlan.Session> rows = CourseWidgetRenderer.cards(p);
+        assertEquals(2, rows.size());
+        assertEquals(3L, rows.get(0).courseId());
+        assertEquals(1L, rows.get(1).courseId());
+        assertTrue(rows.get(1).ended(p.now()));
+    }
+
+    @Test
+    public void allSizesAgreeAcrossOverlapAndFinalEndBoundaries() {
+        LocalDateTime[] moments = {MONDAY.atTime(9, 34, 59), MONDAY.atTime(9, 35),
+                MONDAY.atTime(13, 35), MONDAY.atTime(14, 15)};
+        long[] expected = {1L, 1L, 3L};
+        for (int i = 0; i < moments.length; i++) {
+            TodayPlan p = day(moments[i], course(1, 1, 1, 8),
+                    course(2, 1, 2, 2), course(3, 1, 9, 9));
+            List<TodayPlan.Session> large = CourseWidgetRenderer.cards(p);
+            List<TodayPlan.Session> square = SquareWidgetRenderer.items(p);
+            if (i == moments.length - 1) {
+                assertTrue(large.isEmpty());
+                assertTrue(square.isEmpty());
+                assertEquals("", NextClassWidgetRenderer.clockOf(p.headline()));
+            } else {
+                assertEquals(expected[i], p.headline().courseId());
+                assertEquals(expected[i], large.get(0).courseId());
+                assertEquals(expected[i], square.get(0).courseId());
+                assertEquals(i == 2 ? "13:35" : "08:15",
+                        NextClassWidgetRenderer.clockOf(p.headline()));
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     /** A day read the way the widget reads it: two cards is all it asks for. */

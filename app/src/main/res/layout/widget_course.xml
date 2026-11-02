@@ -1,23 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    The 3x2 widget: today's classes as a list.
-
-    Header: the date on the left, the teaching week as a quiet capsule on the right.
-    Body: up to two class items, separated by hairlines rather than by coloured
-    blocks, each item carrying a 4dp bar that says live or finished.
-    Footer: one centred line into the app, deliberately lighter than any class text.
-
-    Cards are added to widget_cards at refresh time as nested RemoteViews, which is
-    what keeps "at most two" a property of the code rather than of the markup.
--->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
     android:padding="@dimen/widget_padding">
-
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -25,19 +14,17 @@
         android:baselineAligned="false"
         android:gravity="center_vertical"
         android:orientation="horizontal">
-
         <TextView
             android:id="@+id/widget_date"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
             android:text="@string/widget_default_title"
             android:textColor="@color/widget_ink_muted"
             android:textSize="@dimen/widget_text_header"
-            android:textStyle="bold" />
-
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:breakStrategy="balanced" />
         <TextView
             android:id="@+id/widget_week"
             android:layout_width="wrap_content"
@@ -51,60 +38,55 @@
             android:paddingBottom="@dimen/widget_pill_padding_v"
             android:textColor="@color/widget_accent"
             android:textSize="@dimen/widget_text_pill"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:breakStrategy="balanced" />
     </LinearLayout>
-
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="vertical">
-
+        android:orientation="vertical"
+        android:gravity="center_vertical">
         <LinearLayout
             android:id="@+id/widget_cards"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:orientation="vertical" />
-
-        <!-- Sits at the top of the list area, left aligned like every other line in the
-             card: an empty day is still read the same way as a full one. -->
         <LinearLayout
             android:id="@+id/widget_empty"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:visibility="gone">
-
-        <TextView
-            android:id="@+id/widget_empty_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="2"
-            android:textColor="@color/widget_ink"
-            android:textSize="@dimen/widget_text_title"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/widget_empty_detail"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/widget_ink_faint"
-            android:textSize="@dimen/widget_text_meta" />
+            <TextView
+                android:id="@+id/widget_empty_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/widget_ink"
+                android:textSize="@dimen/widget_text_title"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:breakStrategy="balanced" />
+            <TextView
+                android:id="@+id/widget_empty_detail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/widget_ink_faint"
+                android:textSize="@dimen/widget_text_meta"
+                android:includeFontPadding="false"
+                android:breakStrategy="balanced" />
         </LinearLayout>
     </LinearLayout>
-
     <TextView
         android:id="@+id/widget_entry"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:ellipsize="end"
         android:gravity="center_horizontal"
-        android:maxLines="1"
         android:text="@string/widget_default_detail"
         android:textColor="@color/widget_ink_muted"
-        android:textSize="@dimen/widget_text_entry" />
+        android:textSize="@dimen/widget_text_entry"
+        android:includeFontPadding="false"
+        android:breakStrategy="balanced" />
 </LinearLayout>

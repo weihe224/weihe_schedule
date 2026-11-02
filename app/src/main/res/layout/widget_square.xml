@@ -1,44 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    The 2x2 widget: the same list as the 3x2, with the finished class as a footer.
-
-    The header is the 3x2's (date left, teaching week in a capsule right) and the
-    items are the 3x2's own card layout, added to widget_square_cards at refresh time.
-    Reusing that layout is what makes two rows here look exactly like two rows there:
-    a 4dp course-colour bar, the name, the times, and where it happens.
-
-    Under the list, pinned to the bottom edge by the spacer, one grey line names the
-    class that just finished, so a square holds the current class, the next one, and
-    the one before them rather than a single row and a lot of glass.
--->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/widget_square_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
     android:orientation="vertical"
-    android:padding="@dimen/widget_padding">
-
+    android:padding="@dimen/widget_padding_square">
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:baselineAligned="false"
         android:gravity="center_vertical"
         android:orientation="horizontal">
-
         <TextView
             android:id="@+id/widget_square_date"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
             android:text="@string/widget_default_title"
             android:textColor="@color/widget_ink_muted"
             android:textSize="@dimen/widget_text_header"
-            android:textStyle="bold" />
-
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:breakStrategy="balanced" />
         <TextView
             android:id="@+id/widget_square_week"
             android:layout_width="wrap_content"
@@ -52,33 +38,28 @@
             android:paddingBottom="@dimen/widget_pill_padding_v"
             android:textColor="@color/widget_accent"
             android:textSize="@dimen/widget_text_pill"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:breakStrategy="balanced" />
     </LinearLayout>
-
     <LinearLayout
         android:id="@+id/widget_square_cards"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
         android:layout_marginTop="2dp"
-        android:orientation="vertical" />
-
-    <!-- Takes the slack, so the finished line sits on the card's edge instead of
-         floating under the class list. -->
+        android:orientation="vertical"
+        android:layout_weight="1" />
     <LinearLayout
         android:id="@+id/widget_square_spacer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
         android:orientation="vertical" />
-
     <ImageView
         android:id="@+id/widget_square_divider"
         android:layout_width="match_parent"
         android:layout_height="@dimen/widget_divider_height"
         android:background="@color/widget_divider"
         android:contentDescription="@null" />
-
-    <!-- A bar plus a line of text: the tag chain exists only to paint the 4dp bar. -->
     <LinearLayout
         android:id="@+id/widget_square_ended_row"
         android:layout_width="match_parent"
@@ -89,52 +70,49 @@
         android:orientation="horizontal"
         android:visibility="gone"
         tools:ignore="UseCompoundDrawables">
-
         <ImageView
             android:id="@+id/widget_square_ended_bar"
             android:layout_width="@dimen/widget_bar"
             android:layout_height="match_parent"
             android:background="@color/widget_ended"
             android:contentDescription="@null" />
-
         <TextView
             android:id="@+id/widget_square_ended"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/widget_bar_inset"
             android:layout_weight="1"
-            android:ellipsize="end"
             android:fontFeatureSettings="tnum"
-            android:maxLines="1"
             android:textColor="@color/widget_ended"
-            android:textSize="@dimen/widget_text_meta" />
+            android:textSize="@dimen/widget_text_meta"
+            android:includeFontPadding="false"
+            android:breakStrategy="balanced" />
     </LinearLayout>
-
     <LinearLayout
         android:id="@+id/widget_square_empty"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
         android:orientation="vertical"
-        android:visibility="gone">
-
+        android:visibility="gone"
+        android:layout_weight="1"
+        android:gravity="center_vertical">
         <TextView
             android:id="@+id/widget_square_empty_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="2"
             android:textColor="@color/widget_ink"
             android:textSize="@dimen/widget_text_title"
-            android:textStyle="bold" />
-
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:breakStrategy="balanced" />
         <TextView
             android:id="@+id/widget_square_empty_hint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:ellipsize="end"
-            android:maxLines="1"
             android:textColor="@color/widget_ink_faint"
-            android:textSize="@dimen/widget_text_meta" />
+            android:textSize="@dimen/widget_text_meta"
+            android:includeFontPadding="false"
+            android:breakStrategy="balanced" />
     </LinearLayout>
 </LinearLayout>

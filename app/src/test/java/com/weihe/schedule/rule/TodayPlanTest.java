@@ -351,6 +351,97 @@ public class TodayPlanTest {
         assertFalse(plan.semesterLabel().isEmpty());
     }
 
+    @Test
+    public void endedOverlapDoesNotUseAFollowingSlotOrRemainingCount() {
+        TodayPlan p = plan(courses(course(1, 1, 1, 8), course(2, 1, 2, 2),
+                course(3, 1, 9, 9), course(4, 1, 10, 10)), MONDAY.atTime(10, 0), 1);
+        assertEquals(1L, p.headline().courseId());
+        assertEquals(3L, p.following().get(0).courseId());
+        assertEquals(1, p.laterToday());
+        assertEquals(4, p.todayCount());
+        assertEquals(2L, p.previous().courseId());
+    }
+
+    @Test
+    public void previousUsesLatestEndRatherThanLatestStart() {
+        TodayPlan p = plan(courses(course(1, 1, 1, 4), course(2, 1, 2, 2),
+                course(3, 1, 6, 6)), MONDAY.atTime(11, 0));
+        assertEquals(1L, p.previous().courseId());
+        assertEquals(3L, p.headline().courseId());
+    }
+
+    @Test
+    public void equalEndTimesUseStableStartAndIdOrder() {
+        Course a = course(1, 1, 1, 4);
+        Course b = course(2, 1, 1, 4);
+        assertEquals(2L, plan(courses(a, b), MONDAY.atTime(11, 0)).previous().courseId());
+        assertEquals(2L, plan(courses(b, a), MONDAY.atTime(11, 0)).previous().courseId());
+    }
+
+    @Test
+    public void simultaneousStartsKeepTheOtherRunningClass() {
+        TodayPlan p = plan(courses(course(2, 1, 1, 4), course(1, 1, 1, 2)),
+                MONDAY.atTime(8, 20));
+        assertEquals(1L, p.headline().courseId());
+        assertEquals(2L, p.following().get(0).courseId());
+        assertTrue(p.following().get(0).inProgress(p.now()));
+    }
+
+    @Test
+    public void anOverlapLeavesFollowingExactlyAtItsEnd() {
+        List<Course> input = courses(course(1, 1, 1, 4), course(2, 1, 2, 2));
+        TodayPlan before = plan(input, MONDAY.atTime(9, 34, 59));
+        TodayPlan at = plan(input, MONDAY.atTime(9, 35));
+        assertEquals(1, before.following().size());
+        assertTrue(at.following().isEmpty());
+        assertEquals(2L, at.previous().courseId());
+        assertEquals(1L, at.headline().courseId());
+    }
+
+    @Test
+    public void duplicateCourseIdsAppearOnlyOnceInThePlan() {
+        Course a = course(1, 1, 1, 4);
+        Course b = course(2, 1, 6, 6);
+        TodayPlan p = plan(courses(a, a, b, b), MONDAY.atTime(8, 20));
+        assertEquals(2, p.todayCount());
+        assertEquals(1, p.following().size());
+        assertEquals(2L, p.following().get(0).courseId());
+    }
+
+    @Test
+    public void refreshIncludesTheEndOfAnOverlappingClass() {
+        TodayPlan p = plan(courses(course(1, 1, 1, 8), course(2, 1, 2, 2)),
+                MONDAY.atTime(9, 0));
+        assertEquals(MONDAY.atTime(9, 35), p.nextRefreshAt());
+    }
+
+    @Test
+    public void refreshAlsoIncludesAnOverlapOutsideTheVisibleBudget() {
+        TodayPlan p = plan(courses(course(1, 1, 1, 8), course(2, 1, 2, 6),
+                course(3, 1, 3, 3)), MONDAY.atTime(9, 40), 1);
+        assertEquals(2L, p.following().get(0).courseId());
+        assertEquals(MONDAY.atTime(10, 15), p.nextRefreshAt());
+    }
+
+    @Test
+    public void aBoundaryAtTheNextStartChangesTheHeadlineWithoutRepeatingPrevious() {
+        TodayPlan p = plan(courses(course(1, 1, 1, 2), course(2, 1, 3, 4)),
+                MONDAY.atTime(9, 35));
+        assertEquals(2L, p.headline().courseId());
+        assertEquals(1L, p.previous().courseId());
+        assertTrue(p.following().isEmpty());
+    }
+
+    @Test
+    public void theEndOfAllOverlapsProducesAnEmptyEveningWithLatestPrevious() {
+        TodayPlan p = plan(courses(course(1, 1, 1, 4), course(2, 1, 2, 2)),
+                MONDAY.atTime(10, 55));
+        assertNull(p.headline());
+        assertTrue(p.following().isEmpty());
+        assertEquals(1L, p.previous().courseId());
+        assertEquals(MONDAY.plusDays(1).atTime(0, 5), p.nextRefreshAt());
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private static TodayPlan plan(List<Course> courses, LocalDateTime now) {

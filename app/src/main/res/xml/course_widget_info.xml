@@ -1,28 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-    Widget metadata.
-
-    The widget shows at most two class cards plus the entry line, whatever size it is
-    given, so the declared minimum is what those two cards need: about 180dp tall.
-    Resizing can make it wider or taller, but never tall enough to earn a third card,
-    because there is no third card to earn.
-
-    updatePeriodMillis is 30 minutes because that is the platform's floor and a widget
-    asking for less is silently given this value anyway. It is a safety net, not the
-    mechanism: the widget is redrawn on every class boundary and every data change
-    through CourseWidgetRefreshScheduler, because half an hour of a timetable is two
-    classes and a countdown only corrected every half hour is wrong most of the time.
-
-    minWidth/minHeight size the first placement on Android 11 and older; the
-    targetCell* pair does the same job from Android 12. Both are declared so the
-    widget lands at 3x2 either way.
--->
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Cell targets control modern launchers. Keep legacy and resize minima low
+     enough that a stricter launcher does not promote the requested row count.
+     These values describe placement, not a promise that arbitrary text fits. -->
+<appwidget-provider
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:description="@string/widget_course_description"
     android:initialLayout="@layout/widget_course"
-    android:minHeight="180dp"
-    android:minResizeHeight="180dp"
+    android:minHeight="110dp"
+    android:minResizeHeight="110dp"
     android:minResizeWidth="180dp"
     android:minWidth="180dp"
     android:previewLayout="@layout/widget_course"

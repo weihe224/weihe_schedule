@@ -42,7 +42,7 @@ import com.weihe.schedule.rule.TodayPlan;
  */
 final class SquareWidgetRenderer {
 
-    /** Below this height the finished-class footer is dropped rather than squashed. */
+    /** Legacy sizing reference; an available finished-class footer is always shown. */
     static final int SECONDARY_MIN_HEIGHT_DP = 150;
 
     /** The grey the finished class line is written in: read, but not competing. */
@@ -53,15 +53,15 @@ final class SquareWidgetRenderer {
     private SquareWidgetRenderer() {
     }
 
-    static RemoteViews render(Context context, TodayPlan plan, int heightDp) {
+    static RemoteViews render(Context context, TodayPlan plan) {
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 R.layout.widget_square);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = plan == null ? LocalDateTime.now() : plan.now();
         views.setOnClickPendingIntent(R.id.widget_square_root, openApp(context));
 
-        views.setTextViewText(R.id.widget_square_date, CourseWidgetRenderer.dateLine(plan));
+        views.setTextViewText(R.id.widget_square_date, CourseWidgetRenderer.compactDateLine(plan));
         views.setTextColor(R.id.widget_square_date, Palette.ON_SURFACE_VARIANT);
-        String week = NextClassWidgetRenderer.pillText(plan);
+        String week = NextClassWidgetRenderer.weekLabel(plan);
         views.setViewVisibility(R.id.widget_square_week,
                 week.isEmpty() ? View.GONE : View.VISIBLE);
         views.setTextViewText(R.id.widget_square_week, week);
@@ -97,7 +97,7 @@ final class SquareWidgetRenderer {
         }
 
         TodayPlan.Session finished = plan.previous();
-        boolean showFinished = finished != null && heightDp >= SECONDARY_MIN_HEIGHT_DP;
+        boolean showFinished = finished != null;
         views.setViewVisibility(R.id.widget_square_divider,
                 showFinished ? View.VISIBLE : View.GONE);
         views.setViewVisibility(R.id.widget_square_ended_row,

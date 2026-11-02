@@ -6,7 +6,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import com.weihe.schedule.model.BellSchedule;
 import com.weihe.schedule.model.BellSchedules;
@@ -183,11 +185,13 @@ public final class TodayPlan {
     private final int todayCount;
     /** The moment this plan describes, so every derived answer uses one clock. */
     private final LocalDateTime now;
+    /** Earliest remaining end, including overlaps outside the visible row budget. */
+    private final LocalDateTime nextEndAt;
 
     private TodayPlan(State state, LocalDate day, String semesterLabel, int week,
             String parity, Session current, Session next, Session previous,
             List<Session> following, int laterToday, int todayCount,
-            LocalDateTime now) {
+            LocalDateTime now, LocalDateTime nextEndAt) {
         this.state = state;
         this.day = day;
         this.semesterLabel = semesterLabel;
@@ -200,6 +204,7 @@ public final class TodayPlan {
         this.laterToday = laterToday;
         this.todayCount = todayCount;
         this.now = now;
+        this.nextEndAt = nextEndAt;
     }
 
     /**
@@ -237,6 +242,8 @@ public final class TodayPlan {
             }
         }
         today.sort(BY_START);
+        Set<Long> seen = new HashSet<>();
+        today.removeIf(session -> !seen.add(session.courseId()));
 
         Session current = null;
         for (Session session : today) {
@@ -257,9 +264,16 @@ public final class TodayPlan {
         // empty second card on the widgets: a card that says "已结束" is honest about
         // a class that happened, where a blank slot looks like a missing timetable.
         Session previous = null;
+        LocalDateTime nextEndAt = null;
         for (Session session : today) {
-            if (!now.isBefore(session.endAt())) {
-                previous = session;
+            if (session.ended(now)) {
+                // Start order is not finish order when classes overlap. Equal ends
+                // retain the existing deterministic start/id tie-break order.
+                if (previous == null || !session.endAt().isBefore(previous.endAt())) {
+                    previous = session;
+                }
+            } else if (nextEndAt == null || session.endAt().isBefore(nextEndAt)) {
+                nextEndAt = session.endAt();
             }
         }
 
@@ -270,8 +284,12 @@ public final class TodayPlan {
             int from = today.indexOf(headline) + 1;
             int limit = Math.max(0, maxFollowing);
             for (int index = from; index < today.size(); index++) {
+                Session session = today.get(index);
+                if (session.ended(now)) {
+                    continue;
+                }
                 if (following.size() < limit) {
-                    following.add(today.get(index));
+                    following.add(session);
                 } else {
                     later++;
                 }
@@ -282,7 +300,7 @@ public final class TodayPlan {
                 : next != null ? State.UPCOMING : State.NO_CLASS_TODAY;
         return new TodayPlan(state, day, semester.label(), week,
                 ScheduleUtils.parityName(week), current, next, previous, following,
-                later, today.size(), now);
+                later, today.size(), now, nextEndAt);
     }
 
     private static TodayPlan empty(State state, LocalDate day, Semester semester,
@@ -290,7 +308,7 @@ public final class TodayPlan {
         return new TodayPlan(state, day,
                 semester == null ? "" : semester.label(), week,
                 week <= 0 ? "" : ScheduleUtils.parityName(week),
-                null, null, null, new ArrayList<Session>(), 0, 0, now);
+                null, null, null, new ArrayList<Session>(), 0, 0, now, null);
     }
 
     /**
@@ -372,7 +390,7 @@ public final class TodayPlan {
         return current != null ? current : next;
     }
 
-    /** The classes after the headline, earliest first, at most {@code maxFollowing}. */
+    /** Unfinished classes after the headline, earliest first, at most {@code maxFollowing}. */
     public List<Session> following() {
         return following;
     }
@@ -419,8 +437,8 @@ public final class TodayPlan {
     /**
      * When the widget next has to be redrawn to stay truthful.
      *
-     * <p>Three things change what it should say: the class in progress ending, the
-     * next class starting, and midnight moving "today" on. The earliest of those is
+     * <p>Three things change what it should say: any class ending (including an
+     * overlapping row), the next class starting, and midnight moving "today" on. The earliest of those is
      * the one worth waking up for; with nothing on, that is the day rollover. The
      * rollover is a few minutes past midnight rather than exactly at it, because a
      * device that wakes at 00:00:00 and asks "what day is it" is taking part in a
@@ -432,8 +450,8 @@ public final class TodayPlan {
      */
     public LocalDateTime nextRefreshAt() {
         LocalDateTime next = day.plusDays(1).atTime(0, MINUTE_AFTER_MIDNIGHT);
-        if (current != null && current.endAt().isBefore(next)) {
-            next = current.endAt();
+        if (nextEndAt != null && nextEndAt.isBefore(next)) {
+            next = nextEndAt;
         }
         if (this.next != null && this.next.startAt().isBefore(next)) {
             next = this.next.startAt();

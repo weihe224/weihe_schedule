@@ -37,7 +37,7 @@ import com.weihe.schedule.rule.TodayPlan;
  */
 final class NextClassWidgetRenderer {
 
-    /** Below this height the room line is dropped: the name and the time come first. */
+    /** Baseline minimum height; room visibility no longer depends on widget size. */
     static final int ROOM_MIN_HEIGHT_DP = 88;
 
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
@@ -45,14 +45,14 @@ final class NextClassWidgetRenderer {
     private NextClassWidgetRenderer() {
     }
 
-    static RemoteViews render(Context context, TodayPlan plan, int heightDp) {
+    static RemoteViews render(Context context, TodayPlan plan) {
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 R.layout.widget_next_class);
         TodayPlan.Session session = plan == null ? null : plan.headline();
 
-        views.setTextViewText(R.id.widget_next_date, CourseWidgetRenderer.dateLine(plan));
+        views.setTextViewText(R.id.widget_next_date, CourseWidgetRenderer.compactDateLine(plan));
         views.setTextColor(R.id.widget_next_date, Palette.ON_SURFACE_VARIANT);
-        String week = pillText(plan);
+        String week = weekLabel(plan);
         views.setViewVisibility(R.id.widget_next_week, week.isEmpty() ? View.GONE : View.VISIBLE);
         views.setTextViewText(R.id.widget_next_week, week);
         views.setTextColor(R.id.widget_next_week, Palette.PRIMARY);
@@ -81,7 +81,7 @@ final class NextClassWidgetRenderer {
         views.setTextColor(R.id.widget_next_time, Palette.ON_SURFACE);
 
         String room = roomOf(session);
-        boolean showRoom = heightDp >= ROOM_MIN_HEIGHT_DP && !room.isEmpty();
+        boolean showRoom = !room.isEmpty();
         views.setViewVisibility(R.id.widget_next_room,
                 showRoom ? View.VISIBLE : View.GONE);
         views.setTextViewText(R.id.widget_next_room, room);

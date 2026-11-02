@@ -3817,3 +3817,60 @@ API 37 设备回归：测试前备份三份 preferences；导出取消后原课�
 用忽略目录WidgetAnalysis.java加载现有纯Java编译产物验证：A 08:00–11:40、B 09:00–09:40、当前10:30，实际输出 headline=A、following=[B]、previous=B。TodayPlan.following未过滤已结束的重叠课，SquareWidgetRenderer.items取B为第二条，足够高时previous又将B放入结束页脚。本地逻辑复现，不是实机远程布局复现。previous本身按开始排序覆盖，重叠情况下“最近结束”也应复核。未修改代码或测试期望。
 
 既有JVM结果：TodayPlanTest28项、CourseWidgetRendererTest16项、NextClassWidgetRendererTest9项、SquareWidgetRendererTest9项，共62；本轮未重跑测试/构建/Lint，测试主要覆盖纯逻辑与阈值，不能证明真实尺寸布局或闹钟投递。建议先修重叠边界并补测试，再做尺寸/字体/状态文案适配。前轮未提交UI修改保持原样，本轮仅追加分析交接。
+
+
+## 2026-11-02 小组件第一轮：课程选择与边界刷新
+
+执行用户授权的第一轮逻辑修正，未扩展第二轮布局或第三轮系统可靠性范围。
+
+根因与实现：
+- TodayPlan原following直接截取headline之后的开始时间排序列表，长课包住短课时，短课即使已结束仍占后续行。现在先对有效课程按开始/ID排序并按ID去重，following再排除ended(now)，剩余数只累计有效未结束课程。同ID重复输入也不会令主行、第二行或总数重复。
+- previous原来不断覆盖开始时间排序列表的已结束项，可能拿到“开始较晚但结束较早”的课程。现按endAt最大值选取，同endAt时保留既有start/id最后一项，输入顺序不影响结果。
+- nextRefreshAt原来仅看headline结束和下一门开始，较短的重叠课程结束时不会刷新。新增计划内部nextEndAt，计算所有有效课程最早的未来结束时间（不限可见预算），与下一门开始、跨日候选共同选最近边界。
+- CourseWidgetRenderer/SquareWidgetRenderer的ended判定改用plan.now，保持本次共享计划的时间一致；未新增布局、依赖、存储键或配置。
+
+测试：新增15项，TodayPlanTest 10、CourseWidgetRendererTest 3、SquareWidgetRendererTest 2。覆盖已结束重叠不挤占行/预算、最近结束与同结束时间稳定顺序、同时开始保留另一门进行中课程、精确结束时刻移出following、重复ID、可见预算之外的结束刷新、主课程切换、全天结束，以及三个尺寸选择的一致性。先加14项测试，旧实现1210项中11项失败；实现后全部通过，再补一项跨三个组件的边界一致性测试。最终verify-project脚本 --rerun-tasks testDebugUnitTest assembleDebug lintDebug成功，49tasks executed，67类1211项/0失败错误跳过，Lint No issues found。无既有测试期望改动。
+
+实际运行：最终APK覆盖安装；API37 emulator-5554桌面三个组件显示UPCOMING的当前真实课程，日志refreshed=3/3；点击3x2首课程与2x2第二课程分别打开正确详情，2x1打开首页。首次2x1点击落在桌面切换动画期间，重新等待动画后实际点击成功。未构造实机重叠数据、未调整时钟，重叠/全天结束/刷新时刻是JVM验证，不声称实机时间推进验证或UI自动化。安装前后weihe_schedule/reminders/widget三份preferences键值比对均相同，不需要还原。未改系统设置或权限。
+
+证据目录 .gradle-local/widget-round1/：widgets-final.png、large-click.png/XML、next-click.png/XML、square-click.png/XML、data-check.json、verification.json与安装前本地preferences快照（均Git忽略）。未验证实际跨日闹钟、深睡与厂商后台限制或其他桌面；第二轮尺寸/字体/状态文案优化仍待进行。
+
+Git开始main/43efb9c干净。修改TodayPlan.java、CourseWidgetRenderer.java、SquareWidgetRenderer.java及对应3份测试、两份交接文档，未commit/push。
+
+
+## 2026-11-02 第二轮撤回（用户要求）
+
+- **已撤回并已验证**：按用户“退回修改”指令，仅撤销第二轮尺寸/字体适配、长课名两行、浅条横排、上课状态、周次与描述资源修改，以及新增布局策略/测量类和8项测试。三个组件渲染器中第一轮的统一plan.now判断仍保留；TodayPlan与第一轮15项回归测试未动。第二轮文件副本仅留在忽略目录 `.gradle-local/widget-round2/reverted/`。
+- 回退后完整 --rerun-tasks 验证：1211项通过，0失败/错误，Debug构建成功，Lint No issues found。重新覆盖安装第一轮版本，API37桌面截图 `.gradle-local/widget-round2/reverted.png`；原系统字体恢复1.0，三份preferences与第二轮开始时键值一致。未改变课表、权限或桌面组件尺寸。
+- 当前有效实现仍为第一轮课程选择与边界刷新修复；第二轮不视为已交付。未commit/push。
+
+
+## 2026-11-02 小组件保留完整信息排版
+
+用户明确要求不减少任何组件显示内容，并授权实施新方案；已撤回的“空间不足隐藏字段/课程”的方案没有复用。
+
+改动：widget_course/card/next_class/square四份XML关闭额外字体padding，课名/地点等取消单行省略限制并允许自然换行；课程行改为标题、时间与教师并排、地点独立一行，小条开始时间与教室并排。Square的结束页脚取消大块弹性占位，紧随课程内容；色条保持课程色，小条色条跟随实际内容高度。布局尺寸与字体集中在widget.xml：gap4dp、item_padding3dp、bar_inset6dp、compact_padding4dp、square_padding6dp；小条时间从16sp调整为13sp，与其他组件时间层级一致，课程标题仍16sp。
+
+Java：CourseWidgetRenderer新增compactDateLine(M/d 周几)，显示日期信息完整，原dateLine/helper/tests保持兼容；课程地点和教师独立绑定，不缩写原字符串。NextClassWidgetRenderer/SquareWidgetRenderer统一使用weekLabel（无括号），不新增状态标签。Next地点不按高度隐藏，Square有主要课程和previous时始终保留已结束页脚；没有改原空状态/选课/补位规则。CourseWidgetUpdater删除max(minH,maxH)及高度参数，信息不再由高度估算决定是否出现。两个旧阈值常量保留为兼容测试的历史尺寸参考，已不参与显示逻辑。
+
+Provider最小可读尺寸：Course 240x180、Next160x88、Square160x190 dp；targetCell默认不变。旧组件更新不会自动放大。普通字体当前桌面三组件字段完整，课名不省略；1.3字体在420dpi原几何尺寸实测有部分裁切，用户需要增大组件。实际放大小条至2x2后课名/时间/地点完整，另临时360dpi增加逻辑可用空间验证三个组件字段完整；这不是固定原尺寸大字体全部适配成功，交付须说明。任意长度无法以固定空间保证完整，需要用户放大；本轮采用保留字段的明确策略。
+
+验证：最终verify-project脚本带--rerun-tasks，1211项/0失败错误，Debug构建成功，Lint No issues found。新包覆盖安装，3x2/2x2课程点击正确详情，小条打开首页。第一轮15项回归保留，不新增布局镜像测试。证据 .gradle-local/widget-full/normal-first.png、font130-first.png（原尺寸限制）、font130-next-expanded.png、font130-roomier-display.png、final-normal.png/XML及click-*.png/XML、data-check.json。
+
+恢复：字体1.0、密度420dpi、小条原2x1尺寸及位置全部恢复，三份preferences键值比对一致，无课程写入/权限变动/时钟调整。密度测试首个调用因缺少命令内恢复步骤被自动审查拒绝，未执行；补充读取原值和finally恢复后获准执行并恢复成功。未验证其他API/厂商桌面、大量异常文本和结束页脚实机时段。修改4个widget Java文件、4份布局、widget.xml与3份provider元信息，两份交接文档；第一轮未提交修改继续保留，未commit/push。
+
+
+## 2026-11-02 小组件留白分布修正
+
+用户截图指出三个组件底部留白过多。根因是内容采用wrap_content聚集在顶端，剩余高度留在父容器底部；小条上一轮重排后也没有分配空余高度。本轮只改widget_course/card/next_class/square四份XML：课程卡根节点保留自然高度并设weight=1，两条按自然高度和剩余空间分配，各自文字垂直居中；FrameLayout让分割线固定在每条底部并避免新增嵌套权重。大组件课程容器填满课程区；方组件课程区weight=1，保留footer并将空状态区域居中；小条用占余高的Frame和自然高度行实现居中，不伸长课程色条。全部字段、字号、课程数量、跳转保持原样。
+
+首版Lint提示NestedWeights与UselessParent；卡片改Frame后去除NestedWeights，小条Frame不能合并（两层分别承接余高和自然高度，合并会伸长色条），加说明注释并在该Frame局部标注UselessParent。最终完整脚本--rerun-tasks，1211项0失败错误，assembleDebug成功，lintDebug No issues found。最终包覆盖安装，API37普通字体三个组件完整显示，分别点击大组件第一课程、小条、方组件第二课程，均进入正确详情/首页。截图 .gradle-local/widget-spacing/final.png 与click-*.png/XML。本轮不改字体/密度/桌面尺寸/数据，未新增无意义的布局镜像测试、未commit/push。空状态、结束页脚时段、大字体和其他桌面未重新实测，沿用上一轮限制说明。
+
+
+## 2026-11-02 小组件尺寸识别与命名修正
+
+用户反馈Android16上3×2被识别为3×3，补充机型vivo X200s。此前为了完整内容提高最小高度（今日课程180dp，方组件190dp），虽然targetCellHeight=2不变，但minResizeHeight和minHeight仍可能约束厂商桌面所需行数，是本轮发现的兼容性风险，并非已在vivo复现的确定根因。根据Android官方布局文档 https://developer.android.com/develop/ui/views/appwidgets/layouts ，将course/next/square的minWidth×minHeight及minResizeWidth×minResizeHeight分别改为180×110、110×40、110×110dp；targetCell仍为3×2、2×1、2×2，继续支持放大。不设置maxResize以免限制完整内容与大字体需要的空间。新增英文说明解释格数目标和保守最小值的关系。此决定覆盖上一轮较高最小尺寸；内容布局、字段与字号本轮未动。
+
+widget.xml名称分别改为今日课程（3×2）、下一节（2×1）、接下来的课（2×2）。完整verify-project脚本离线--rerun-tasks，67类1211项、0失败0错误，assembleDebug成功，lintDebug No issues found。aapt2直接核对产物三份provider的目标格数与最小尺寸；adb install -r成功，打开MainActivity回桌面，UI树三组件host名称更新且课程信息保持完整，目视截图 .gradle-local/widget-sizing/final.png。本轮不动课程、权限、系统字体密度与组件位置；没有增加仅复制XML声明的测试。
+
+限制：验证设备仅Android17/API37模拟器，不是Android16/vivo系统桌面；不能保证厂商桌面遵循目标格数。已建议覆盖更新后移除旧组件重新添加，避免桌面保留旧跨度，无需卸载应用。用户尚未提供桌面网格，vivo实机结果待确认。Git HEAD43efb9c，保留之前全部未提交工作；未commit/push。

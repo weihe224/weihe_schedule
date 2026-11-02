@@ -36,12 +36,13 @@
     <dimen name="widget_stroke">1dp</dimen>
     <dimen name="widget_padding">12dp</dimen>
     <!-- The 2x1 strip is one cell tall; it gets a tighter frame so four lines fit. -->
-    <dimen name="widget_padding_compact">7dp</dimen>
-    <dimen name="widget_gap">8dp</dimen>
-    <dimen name="widget_item_padding">5dp</dimen>
+    <dimen name="widget_padding_compact">4dp</dimen>
+    <dimen name="widget_padding_square">6dp</dimen>
+    <dimen name="widget_gap">4dp</dimen>
+    <dimen name="widget_item_padding">3dp</dimen>
     <!-- The status bar down the left edge of every course item. -->
     <dimen name="widget_bar">4dp</dimen>
-    <dimen name="widget_bar_inset">10dp</dimen>
+    <dimen name="widget_bar_inset">6dp</dimen>
     <dimen name="widget_divider_height">1dp</dimen>
     <dimen name="widget_pill_padding_h">7dp</dimen>
     <dimen name="widget_pill_padding_v">2dp</dimen>
@@ -51,7 +52,7 @@
     <dimen name="widget_text_title">16sp</dimen>
     <dimen name="widget_text_title_compact">16sp</dimen>
     <dimen name="widget_text_time">13sp</dimen>
-    <dimen name="widget_text_time_compact">16sp</dimen>
+    <dimen name="widget_text_time_compact">13sp</dimen>
     <dimen name="widget_text_meta">10sp</dimen>
     <dimen name="widget_text_status">10sp</dimen>
     <dimen name="widget_text_header">11sp</dimen>
@@ -60,14 +61,14 @@
 
     <!-- Chinese written directly: this is a resource file, like strings.xml's
          app_name, not Java source where the project keeps text as \\uXXXX escapes. -->
-    <string name="widget_course_label">今日课程</string>
-    <string name="widget_course_description">显示当前和接下来的课程、倒计时，以及今日课表入口。</string>
+    <string name="widget_course_label">今日课程（3×2）</string>
+    <string name="widget_course_description">显示当前和接下来的课程、上课时间，以及今日课表入口。</string>
     <string name="widget_default_title">今天</string>
     <string name="widget_default_name">还没有课表</string>
     <string name="widget_default_detail">点开添加或导入</string>
-    <string name="widget_next_label">下一节</string>
-    <string name="widget_next_description">极简下一节课提醒：课程名称、开始时间、教室和倒计时。</string>
-    <string name="widget_square_label">接下来的课</string>
+    <string name="widget_next_label">下一节（2×1）</string>
+    <string name="widget_next_description">显示当前或下一节课的课程名称、开始时间和教室。</string>
+    <string name="widget_square_label">接下来的课（2×2）</string>
     <string name="widget_square_description">显示正在上或下一节课，以及紧随其后的一节。</string>
 
 </resources>
