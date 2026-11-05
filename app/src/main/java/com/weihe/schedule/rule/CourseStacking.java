@@ -53,6 +53,13 @@ public final class CourseStacking {
         return ScheduleUtils.occursInWeek(course, currentWeek);
     }
 
+    /** Group membership must depend only on the courses, never on the calendar. */
+    private static final Comparator<Course> BY_GROUP = Comparator
+            .comparingInt((Course course) -> course.startWeek)
+            .thenComparingInt(course -> course.endWeek)
+            .thenComparingInt(course -> course.parity)
+            .thenComparingLong(course -> course.id);
+
     /**
      * Earliest week first, and any course taught in {@code currentWeek} ahead of
      * all of them.
@@ -64,11 +71,8 @@ public final class CourseStacking {
      */
     private static Comparator<Course> byLead(int currentWeek) {
         return Comparator
-                .comparingInt((Course course) -> runsIn(course, currentWeek)
-                        ? 0 : 1)
-                .thenComparingInt(course -> course.startWeek)
-                .thenComparingInt(course -> course.endWeek)
-                .thenComparingLong(course -> course.id);
+                .comparingInt((Course course) -> runsIn(course, currentWeek) ? 0 : 1)
+                .thenComparing(BY_GROUP);
     }
 
     /** Whether two courses describe the same weekday and the same period range. */
@@ -115,7 +119,8 @@ public final class CourseStacking {
     /**
      * Splits the courses of one slot into the stacks that slot needs.
      *
-     * <p>Greedy in week order: each course joins the first stack whose members it
+     * <p>Greedy in fixed course order, independent of the current week. Each
+     * course joins the first stack whose members it
      * never shares a week with. That is not provably the fewest stacks possible,
      * which is the same trade {@link WeekGridPlan} already makes for its lanes --
      * simple enough to test, and a slot rarely holds enough alternatives for the
@@ -137,7 +142,7 @@ public final class CourseStacking {
             return stacks;
         }
         List<Course> ordered = new ArrayList<>(slot);
-        Collections.sort(ordered, byLead(currentWeek));
+        Collections.sort(ordered, BY_GROUP);
         for (Course course : ordered) {
             List<Course> host = null;
             for (List<Course> stack : stacks) {
@@ -151,6 +156,11 @@ public final class CourseStacking {
                 stacks.add(host);
             }
             host.add(course);
+        }
+        // Only the visible lead depends on the week. Sorting before partitioning
+        // changes greedy membership, which can change lane counts and geometry.
+        for (List<Course> stack : stacks) {
+            stack.sort(byLead(currentWeek));
         }
         return stacks;
     }

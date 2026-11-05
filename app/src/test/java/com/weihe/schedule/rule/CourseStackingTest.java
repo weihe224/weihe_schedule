@@ -300,6 +300,62 @@ public class CourseStackingTest {
         assertFalse(CourseStacking.canStack(shortOne, inWeeks(3, 1, 9, 10, 1, 9)));
     }
 
+    private static List<List<Long>> memberships(List<List<Course>> stacks) {
+        List<List<Long>> result = new ArrayList<>();
+        for (List<Course> stack : stacks) {
+            List<Long> members = ids(stack);
+            java.util.Collections.sort(members);
+            result.add(members);
+        }
+        return result;
+    }
+
+    @Test
+    public void fixedGroupsSurviveEveryWeekAndInputPermutationWithoutMutatingInput() {
+        List<Course> input = new ArrayList<>(Arrays.asList(
+                inWeeks(1, 1, 8, 9, 1, 1), inWeeks(2, 1, 8, 10, 1, 2),
+                inWeeks(3, 1, 8, 11, 2, 3), inWeeks(4, 1, 8, 9, 3, 4)));
+        List<List<Long>> expected = Arrays.asList(Arrays.asList(1L, 3L),
+                Arrays.asList(2L, 4L));
+        for (int week = 0; week <= ScheduleUtils.SEMESTER_WEEKS + 1; week++) {
+            for (int permutation = 0; permutation < 8; permutation++) {
+                java.util.Collections.shuffle(input, new java.util.Random(week * 8L + permutation));
+                List<Long> before = ids(input);
+                List<List<Course>> groups = CourseStacking.partition(input, week);
+                assertEquals(expected, memberships(groups));
+                assertEquals(before, ids(input));
+                for (List<Course> group : groups) {
+                    for (Course member : group) {
+                        if (CourseStacking.runsIn(member, week)) {
+                            assertEquals(member.id, group.get(0).id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    public void parityTiesHaveStableGroupsAndStillExposeRealClashes() {
+        Course odd = parity(1, 1, 3, 4, Course.PARITY_ODD);
+        Course even = parity(2, 1, 3, 5, Course.PARITY_EVEN);
+        Course clash = parity(3, 1, 3, 6, Course.PARITY_ALL);
+        List<Course> input = Arrays.asList(even, clash, odd);
+        List<List<Long>> expected = memberships(CourseStacking.partition(input, 0));
+        for (int week = 1; week <= 18; week++) {
+            List<List<Course>> groups = CourseStacking.partition(input, week);
+            assertEquals(expected, memberships(groups));
+            assertEquals(2, groups.size());
+            for (List<Course> group : groups) {
+                for (int a = 0; a < group.size(); a++) {
+                    for (int b = a + 1; b < group.size(); b++) {
+                        assertTrue(CourseStacking.canStack(group.get(a), group.get(b)));
+                    }
+                }
+            }
+        }
+    }
+
     private static List<Long> ids(List<Course> courses) {
         List<Long> ids = new ArrayList<>();
         for (Course course : courses) {

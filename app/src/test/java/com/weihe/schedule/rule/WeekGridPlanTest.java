@@ -434,6 +434,28 @@ public class WeekGridPlanTest {
         }
     }
 
+    @Test
+    public void allCourseLanesAndReservedSpansStayFixedAsTheLeadWeekChanges() {
+        List<Course> input = Arrays.asList(inWeeks(1, 1, 8, 9, 1, 1),
+                inWeeks(2, 1, 8, 10, 1, 2), inWeeks(3, 1, 8, 11, 2, 3),
+                inWeeks(4, 1, 8, 9, 3, 4), inWeeks(5, 1, 10, 12, 1, 18));
+        java.util.Map<Long, String> expected = null;
+        for (int week = 0; week <= 19; week++) {
+            java.util.Map<Long, String> geometry = new java.util.HashMap<>();
+            for (WeekGridPlan.Cluster cluster : WeekGridPlan.plan(input, week)) {
+                for (WeekGridPlan.Block block : cluster.blocks()) {
+                    for (Course course : block.courses()) {
+                        geometry.put(course.id, block.startPeriod() + ":" + block.endPeriod()
+                                + ":" + block.lane() + ":" + block.laneCount());
+                    }
+                }
+            }
+            assertEquals(5, geometry.size());
+            if (expected == null) expected = geometry;
+            else assertEquals(expected, geometry);
+        }
+    }
+
     private static Course inWeeks(long id, int day, int startPeriod, int endPeriod,
             int startWeek, int endWeek) {
         Course course = course(id, day, startPeriod, endPeriod);

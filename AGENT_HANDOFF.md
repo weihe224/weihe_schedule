@@ -6,7 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
-> - **最新一轮：见文末「2026-11-02 学期范围与周次导航一致性」**。提醒/组件按实际学期长度判断，首页与总览导航同步；1224项测试与Lint通过，未生成APK，待用户实机确认。
+> - **最新一轮：见文末「2026-11-05 固定堆叠分组与组内置顶」**。分组按固定课程顺序，当前周仅调整组内顶部课程；1227项测试与Lint通过，未生成APK，待用户实机确认。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -3162,3 +3162,12 @@ APK **1,202,536 B**。
 - 编辑器新课程默认结束周及全学期/前八周/后八周快捷项按实际周数。手动填写超出学期的范围会在周次摘要显示红色提示，不静默改写已有课程，保留原1-18周存储兼容；已有缩短学期保护会拒绝遗留越界课程的缩短操作，仍保持原规则。原修改日期、学期周数和切换学期流程已有ReminderScheduler.sync及组件刷新，本轮核对保留。
 - 新增4项边界/跨模块回归：首末日、学期前后、短学期提醒onDate/upcoming/forCourseOnDay与组件一致、移动开学日期、切换长度不同学期、导航与返回今天夹取边界。完整非打包检查Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug：1224项0失败/错误/跳过，Lint No issues found；原课程堆叠回归继续通过，git diff --check通过。未生成或安装APK。
 - **未验证**：真实页面交互、系统已注册提醒的实际撤销/投递、vivo X200s/Android16跨日与组件展示，待用户实测。没有改变存储格式/课表数据；前轮不同结束节次堆叠修改保留，未commit/push。
+
+
+## 2026-11-05 固定堆叠分组与组内置顶
+
+- **已实现并经规则测试验证，页面待用户实机确认**：CourseStacking.partition改为固定BY_GROUP（startWeek/endWeek/parity/id）顺序分组，然后分别用byLead(currentWeek)调整每组内课程顺序；不按当前周排序整组，不改变组间顺序。相同课程集合跨周保持成员/组数/栏位及最大占位跨度，保留同日同开始节次、周次互斥、不同结束节次可堆叠规则。
+- 新增3项测试：反例周次[1,1]/[1,2]/[2,3]/[3,4]固定为两组，遍历0-19周与每周8次洗牌，检查成员、置顶及输入顺序未被修改；单双周/同周真实冲突；WeekGridPlan逐课程核对所有周次的start/end/lane/laneCount不变，含不同长度与后续重叠课程。
+- 先在旧实现运行CourseStackingTest/WeekGridPlanTest，64项中新增成员稳定性和布局稳定性两项失败，复现跨周分组漂移；修复后完整Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug，1227项，0失败/错误/跳过，Lint No issues found，git diff --check通过。未改既有测试期望。
+- 仅修改CourseStacking.java、两个规则测试类及交接文档。没有生成/安装APK，未改数据格式、课程数据或卡片外观。仍为确定性贪心分组，不承诺所有复杂单双周组合的分组数量全局最优；课程新增/删除/编辑后允许重新分组。真实UI与vivo Android16待用户实测。
+- Git：HEAD fd9d3ce；开始时用户已有app/release/output-metadata.json修改，本轮完整保留，未commit/push。
