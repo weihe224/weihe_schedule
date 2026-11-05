@@ -157,10 +157,10 @@ design/          Palette 等设计常量
 **`tools/IconForge.java` 是图标资源的唯一来源。**
 
 ```powershell
-java tools/IconForge.java icon.png app/src/main/res tools/out
+java tools/IconForge.java assets/branding/shike-logo.png app/src/main/res tools/out
 ```
 
-- 它从根目录的 `icon.png`（原始素材，**不要覆盖**）生成五个密度各自的
+- 它从根目录的 `assets/branding/shike-logo.png`（原始素材，**不要覆盖**）生成五个密度各自的
   `ic_launcher_background` / `_foreground` / `_monochrome` / `ic_launcher` / `ic_launcher_round`，
   并把各遮罩下的效果写成 `tools/out/icon-masks.png` 供人工核对。
 - **不要手工编辑或替换 `res/mipmap-*/` 下的任何 PNG**，也不要另起一套生成脚本：

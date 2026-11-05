@@ -6,7 +6,7 @@
 > - **长期开发规范：以 [`AGENTS.md`](AGENTS.md) 为准。**
 > - **历史记录：[`AGENT_HANDOFF_ARCHIVE.md`](AGENT_HANDOFF_ARCHIVE.md)（仅作背景参考，其中的完成度判断已过期）。**
 > - 项目介绍与构建方式：[`README.md`](README.md)。
-> - **最新一轮：见文末「2026-11-05 固定堆叠分组与组内置顶」**。分组按固定课程顺序，当前周仅调整组内顶部课程；1227项测试与Lint通过，未生成APK，待用户实机确认。
+> - **最新一轮：见文末「2026-11-05 居中Logo资源接入」**。新版Logo已用于全部桌面图标及页内品牌图，启动画面沿用新版前景；1227项测试与Lint通过，未生成APK。旧源图icon.png仍保留，待用户批准删除。
 >
 > 本文件由核对**当前源代码、Git 状态与实测结果**后重写（2026-10-12）。
 > 上一版 1338 行的全文（含 E0–E4 逐轮开发日志）已**整段并入归档**，未删除任何内容。
@@ -3171,3 +3171,13 @@ APK **1,202,536 B**。
 - 先在旧实现运行CourseStackingTest/WeekGridPlanTest，64项中新增成员稳定性和布局稳定性两项失败，复现跨周分组漂移；修复后完整Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug，1227项，0失败/错误/跳过，Lint No issues found，git diff --check通过。未改既有测试期望。
 - 仅修改CourseStacking.java、两个规则测试类及交接文档。没有生成/安装APK，未改数据格式、课程数据或卡片外观。仍为确定性贪心分组，不承诺所有复杂单双周组合的分组数量全局最优；课程新增/删除/编辑后允许重新分组。真实UI与vivo Android16待用户实测。
 - Git：HEAD fd9d3ce；开始时用户已有app/release/output-metadata.json修改，本轮完整保留，未commit/push。
+
+
+## 2026-11-05 居中Logo资源接入
+
+- **已实现并经资源预览验证，未实机验证**：用户选定基于原课表+时钟的居中版本，原始生成图复制至assets/branding/shike-logo.png。沿用tools/IconForge.java生成五密度foreground/monochrome/legacy/round资源；背景配色不变，五份背景生成后与原文件一致。Android31启动画面继续引用ic_launcher_foreground，因此同步使用新版。关于页ic_brand_logo改为由同一生成工具输出，避免第二套裁切逻辑。
+- 生成工具调整新版浅色纸面对应的单色亮度阈值0.74-0.82，避免主题图标过淡；单色预览背景改深色便于检查。目视核对tools/out/icon-masks.png的圆形、圆角方形、方形、48px与单色版本，主体居中，时钟收进主体边界。页内图为等比512px长边，裁切与桌面共用。没有修改页面主题或业务逻辑。
+- README、AGENTS、.gitignore及IconProbe默认源图路径均改为新路径；活动代码/工具/README无旧icon.png引用。AGENT_HANDOFF历史记录保留其原文，不视为活动资源引用。
+- 完整非打包Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug：1227项0失败错误跳过，Lint No issues found；主题单色调整后重新生成并追加lintDebug通过；git diff --check通过。未生成或安装APK，未在模拟器运行新版图标；桌面缓存和启动瞬间显示待用户实机确认。
+- **部分实现/等待用户删除批准**：用户明确要求删除前申请，因此根目录旧icon.png（784746字节）仍保留未覆盖、未删除；运行资源已替换且旧源图不再被活动配置引用。批准后只删除该文件，不删除现有资源目录（其中同名文件已经是新版）。不涉及生成图存放目录中的早期概念稿或用户app/release产物。
+- 本轮未commit/push。开始时用户已有未跟踪app/release/目录，完整保留。下一步向用户申请删除D:/vibe coding/Weihe/Weihe/icon.png，获明确回复后执行并更新此记录。

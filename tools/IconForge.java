@@ -91,8 +91,8 @@ public final class IconForge {
      * ring are punched out of it as holes. Thresholding at the source resolution
      * and scaling afterwards is what keeps those holes from filling in.</p>
      */
-    private static final double MONO_LOW = 0.855;
-    private static final double MONO_HIGH = 0.925;
+    private static final double MONO_LOW = 0.74;
+    private static final double MONO_HIGH = 0.82;
 
     public static void main(String[] args) throws Exception {
         File source = new File(args[0]);
@@ -149,6 +149,15 @@ public final class IconForge {
             System.out.printf("  %-8s adaptive %3dpx  legacy %3dpx%n",
                     DENSITIES[i], canvas, legacy);
         }
+
+        // The in-app brand mark shares the exact same crop and centre as the
+        // launcher foreground, without the adaptive canvas's extra safe margins.
+        File brandDir = new File(res, "drawable-nodpi");
+        brandDir.mkdirs();
+        float brandScale = 512f / Math.max(art.getWidth(), art.getHeight());
+        write(downscale(art, Math.round(art.getWidth() * brandScale),
+                Math.round(art.getHeight() * brandScale)),
+                new File(brandDir, "ic_brand_logo.png"));
 
         previews.mkdirs();
         contactSheet(art, artWidthDp, artHeightDp, new File(previews, "icon-masks.png"));
@@ -358,7 +367,7 @@ public final class IconForge {
                 pad, monoY - 6);
         BufferedImage monoComposite = new BufferedImage(hi, hi, BufferedImage.TYPE_INT_ARGB);
         Graphics2D mg = quality(monoComposite);
-        mg.setColor(new Color(0xF2F5F3));
+        mg.setColor(new Color(0x304B43));
         mg.fillRect(0, 0, hi, hi);
         int mw = Math.round(artWidthDp / ADAPTIVE_CANVAS_DP * hi);
         int mh = Math.round(artHeightDp / ADAPTIVE_CANVAS_DP * hi);

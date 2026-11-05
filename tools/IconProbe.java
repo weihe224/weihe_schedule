@@ -9,12 +9,12 @@ import javax.imageio.ImageIO;
  * needs to know: the background colour, whether that background is uniform, the
  * bounding box of the drawn artwork, and the exact colours of the design's parts.
  *
- * <p>Run with: {@code java tools/IconProbe.java icon.png}</p>
+ * <p>Run with: {@code java tools/IconProbe.java assets/branding/shike-logo.png}</p>
  */
 public final class IconProbe {
 
     public static void main(String[] args) throws Exception {
-        File file = new File(args.length > 0 ? args[0] : "icon.png");
+        File file = new File(args.length > 0 ? args[0] : "assets/branding/shike-logo.png");
         BufferedImage image = ImageIO.read(file);
         int w = image.getWidth();
         int h = image.getHeight();

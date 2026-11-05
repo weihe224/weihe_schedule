@@ -1,7 +1,7 @@
 <!-- README for the 拾课 Android app -->
 
 <p align="center">
-  <img src="icon.png" alt="拾课应用图标" width="112">
+  <img src="assets/branding/shike-logo.png" alt="拾课应用图标" width="112">
 </p>
 
 <h1 align="center">拾课（WeiheSchedule）</h1>
