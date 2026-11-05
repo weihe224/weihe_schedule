@@ -3944,3 +3944,12 @@ widget.xml名称分别改为今日课程（3×2）、下一节（2×1）、接�
 - 完整非打包Wrapper --offline --rerun-tasks testDebugUnitTest lintDebug：1227项0失败错误跳过，Lint No issues found；主题单色调整后重新生成并追加lintDebug通过；git diff --check通过。未生成或安装APK，未在模拟器运行新版图标；桌面缓存和启动瞬间显示待用户实机确认。
 - **部分实现/等待用户删除批准**：用户明确要求删除前申请，因此根目录旧icon.png（784746字节）仍保留未覆盖、未删除；运行资源已替换且旧源图不再被活动配置引用。批准后只删除该文件，不删除现有资源目录（其中同名文件已经是新版）。不涉及生成图存放目录中的早期概念稿或用户app/release产物。
 - 本轮未commit/push。开始时用户已有未跟踪app/release/目录，完整保留。下一步向用户申请删除D:/vibe coding/Weihe/Weihe/icon.png，获明确回复后执行并更新此记录。
+
+
+## 2026-11-05 旧Logo删除与模拟器黑屏排查
+
+- **已完成并已核对**：用户明确回复“删除”，解析并校验绝对路径后仅删除根目录icon.png（旧源图）。assets/branding/shike-logo.png及新版全部运行图标保留，README/生成工具等活动路径已在上一轮迁移。上一轮“等待批准删除”的状态以本节为准。
+- **已复现并恢复（现有API37模拟器）**：用户说明点击运行后App黑屏。adb确认进程存在，暖启动261ms成功且UI树可读；系统Settings也有UI树但截图全黑。App冷启动809ms报告成功，截图同样全黑。窗口/应用过滤日志未发现本次AndroidRuntime崩溃；大量旧UWB服务崩溃日志不属于App，未据此修改项目。
+- 执行adb reboot（没有wipe/uninstall/clear data），等待boot_completed后App冷启动成功，可显示新版Logo启动画面；系统Settings恢复可见；再次返回App，截图和UI树确认首页、教学周、三门课程正常。证据 .gradle-local/black-screen/app-cold.png、settings.png、settings-after-reboot.png、app-after-reboot-final.png/XML及过滤日志。未确认模拟器内部究竟为窗口合成还是图形驱动故障，结论限定为本次跨应用显示异常经重启恢复，不宣称已永久修复。
+- 没有修改应用启动/主题代码，没有生成/安装APK或改课表数据；启动与重启会触发现有提醒/组件刷新。模拟器重启后系统时间由原11/2推进到当前11/5，未手工更改时间或覆盖用户时间设置。未重新运行单元测试，旧图仅为无引用源文件，前轮1227项/Lint验证记录仍属前轮。
+- 本轮变更仅删除旧源图与更新交接文档；用户app/release/未跟踪目录保留，未commit/push。实机黑屏未验证；本次连接设备为API37模拟器，非vivo Android16。
